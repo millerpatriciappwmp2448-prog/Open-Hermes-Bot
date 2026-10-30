@@ -59,10 +59,10 @@ export function ConversationsScreen() {
         .map((id) => botById(id))
         .filter(Boolean)
         .map((bot) => ({ shape: bot!.shape, color: bot!.color }));
-      return <BloubGroup members={members} size={38} />;
+      return <BloubGroup members={members} size={38} active={thread.typing} />;
     }
     const bot = botById(thread.botId);
-    return <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={38} />;
+    return <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={38} active={thread.typing} />;
   }
 
   function open(thread: Thread) {

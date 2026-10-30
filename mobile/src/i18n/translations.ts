@@ -106,7 +106,7 @@ export const english: Readonly<Record<string, string>> = {
   "无响应": "not answering",
   "主机默认模型": "the host default",
   "暂无配对设备": "No device paired",
-  "刷新": "Read it again",
+  "刷新": "Refresh",
   "已从 Hermes 刷新数据。": "Read again from Hermes.",
   "断开本机连接": "Disconnect this phone",
   "配对成功，已加载 Hermes 主机上的机器人。": "Paired. The bots below come from Hermes, not from this phone.",
@@ -359,5 +359,14 @@ export const english: Readonly<Record<string, string>> = {
   "跟随系统": "System",
   "界面语言": "Interface language",
   "切换界面语言不会翻译服务器返回的聊天内容。": "Changing the interface language does not translate conversations from the server.",
-  "无法保存语言设置，重启后可能恢复默认语言。": "The language setting could not be saved and may reset after restarting."
+  "无法保存语言设置，重启后可能恢复默认语言。": "The language setting could not be saved and may reset after restarting.",
+  "切换": "Switch",
+  "当前模型": "Current model",
+  "手动选择": "Custom selection",
+  "没有匹配的模型": "No matching models",
+  "未发现模型？可在下方输入模型 ID。": "No models found? Enter a model ID below.",
+  "通过模型 ID 添加": "Add by model ID",
+  "请填写此提供商支持的模型 ID。": "Enter a model ID supported by this provider.",
+  "下一条消息生效 · 密钥由服务器管理": "Applies to your next message · Keys stay on the server",
+  "为每个机器人选择合适的模型": "Choose the right model for each bot"
 };

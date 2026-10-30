@@ -204,9 +204,9 @@ export function ChatScreen({ route, navigation }: Props) {
             accessibilityLabel={t("打开 {0}", {"0": thread.name})}
           >
             {isGroup ? (
-              <BloubGroup members={faces} size={30} />
+              <BloubGroup members={faces} size={30} active={thread.typing} />
             ) : (
-              <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={30} />
+              <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={30} active={thread.typing} />
             )}
             <View style={styles.chatTitles}>
               <Text style={styles.chatName} numberOfLines={1}>
@@ -250,7 +250,7 @@ export function ChatScreen({ route, navigation }: Props) {
 
           {meta?.typing || thread.typing ? (
             <View style={styles.typing}>
-              <Bloub shape={bot?.shape ?? 'capsule'} color={bot?.color ?? '#4f9d8f'} size={18} />
+              <Bloub shape={bot?.shape ?? 'capsule'} color={bot?.color ?? '#4f9d8f'} size={18} animated active />
               <Text style={styles.typingLabel}>{thread.name} {t("正在思考")}</Text>
               <TypingDots />
             </View>

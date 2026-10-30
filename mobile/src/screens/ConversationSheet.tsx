@@ -42,11 +42,11 @@ export function ConversationSheet({
         <>
           <SheetHeader
             title={t("模型")}
-            sub={thread.id.startsWith('bot:') ? t('从下一条消息生效，机器人的记忆保持不变。') : t('演示模型')}
+            sub={thread.id.startsWith('bot:') ? undefined : t('演示模型')}
             onClose={onClose}
             back={() => setPicking(false)}
           />
-          {thread.id.startsWith('bot:') ? <ServerModelPicker botId={thread.botId} onPicked={() => setPicking(false)} /> : <ModelList
+          {thread.id.startsWith('bot:') ? <ServerModelPicker key={thread.botId} botId={thread.botId} onPicked={() => setPicking(false)} /> : <ModelList
             selected={thread.threadModel}
             onPick={(picked) => {
               setModel(thread.id, picked);

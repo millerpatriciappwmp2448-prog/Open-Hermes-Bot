@@ -19,6 +19,7 @@ import { AppearanceScreen } from './src/screens/AppearanceScreen';
 import type { RootStackParamList } from './src/nav';
 import { C } from './src/theme';
 import { useInitializeLanguage } from './src/i18n';
+import { AvatarMotionProvider } from './src/components/AvatarMotion';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -40,30 +41,32 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StoreProvider>
-        <StatusBar style="light" />
-        <NavigationContainer theme={theme}>
-          <Stack.Navigator
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: C.bg },
-              // The page comes in from the right and the same gesture takes
-              // it back: the screen follows the finger, and cancels.
-              animation: 'slide_from_right',
-              gestureEnabled: true,
-              fullScreenGestureEnabled: true,
-            }}
-          >
-            <Stack.Screen name="Chats" component={ConversationsScreen} />
-            <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="Setup" component={SetupScreen} />
-            <Stack.Screen name="Connection" component={ConnectionScreen} />
-            <Stack.Screen name="Models" component={ModelsScreen} />
-            <Stack.Screen name="Voice" component={VoiceScreen} />
-            <Stack.Screen name="Updates" component={UpdatesScreen} />
-            <Stack.Screen name="Appearance" component={AppearanceScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
+        <AvatarMotionProvider>
+          <StatusBar style="light" />
+          <NavigationContainer theme={theme}>
+            <Stack.Navigator
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: C.bg },
+                // The page comes in from the right and the same gesture takes
+                // it back: the screen follows the finger, and cancels.
+                animation: 'slide_from_right',
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
+              }}
+            >
+              <Stack.Screen name="Chats" component={ConversationsScreen} />
+              <Stack.Screen name="Chat" component={ChatScreen} />
+              <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="Setup" component={SetupScreen} />
+              <Stack.Screen name="Connection" component={ConnectionScreen} />
+              <Stack.Screen name="Models" component={ModelsScreen} />
+              <Stack.Screen name="Voice" component={VoiceScreen} />
+              <Stack.Screen name="Updates" component={UpdatesScreen} />
+              <Stack.Screen name="Appearance" component={AppearanceScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </AvatarMotionProvider>
       </StoreProvider>
     </SafeAreaProvider>
   );

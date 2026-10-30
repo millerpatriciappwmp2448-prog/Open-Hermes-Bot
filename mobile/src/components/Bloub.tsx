@@ -1,6 +1,8 @@
-import { useId } from 'react';
+import { memo, useEffect, useId, useRef } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { createStyles } from '../theme';
-import { Text, View } from 'react-native';
+import { Animated, Easing, Platform, Text, View } from 'react-native';
+import { useAvatarMotion } from './AvatarMotion';
 import Svg, { Defs, G, Mask, Path, Rect } from 'react-native-svg';
 import {
   BLOUB_FRAMES,
@@ -27,52 +29,83 @@ type BloubProps = {
   color: string;
   variant?: BloubVariant;
   size?: number;
+  animated?: boolean;
+  active?: boolean;
 };
 
-export function Bloub({ shape = 'cercle', color, variant = 'neutral', size = 40 }: BloubProps) {
+export const Bloub = memo(function Bloub({ shape = 'cercle', color, variant = 'neutral', size = 40, animated = size >= 30, active = false }: BloubProps) {
   const raw = useId();
   const maskId = `bloub-${raw.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const data = BLOUB_FRAMES[shape] ?? BLOUB_FRAMES.cercle;
-  const frame = data.variants[variant] ?? data.variants.neutral;
+  const frame = data.variants[active && variant === 'neutral' ? 'attentive' : variant] ?? data.variants.neutral;
   const view = data.viewBox;
   const px = box(size);
+  const allowed = useAvatarMotion();
+  const focused = useIsFocused();
+  const moving = animated && allowed && focused;
+  const motion = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    motion.setValue(0);
+    if (!moving) return;
+    // Transform only: iOS drives this on the UI thread, without rerendering the
+    // SVG paths or blocking interactions. Offscreen navigation stops the loop.
+    const duration = active ? 620 : 2100 + (shape.length % 4) * 170;
+    const step = (toValue: number) => Animated.timing(motion, {
+      toValue, duration, easing: Easing.inOut(Easing.sin),
+      useNativeDriver: Platform.OS !== 'web', isInteraction: false,
+    });
+    const loop = Animated.loop(Animated.sequence([step(1), step(0)]));
+    loop.start();
+    return () => { loop.stop(); motion.setValue(0); };
+  }, [active, motion, moving, shape]);
 
   return (
-    <Svg
-      width={px}
-      height={px}
-      viewBox={`${-view} ${-view} ${view * 2} ${view * 2}`}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+    <Animated.View
+      testID={moving ? (active ? 'avatar-thinking' : 'avatar-idle') : 'avatar-still'}
+      style={{ width: px, height: px, transform: [
+        { translateY: motion.interpolate({ inputRange: [0, 1], outputRange: [0, -px * (active ? 0.07 : 0.035)] }) },
+        { rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', active ? '5deg' : '2deg'] }) },
+        { scaleX: motion.interpolate({ inputRange: [0, 1], outputRange: [1, active ? 1.045 : 1.025] }) },
+        { scaleY: motion.interpolate({ inputRange: [0, 1], outputRange: [1, active ? 0.96 : 0.98] }) },
+      ] }}
     >
-      <Defs>
-        <Mask
-          id={maskId}
-          maskUnits="userSpaceOnUse"
-          x={-view}
-          y={-view}
-          width={view * 2}
-          height={view * 2}
-        >
-          <Path d={frame.bodyPath} fill="#fff" />
-          {frame.eyes.map((eye, index) => (
-            <Path
-              key={index}
-              d={eye.d}
-              transform={eye.matrix}
-              opacity={eye.alpha}
-              fill="#000"
-            />
-          ))}
-        </Mask>
-      </Defs>
-      <Path d={frame.bodyPath} fill={EYE_PAPER} />
-      <G mask={`url(#${maskId})`}>
-        <Rect x={-view} y={-view} width={view * 2} height={view * 2} fill={color} />
-      </G>
-    </Svg>
+      <Svg
+        width={px}
+        height={px}
+        viewBox={`${-view} ${-view} ${view * 2} ${view * 2}`}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Defs>
+          <Mask
+            id={maskId}
+            maskUnits="userSpaceOnUse"
+            x={-view}
+            y={-view}
+            width={view * 2}
+            height={view * 2}
+          >
+            <Path d={frame.bodyPath} fill="#fff" />
+            {frame.eyes.map((eye, index) => (
+              <Path
+                key={index}
+                d={eye.d}
+                transform={eye.matrix}
+                opacity={eye.alpha}
+                fill="#000"
+              />
+            ))}
+          </Mask>
+        </Defs>
+        <Path d={frame.bodyPath} fill={EYE_PAPER} />
+        <G mask={`url(#${maskId})`}>
+          <Rect x={-view} y={-view} width={view * 2} height={view * 2} fill={color} />
+        </G>
+      </Svg>
+    </Animated.View>
   );
-}
+});
 
 /** The three faces of a group, laid over one another as the app does it. */
 const GROUP_LAYOUT = [
@@ -84,9 +117,10 @@ const GROUP_LAYOUT = [
 type GroupProps = {
   members: { shape: BloubShape; color: string }[];
   size?: number;
+  active?: boolean;
 };
 
-export function BloubGroup({ members, size = 40 }: GroupProps) {
+export function BloubGroup({ members, size = 40, active = false }: GroupProps) {
   const visible = members.slice(0, 3);
   const extra = members.length - visible.length;
   const px = box(size);
@@ -111,7 +145,7 @@ export function BloubGroup({ members, size = 40 }: GroupProps) {
               },
             ]}
           >
-            <Bloub shape={member.shape} color={member.color} size={Math.round(size * place.scale)} />
+            <Bloub shape={member.shape} color={member.color} size={Math.round(size * place.scale)} animated active={active} />
           </View>
         );
       })}
