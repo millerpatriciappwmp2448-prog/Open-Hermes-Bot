@@ -1,5 +1,5 @@
 import { t, useTranslation } from "../i18n";
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
@@ -8,7 +8,7 @@ import { Toggle } from '../components/Toggle';
 import { HOST } from '../data';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 import { Segmented } from '../components/UI';
 
 /**
@@ -16,6 +16,7 @@ import { Segmented } from '../components/UI';
  * page that holds it; the switches live in the store and take effect at once.
  */
 export function SettingsScreen() {
+  const { styles, C, preference: appearance } = useStyles();
   const { preference, setPreference, saveError } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
@@ -80,7 +81,7 @@ export function SettingsScreen() {
           <Row
             name={t("更新")}
             value={prefs.autoUpdate ? t("自动") : t("手动")}
-            valueColor="#7fcfaa"
+            valueColor={C.green}
             line
             onPress={() => navigation.navigate('Updates')}
           />
@@ -117,7 +118,7 @@ export function SettingsScreen() {
 
         <Text style={styles.groupLabel}>{t("应用")}</Text>
         <View style={styles.group}>
-          <Row name={t("外观")} value={t("深色")} onPress={() => navigation.navigate('Appearance')} />
+          <Row name={t("外观")} value={appearance === 'system' ? t('跟随系统') : appearance === 'ivory' ? t('象牙金') : appearance === 'light' ? t('白天') : t('夜间')} onPress={() => navigation.navigate('Appearance')} />
           <View style={[styles.row, styles.line]}>
             <Text style={styles.rowName}>{t("触感反馈")}</Text>
             <View style={styles.spacer} />
@@ -166,6 +167,7 @@ function Row({
   onPress?: () => void;
   chevron?: boolean;
 }) {
+  const { styles } = useStyles();
   return (
     <Pressable
       style={[styles.row, line && styles.line]}
@@ -180,7 +182,7 @@ function Row({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   root: { flex: 1, backgroundColor: C.bg },
   nav: {
     height: 46,
@@ -203,17 +205,17 @@ const styles = createStyles({
     gap: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: C.line,
     borderRadius: 14,
     backgroundColor: C.cardRaised,
   },
   connectionCopy: { flex: 1, gap: 2 },
-  connectionName: { color: '#f1f1f3', fontSize: 14, fontWeight: '600', letterSpacing: -0.14 },
-  connectionMeta: { color: '#84848b', fontSize: 10 },
+  connectionName: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.14 },
+  connectionMeta: { color: INK.quiet, fontSize: 10 },
   connectionState: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   stateDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.green },
   stateDotOff: { backgroundColor: INK.label },
-  stateText: { color: '#9f9fa6', fontSize: 9 },
+  stateText: { color: INK.quiet, fontSize: 9 },
 
   groupLabel: {
     paddingTop: 10,
@@ -228,8 +230,8 @@ const styles = createStyles({
   group: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.cardRaised },
   row: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11 },
   line: { borderTopWidth: 1, borderTopColor: C.hairline },
-  rowName: { color: '#e9e9ec', fontSize: 12, fontWeight: '500' },
-  rowValue: { marginLeft: 'auto', color: '#82828a', fontSize: 11 },
+  rowName: { color: C.text, fontSize: 12, fontWeight: '500' },
+  rowValue: { marginLeft: 'auto', color: INK.quiet, fontSize: 11 },
   spacer: { flex: 1 },
-  foot: { marginTop: 12, color: '#626269', fontSize: 9, textAlign: 'center' },
-});
+  foot: { marginTop: 12, color: INK.quiet, fontSize: 9, textAlign: 'center' },
+}));

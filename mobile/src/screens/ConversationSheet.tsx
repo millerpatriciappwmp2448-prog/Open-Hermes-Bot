@@ -1,6 +1,6 @@
 import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
 import { Bloub } from '../components/Bloub';
 import { ModelList } from '../components/ModelList';
@@ -8,7 +8,7 @@ import { ServerModelPicker } from '../components/ServerModelPicker';
 import { Toggle } from '../components/Toggle';
 import { ConfirmBlock, PrimaryButton, Row, SectionLabel, SheetHeader } from '../components/UI';
 import { useStore } from '../store';
-import { C, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * What a conversation is, and what can be done to it. The model is per
@@ -26,6 +26,7 @@ export function ConversationSheet({
   threadId: string;
   onDeleted: () => void;
 }) {
+  const { styles } = useStyles();
   useTranslation();
   const { threadById, botById, toggles, toggle, setModel, clearThread, removeThread, togglePin } =
     useStore();
@@ -156,11 +157,11 @@ export function ConversationSheet({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   body: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 18, flexShrink: 1 },
   face: { alignItems: 'center', paddingVertical: 10 },
   card: { borderRadius: 13, backgroundColor: C.cardRaised, overflow: 'hidden' },
   line: { height: 1, backgroundColor: C.hairline },
   buttons: { marginTop: 14 },
   gap: { height: 8 },
-});
+}));

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { t, useTranslation } from '../i18n';
 import { modelChoices, type ModelRef } from '../modelSelection';
 import { useStore } from '../store';
-import { C } from '../theme';
+import { themedStyles } from '../theme';
 import { Bloub } from './Bloub';
 import { CheckIcon, ChevronIcon, SearchIcon } from './Icons';
 
@@ -11,6 +11,7 @@ import { CheckIcon, ChevronIcon, SearchIcon } from './Icons';
 export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
   botId: string; onPicked?: () => void; onChangeBot?: () => void;
 }) {
+  const { styles, C, scheme } = useStyles();
   useTranslation();
   const { botById, modelOptions, modelPicks, refreshModels, selectModel } = useStore();
   const bot = botById(botId), options = modelOptions[botId], picked = modelPicks[botId];
@@ -90,7 +91,7 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
       </View>
       <View style={styles.search}>
         <SearchIcon size={13} />
-        <TextInput accessibilityLabel={t('搜索模型')} value={query} onChangeText={setQuery}
+        <TextInput keyboardAppearance={scheme} accessibilityLabel={t('搜索模型')} value={query} onChangeText={setQuery}
           placeholder={t('搜索模型')} placeholderTextColor={C.text2} style={styles.searchInput}
           autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" />
       </View>
@@ -134,7 +135,7 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
             </Pressable>)}
           </View>
           {!provider ? <Text style={styles.meta}>{t('提供商由服务器自动解析。')}</Text> : null}
-          <TextInput accessibilityLabel={t('模型 ID')} value={custom} onChangeText={setCustom} placeholder="model-id"
+          <TextInput keyboardAppearance={scheme} accessibilityLabel={t('模型 ID')} value={custom} onChangeText={setCustom} placeholder="model-id"
             placeholderTextColor={C.text2} style={styles.customInput} autoCapitalize="none" autoCorrect={false}
             editable={!disabled} onSubmitEditing={() => { if (custom.trim()) void choose({ model: custom.trim(), provider }); }} />
           <Pressable accessibilityRole="button" disabled={disabled || !custom.trim()}
@@ -153,7 +154,7 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
 }
 
 // Native point sizes: the legacy mockup's extra scale makes this list unwieldy.
-const styles = StyleSheet.create({
+const useStyles = themedStyles(({ C }) => ({
   body: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 32, gap: 12 },
   flex: { flex: 1, minWidth: 0 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
   line: { borderTopWidth: 1, borderTopColor: C.line },
   radio: { width: 21, height: 21, borderRadius: 11, borderWidth: 1.5, borderColor: C.text3, alignItems: 'center', justifyContent: 'center' },
   radioSelected: { backgroundColor: C.green, borderColor: C.green },
-  selectedRow: { backgroundColor: 'rgba(62,207,142,0.06)' },
+  selectedRow: { backgroundColor: C.selected },
   name: { color: C.text, fontSize: 15, lineHeight: 21, fontWeight: '500' },
   meta: { color: C.text2, fontSize: 12, lineHeight: 18, marginTop: 3 },
   empty: { color: C.text2, fontSize: 13, lineHeight: 20, padding: 8 },
@@ -189,15 +190,15 @@ const styles = StyleSheet.create({
   customBody: { borderTopWidth: 1, borderTopColor: C.line, padding: 15, gap: 12 },
   providers: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   provider: { paddingHorizontal: 12, minHeight: 44, borderRadius: 10, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '100%' },
-  providerSelected: { borderColor: '#395c4b', backgroundColor: 'rgba(62,207,142,0.06)' },
+  providerSelected: { borderColor: C.selectedBorder, backgroundColor: C.selected },
   providerText: { color: C.text2, fontSize: 13, flexShrink: 1 },
   accent: { color: C.green },
   customInput: { minHeight: 46, backgroundColor: C.field, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, color: C.text },
   apply: { minHeight: 46, padding: 12, backgroundColor: C.paper, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   applyText: { color: C.bg, fontSize: 14, fontWeight: '600' },
-  error: { color: '#f3a39c', fontSize: 13, lineHeight: 20 },
+  error: { color: C.red, fontSize: 13, lineHeight: 20 },
   success: { color: C.green, fontSize: 12, lineHeight: 18 },
   footnote: { color: C.text2, fontSize: 12, lineHeight: 19, textAlign: 'center', marginTop: 4 },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.7 },
-});
+}), false);

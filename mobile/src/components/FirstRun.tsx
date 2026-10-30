@@ -1,8 +1,8 @@
 import { t, useTranslation } from "../i18n";
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Bloub } from './Bloub';
 import { PlusIcon } from './Icons';
-import { INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * The first run: the host is there, the bots are not. One face, one
@@ -15,6 +15,7 @@ export function FirstRunBody({
   onCreate: () => void;
   onSetup?: () => void;
 }) {
+  const { styles, INK } = useStyles();
   useTranslation();
   return (
     <View style={styles.body}>
@@ -24,7 +25,7 @@ export function FirstRunBody({
         {t("已连接服务器。创建第一个机器人后，Hermes 会保存它的记忆、外观和会话。")}
       </Text>
       <Pressable style={styles.primary} onPress={onCreate}>
-        <PlusIcon size={15} color="#1b1b19" />
+        <PlusIcon size={15} color={INK.onPaper} />
         <Text style={styles.primaryText}>{t("创建机器人")}</Text>
       </Pressable>
       <Pressable onPress={onSetup} accessibilityRole="button" disabled={!onSetup}>
@@ -34,7 +35,7 @@ export function FirstRunBody({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   body: {
     flex: 1,
     alignItems: 'center',
@@ -42,7 +43,7 @@ const styles = createStyles({
     paddingHorizontal: 34,
     paddingBottom: 30,
   },
-  title: { marginTop: 17, color: '#f2f2f4', fontSize: 21, fontWeight: '600', letterSpacing: -0.59 },
+  title: { marginTop: 17, color: C.text, fontSize: 21, fontWeight: '600', letterSpacing: -0.59 },
   copy: {
     maxWidth: 245,
     marginTop: 7,
@@ -60,9 +61,9 @@ const styles = createStyles({
     justifyContent: 'center',
     gap: 7,
     borderRadius: 12,
-    backgroundColor: '#f2efe5',
+    backgroundColor: C.paper,
   },
-  primaryText: { color: '#1b1b19', fontSize: 14, fontWeight: '600' },
-  link: { marginTop: 13, color: '#8f8f96', fontSize: 11 },
+  primaryText: { color: INK.onPaper, fontSize: 14, fontWeight: '600' },
+  link: { marginTop: 13, color: INK.quiet, fontSize: 11 },
   linkOff: { opacity: 0.5 },
-});
+}));

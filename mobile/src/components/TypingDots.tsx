@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Animated, View } from 'react-native';
-import { createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * The three dots of a bot still thinking. Each one rises on its own beat,
@@ -8,6 +8,7 @@ import { createStyles } from '../theme';
  * rather than stutters.
  */
 export function TypingDots() {
+  const { styles } = useStyles();
   const one = useRef(new Animated.Value(0.32)).current;
   const two = useRef(new Animated.Value(0.32)).current;
   const three = useRef(new Animated.Value(0.32)).current;
@@ -37,7 +38,7 @@ export function TypingDots() {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ INK }) => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: 2.5 },
-  dot: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#8d8d94' },
-});
+  dot: { width: 3, height: 3, borderRadius: 2, backgroundColor: INK.quiet },
+}));

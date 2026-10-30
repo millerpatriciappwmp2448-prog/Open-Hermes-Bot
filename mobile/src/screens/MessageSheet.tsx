@@ -1,13 +1,13 @@
 import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Sheet } from '../components/Sheet';
 import { Hint, Row, SheetHeader } from '../components/UI';
 import { CopyIcon, TrashIcon } from '../components/Icons';
 import type { Message } from '../data';
 import { useStore } from '../store';
-import { C, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 const EMOJI = ['👍', '❤️', '🎯', '👀'];
 
@@ -26,6 +26,7 @@ export function MessageSheet({
   threadId: string;
   message: Message | null;
 }) {
+  const { styles } = useStyles();
   useTranslation();
   const { react, removeMessage } = useStore();
   const [copied, setCopied] = useState(false);
@@ -85,7 +86,7 @@ export function MessageSheet({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   emojiRow: { flexDirection: 'row', gap: 8, paddingTop: 14, paddingHorizontal: 16 },
   emojiButton: {
     flex: 1,
@@ -100,4 +101,4 @@ const styles = createStyles({
   actions: { marginTop: 14, marginHorizontal: 12, borderRadius: 13, backgroundColor: C.cardRaised, overflow: 'hidden' },
   line: { height: 1, backgroundColor: C.hairline },
   hint: { paddingHorizontal: 16 },
-});
+}));

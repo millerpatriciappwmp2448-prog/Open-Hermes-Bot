@@ -9,7 +9,7 @@ import {
   type DimensionValue,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { C, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * A sheet that covers the bottom of the window: the create form, the model
@@ -37,6 +37,7 @@ type SheetProps = {
 };
 
 export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps) {
+  const { styles } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
   const fade = useRef(new Animated.Value(0)).current;
@@ -116,7 +117,7 @@ export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   root: { flex: 1, justifyContent: 'flex-end' },
   scrimPress: {
     position: 'absolute',
@@ -127,14 +128,14 @@ const styles = createStyles({
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(8,8,10,0.62)',
+    backgroundColor: C.scrim,
   },
   sheet: {
     marginHorizontal: 5,
     marginBottom: 5,
     paddingTop: 1,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: C.line,
     borderRadius: 27,
     backgroundColor: C.sheet,
     overflow: 'hidden',
@@ -147,8 +148,8 @@ const styles = createStyles({
     width: 34,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#4c4c52',
+    backgroundColor: C.handle,
     alignSelf: 'center',
     marginTop: 7,
   },
-});
+}));

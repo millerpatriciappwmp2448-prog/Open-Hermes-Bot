@@ -1,6 +1,6 @@
 import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
 import { Bloub, BloubGroup } from '../components/Bloub';
 import { ChevronIcon, CloseIcon } from '../components/Icons';
@@ -8,7 +8,7 @@ import { ModelList } from '../components/ModelList';
 import { ConfirmBlock } from '../components/UI';
 import { Toggle } from '../components/Toggle';
 import { useStore } from '../store';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * What a group is: its members, each on its own session, and the two things
@@ -25,6 +25,7 @@ export function GroupDetailsSheet({
   threadId: string;
   onLeave: () => void;
 }) {
+  const { styles, INK } = useStyles();
   useTranslation();
   const { threadById, botById, setModel, toggles, toggle, updateGroup, leaveGroup } = useStore();
   const [picking, setPicking] = useState(false);
@@ -44,7 +45,7 @@ export function GroupDetailsSheet({
         <>
           <View style={styles.pickHead}>
             <Pressable style={styles.back} onPress={() => setPicking(false)}>
-              <ChevronIcon size={14} color="#a8a8af" />
+              <ChevronIcon size={14} color={INK.quiet} />
             </Pressable>
             <Text style={styles.pickTitle}>{t("模型")}</Text>
           </View>
@@ -168,7 +169,7 @@ export function GroupDetailsSheet({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   top: { alignItems: 'center', paddingTop: 14, paddingHorizontal: 16 },
   close: {
     position: 'absolute',
@@ -179,10 +180,10 @@ const styles = createStyles({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 13,
-    backgroundColor: '#34343a',
+    backgroundColor: C.field2,
   },
   name: { marginTop: 8, color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.46 },
-  sub: { marginTop: 3, color: '#85858c', fontSize: 10 },
+  sub: { marginTop: 3, color: INK.quiet, fontSize: 10 },
 
   body: { flexShrink: 1 },
   bodyContent: { paddingTop: 12, paddingHorizontal: 10, paddingBottom: 20 },
@@ -200,10 +201,10 @@ const styles = createStyles({
   row: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 7, paddingHorizontal: 10 },
   line: { borderTopWidth: 1, borderTopColor: C.hairline },
   copy: { flex: 1 },
-  rowName: { color: '#ededf0', fontSize: 12, fontWeight: '500' },
-  rowMeta: { color: '#808087', fontSize: 9 },
-  value: { color: '#8b8b92', fontSize: 11 },
-  hint: { marginTop: 7, color: '#7c7c83', fontSize: 10, lineHeight: 14 },
+  rowName: { color: C.text, fontSize: 12, fontWeight: '500' },
+  rowMeta: { color: INK.quiet, fontSize: 9 },
+  value: { color: INK.quiet, fontSize: 11 },
+  hint: { marginTop: 7, color: INK.quiet, fontSize: 10, lineHeight: 14 },
   danger: {
     height: 38,
     alignItems: 'center',
@@ -212,9 +213,9 @@ const styles = createStyles({
     borderRadius: 11,
     backgroundColor: C.card,
   },
-  dangerText: { color: '#ff6961', fontSize: 12, fontWeight: '500' },
+  dangerText: { color: C.red, fontSize: 12, fontWeight: '500' },
 
   pickHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12, paddingHorizontal: 16 },
   back: { transform: [{ rotate: '180deg' }] },
   pickTitle: { color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.48 },
-});
+}));

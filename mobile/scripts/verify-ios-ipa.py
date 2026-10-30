@@ -59,6 +59,9 @@ def verify(path):
             raise ValueError(f"Unexpected MinimumOSVersion: {info['MinimumOSVersion']}")
         if info['CFBundleSupportedPlatforms'] != ['iPhoneOS']:
             raise ValueError('This is not an iPhoneOS device app')
+        interface_style = info.get('UIUserInterfaceStyle', 'Automatic')
+        if interface_style != 'Automatic':
+            raise ValueError(f'Native appearance is forced to {interface_style}')
         root = plists[0].rsplit('/', 1)[0] + '/'
         main = root + info['CFBundleExecutable']
         if not archive.read(root + 'main.jsbundle'):
@@ -84,6 +87,7 @@ def verify(path):
             'build': info['CFBundleVersion'],
             'localizations': info.get('CFBundleLocalizations', []),
             'minimum_ios': info['MinimumOSVersion'],
+            'interface_style': interface_style,
             'javascript_bundled': True,
             'binaries': binaries,
         }

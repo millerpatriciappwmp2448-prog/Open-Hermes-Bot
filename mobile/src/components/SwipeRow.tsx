@@ -1,7 +1,7 @@
 import { t, useTranslation } from "../i18n";
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, Text, View } from 'react-native';
-import { C, box, createStyles } from '../theme';
+import { box, themedStyles } from '../theme';
 
 /**
  * A row a hand can push aside. One action behind each edge: push right for
@@ -28,6 +28,7 @@ type Props = {
 };
 
 export function SwipeRow({ children, left, right }: Props) {
+  const { styles } = useStyles();
   useTranslation();
   const slide = useRef(new Animated.Value(0)).current;
   const from = useRef(0);
@@ -125,7 +126,7 @@ export function SwipeRow({ children, left, right }: Props) {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   root: { overflow: 'hidden', borderRadius: 11 },
   content: { zIndex: 1 },
   action: {
@@ -139,7 +140,7 @@ const styles = createStyles({
   left: { left: 0 },
   right: { right: 0 },
   actionPress: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', gap: 2 },
-  glyph: { color: '#f2efe5', fontSize: 15, fontWeight: '600' },
-  actionLabel: { color: '#d6d6db', fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  glyph: { color: C.text, fontSize: 15, fontWeight: '600' },
+  actionLabel: { color: C.text, fontSize: 10, fontWeight: '600', textAlign: 'center' },
   catcher: { position: 'absolute', top: 0, bottom: 0, zIndex: 2 },
-});
+}));

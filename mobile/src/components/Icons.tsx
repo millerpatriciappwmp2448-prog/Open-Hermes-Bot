@@ -1,5 +1,5 @@
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
-import { box, C } from '../theme';
+import { box, useTheme } from '../theme';
 
 /**
  * The marks the mockup draws inline: no icon font, no dependency, the same
@@ -20,7 +20,9 @@ const stroke = (color: string, width: number) => ({
   fill: 'none',
 });
 
-export function PlusIcon({ size = 17, color = '#e9e9ed' }: IconProps) {
+export function PlusIcon({ size = 17, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.8)}>
       <Path d="M12 5.5v13M5.5 12h13" />
@@ -28,7 +30,9 @@ export function PlusIcon({ size = 17, color = '#e9e9ed' }: IconProps) {
   );
 }
 
-export function SearchIcon({ size = 13, color = C.text2 }: IconProps) {
+export function SearchIcon({ size = 13, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text2;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 2)}>
       <Circle cx="11" cy="11" r="7" />
@@ -37,7 +41,9 @@ export function SearchIcon({ size = 13, color = C.text2 }: IconProps) {
   );
 }
 
-export function BackIcon({ size = 18, color = '#a6a6ad' }: IconProps) {
+export function BackIcon({ size = 18, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.quiet;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.9)}>
       <Path d="M14.5 5 8 12l6.5 7" />
@@ -45,7 +51,9 @@ export function BackIcon({ size = 18, color = '#a6a6ad' }: IconProps) {
   );
 }
 
-export function MoreIcon({ size = 18, color = '#a6a6ad' }: IconProps) {
+export function MoreIcon({ size = 18, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.quiet;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" fill={color}>
       <Circle cx="5.5" cy="12" r="1.35" />
@@ -55,7 +63,9 @@ export function MoreIcon({ size = 18, color = '#a6a6ad' }: IconProps) {
   );
 }
 
-export function ChevronIcon({ size = 13, color = '#6d6d74' }: IconProps) {
+export function ChevronIcon({ size = 13, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.quiet;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 2)}>
       <Path d="m9 5 7 7-7 7" />
@@ -63,7 +73,9 @@ export function ChevronIcon({ size = 13, color = '#6d6d74' }: IconProps) {
   );
 }
 
-export function CloseIcon({ size = 12, color = '#a8a8af' }: IconProps) {
+export function CloseIcon({ size = 12, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.quiet;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 2.1)}>
       <Path d="M6 6l12 12M18 6 6 18" />
@@ -71,7 +83,9 @@ export function CloseIcon({ size = 12, color = '#a8a8af' }: IconProps) {
   );
 }
 
-export function CheckIcon({ size = 16, color = C.paper }: IconProps) {
+export function CheckIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.paper;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 2.2)}>
       <Path d="m5 12.5 4.5 4.5L19 7" />
@@ -79,7 +93,9 @@ export function CheckIcon({ size = 16, color = C.paper }: IconProps) {
   );
 }
 
-export function AttachIcon({ size = 18, color = '#d0d0d6' }: IconProps) {
+export function AttachIcon({ size = 18, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="m20.2 11.4-7.8 7.8a5.4 5.4 0 0 1-7.6-7.6l8.2-8.2a3.6 3.6 0 0 1 5.1 5.1l-8.2 8.2a1.8 1.8 0 0 1-2.6-2.6l7.6-7.6" />
@@ -87,7 +103,9 @@ export function AttachIcon({ size = 18, color = '#d0d0d6' }: IconProps) {
   );
 }
 
-export function MicIcon({ size = 17, color = '#1b1b19' }: IconProps) {
+export function MicIcon({ size = 17, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.onPaper;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.9)}>
       <Rect x="9" y="2.8" width="6" height="11" rx="3" />
@@ -97,7 +115,9 @@ export function MicIcon({ size = 17, color = '#1b1b19' }: IconProps) {
   );
 }
 
-export function ArrowUpIcon({ size = 18, color = '#1b1b19' }: IconProps) {
+export function ArrowUpIcon({ size = 18, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.onPaper;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 2)}>
       <Path d="M12 19V5M6 11l6-6 6 6" />
@@ -105,7 +125,9 @@ export function ArrowUpIcon({ size = 18, color = '#1b1b19' }: IconProps) {
   );
 }
 
-export function ChatsIcon({ size = 19, color = C.paper }: IconProps) {
+export function ChatsIcon({ size = 19, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.paper;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="M20 11.4a7.6 7.6 0 0 1-8.2 7.6 9 9 0 0 1-2.6-.5L4 20l1.6-4.6A7.5 7.5 0 0 1 4 11.4a7.6 7.6 0 0 1 8-7.6 7.6 7.6 0 0 1 8 7.6Z" />
@@ -113,7 +135,9 @@ export function ChatsIcon({ size = 19, color = C.paper }: IconProps) {
   );
 }
 
-export function BotsIcon({ size = 19, color = '#74747b' }: IconProps) {
+export function BotsIcon({ size = 19, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.quiet;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Circle cx="12" cy="12" r="8.4" />
@@ -123,7 +147,9 @@ export function BotsIcon({ size = 19, color = '#74747b' }: IconProps) {
 }
 
 /** The settings: three rails, three knobs — a gear reads as a sun at this size. */
-export function SettingsIcon({ size = 19, color = '#74747b' }: IconProps) {
+export function SettingsIcon({ size = 19, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.quiet;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="M3.4 7h6.1M13 7h7.6M3.4 12h2.6M9.8 12h10.8M3.4 17h7.2M14.2 17h6.4" />
@@ -134,7 +160,9 @@ export function SettingsIcon({ size = 19, color = '#74747b' }: IconProps) {
   );
 }
 
-export function FileIcon({ size = 16, color = C.text2 }: IconProps) {
+export function FileIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text2;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5Z" />
@@ -143,7 +171,9 @@ export function FileIcon({ size = 16, color = C.text2 }: IconProps) {
   );
 }
 
-export function PhotoIcon({ size = 16, color = C.text2 }: IconProps) {
+export function PhotoIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text2;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Rect x="3.5" y="5" width="17" height="14" rx="2.5" />
@@ -153,7 +183,9 @@ export function PhotoIcon({ size = 16, color = C.text2 }: IconProps) {
   );
 }
 
-export function CameraIcon({ size = 16, color = C.text2 }: IconProps) {
+export function CameraIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text2;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="M4 8.5h3l1.4-2h7.2L17 8.5h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-8A1.5 1.5 0 0 1 4 8.5Z" />
@@ -162,7 +194,9 @@ export function CameraIcon({ size = 16, color = C.text2 }: IconProps) {
   );
 }
 
-export function PinIcon({ size = 16, color = C.text2 }: IconProps) {
+export function PinIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text2;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="M9.5 3.5h5l-1 5.2 3.8 3.8H6.7l3.8-3.8Z" />
@@ -171,7 +205,9 @@ export function PinIcon({ size = 16, color = C.text2 }: IconProps) {
   );
 }
 
-export function TrashIcon({ size = 16, color = '#ff6961' }: IconProps) {
+export function TrashIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.red;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Path d="M4.5 6.5h15M9.5 6.5V4h5v2.5M6.5 6.5l.8 13h9.4l.8-13" />
@@ -180,7 +216,9 @@ export function TrashIcon({ size = 16, color = '#ff6961' }: IconProps) {
   );
 }
 
-export function CopyIcon({ size = 16, color = C.text2 }: IconProps) {
+export function CopyIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  const color = customColor ?? C.text2;
   return (
     <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(color, 1.7)}>
       <Rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.2" />

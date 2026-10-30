@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Pressable } from 'react-native';
-import { C, box, createStyles } from '../theme';
+import { box, themedStyles } from '../theme';
 
 const TRACK = box(38);
 const KNOB = box(19);
@@ -17,6 +17,7 @@ export function Toggle({
   onChange: () => void;
   label: string;
 }) {
+  const { styles, C } = useStyles();
   const at = useRef(new Animated.Value(on ? 1 : 0)).current;
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function Toggle({
 
   const trackColor = at.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#3b3b41', C.green],
+    outputRange: [C.field2, C.green],
   });
   const translateX = at.interpolate({ inputRange: [0, 1], outputRange: [0, TRAVEL] });
 
@@ -48,7 +49,7 @@ export function Toggle({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({  }) => ({
   track: { width: 38, height: 23, borderRadius: 12 },
   knob: {
     position: 'absolute',
@@ -63,4 +64,4 @@ const styles = createStyles({
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
   },
-});
+}));

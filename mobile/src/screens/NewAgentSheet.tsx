@@ -3,7 +3,6 @@ import { useState } from 'react';
 import {
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -16,7 +15,7 @@ import { ModelList } from '../components/ModelList';
 import { COLORS, DEFAULT_MODEL, SHAPES } from '../data';
 import type { BloubShape } from '../bloubFrames';
 import { useStore } from '../store';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * The create sheet. A bot keeps its own memory, its own session, and the
@@ -32,6 +31,7 @@ export function NewAgentSheet({
   onClose: () => void;
   onCreated?: (threadId: string) => void;
 }) {
+  const { styles, INK, scheme } = useStyles();
   useTranslation();
   const { bots, prefs, connection, addBot, addGroup } = useStore();
   const online = connection.status === 'connected';
@@ -75,7 +75,7 @@ export function NewAgentSheet({
           onPress={() => (pickingModel ? setPickingModel(false) : onClose())}
           accessibilityLabel={pickingModel ? t("返回") : t("关闭")}
         >
-          {pickingModel ? <BackIcon size={15} color="#a8a8af" /> : <CloseIcon />}
+          {pickingModel ? <BackIcon size={15} color={INK.quiet} /> : <CloseIcon />}
         </Pressable>
       </View>
 
@@ -110,12 +110,12 @@ export function NewAgentSheet({
               <Bloub shape={shape} color={color} size={56} />
               <View style={styles.nameField}>
                 <Text style={styles.fieldLabel}>{tab === 'bot' ? t("机器人名称") : t("群组名称")}</Text>
-                <TextInput
+                <TextInput keyboardAppearance={scheme}
                   value={name}
                   onChangeText={setName}
                   style={styles.fieldValue}
                   placeholder={t("名称")}
-                  placeholderTextColor="#87878e"
+                  placeholderTextColor={INK.quiet}
                   autoCorrect={false}
                   returnKeyType="done"
                 />
@@ -229,62 +229,62 @@ export function NewAgentSheet({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   head: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, paddingTop: 12, paddingHorizontal: 16 },
   headCopy: { flex: 1 },
   title: { color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.48 },
-  sub: { marginTop: 3, color: '#8a8a91', fontSize: 11, lineHeight: 15 },
-  close: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#34343a' },
+  sub: { marginTop: 3, color: INK.quiet, fontSize: 11, lineHeight: 15 },
+  close: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: C.field2 },
 
   body: { flexShrink: 1 },
   picker: { flexShrink: 1 },
   bodyContent: { paddingTop: 12, paddingHorizontal: 16, paddingBottom: 8 },
 
-  segmented: { flexDirection: 'row', gap: 2, padding: 2, borderRadius: 9, backgroundColor: '#1b1b1d' },
+  segmented: { flexDirection: 'row', gap: 2, padding: 2, borderRadius: 9, backgroundColor: C.field },
   segment: { flex: 1, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 7 },
-  segmentActive: { backgroundColor: '#3a3a40' },
-  segmentText: { color: '#9a9aa1', fontSize: 12, fontWeight: '500' },
-  segmentTextActive: { color: '#f4f4f6' },
+  segmentActive: { backgroundColor: C.field2 },
+  segmentText: { color: INK.quiet, fontSize: 12, fontWeight: '500' },
+  segmentTextActive: { color: C.text },
 
   preview: { flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 14 },
   nameField: { flex: 1 },
-  fieldLabel: { color: '#87878e', fontSize: 9, fontWeight: '500' },
+  fieldLabel: { color: INK.quiet, fontSize: 9, fontWeight: '500' },
   fieldValue: {
     height: 34,
     marginTop: 3,
     paddingHorizontal: 10,
     paddingVertical: 0,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.11)',
+    borderColor: C.border,
     borderRadius: 9,
     backgroundColor: C.card,
     color: C.text,
     fontSize: 14,
     fontWeight: '500',
   },
-  hint: { marginTop: 7, color: '#7c7c83', fontSize: 10, lineHeight: 14 },
+  hint: { marginTop: 7, color: INK.quiet, fontSize: 10, lineHeight: 14 },
 
   section: { marginTop: 14 },
-  label: { marginBottom: 7, color: '#83838a', fontSize: 9, fontWeight: '600', letterSpacing: 0.9, textTransform: 'uppercase' },
+  label: { marginBottom: 7, color: INK.quiet, fontSize: 9, fontWeight: '600', letterSpacing: 0.9, textTransform: 'uppercase' },
   shapeGrid: { flexDirection: 'row', gap: 4 },
   shapeOption: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: C.card },
-  shapeActive: { backgroundColor: '#38383e', borderWidth: 1, borderColor: 'rgba(242,239,229,0.55)' },
+  shapeActive: { backgroundColor: C.field2, borderWidth: 1, borderColor: C.strongBorder },
   colorGrid: { flexDirection: 'row', gap: 8 },
-  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: C.border },
   dotActive: { borderWidth: 2, borderColor: C.paper },
 
   card: { overflow: 'hidden', borderRadius: 11, backgroundColor: C.card },
   row: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 7, paddingHorizontal: 10 },
   rowLine: { borderTopWidth: 1, borderTopColor: C.hairline },
   rowCopy: { flex: 1 },
-  rowName: { color: '#ededf0', fontSize: 12, fontWeight: '500' },
-  rowMeta: { color: '#808087', fontSize: 9 },
-  check: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  rowName: { color: C.text, fontSize: 12, fontWeight: '500' },
+  rowMeta: { color: INK.quiet, fontSize: 9 },
+  check: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: C.strongBorder },
   checkOn: { backgroundColor: C.paper, borderColor: C.paper },
-  checkMark: { color: '#1b1b19', fontSize: 11, fontWeight: '700' },
+  checkMark: { color: INK.onPaper, fontSize: 11, fontWeight: '700' },
 
   foot: { paddingTop: 12, paddingHorizontal: 16, paddingBottom: 10 },
   primary: { height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: C.paper },
   primaryOff: { opacity: 0.4 },
-  primaryText: { color: '#1b1b19', fontSize: 14, fontWeight: '600' },
-});
+  primaryText: { color: INK.onPaper, fontSize: 14, fontWeight: '600' },
+}));

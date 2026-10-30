@@ -1,15 +1,16 @@
 import { t, useTranslation } from "../i18n";
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { Page } from '../components/Page';
 import { Card, Hint, Row, SectionLabel, Segmented } from '../components/UI';
 import { useStore } from '../store';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * Where a dictation becomes words. Both answers are simulated: nothing is
  * recorded and no audio leaves the phone either way.
  */
 export function VoiceScreen() {
+  const { styles } = useStyles();
   useTranslation();
   const { prefs, setPref } = useStore();
 
@@ -55,9 +56,9 @@ export function VoiceScreen() {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   body: { paddingHorizontal: 12, paddingBottom: 24 },
   card: { padding: 12 },
   note: { marginTop: 10, color: INK.quiet, fontSize: 10, textAlign: 'center' },
   line: { height: 1, backgroundColor: C.hairline },
-});
+}));

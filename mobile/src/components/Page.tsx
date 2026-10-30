@@ -1,10 +1,10 @@
 import { t, useTranslation } from "../i18n";
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackIcon } from './Icons';
 import { useAppNavigation } from '../nav';
-import { C, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * A page pushed from the settings: the way back, its name, and nothing else
@@ -19,6 +19,7 @@ export function Page({
   children: ReactNode;
   right?: ReactNode;
 }) {
+  const { styles } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
@@ -41,7 +42,7 @@ export function Page({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   root: { flex: 1, backgroundColor: C.bg },
   nav: {
     height: 46,
@@ -55,4 +56,4 @@ const styles = createStyles({
   navIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   title: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.17 },
   right: { width: 30, alignItems: 'flex-end' },
-});
+}));

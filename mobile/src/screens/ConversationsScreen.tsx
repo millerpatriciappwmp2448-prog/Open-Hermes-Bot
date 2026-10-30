@@ -1,6 +1,6 @@
 import { t, useTranslation } from "../i18n";
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub, BloubGroup } from '../components/Bloub';
 import { PlusIcon, SearchIcon, SettingsIcon } from '../components/Icons';
@@ -12,7 +12,7 @@ import { NewAgentSheet } from './NewAgentSheet';
 import type { Thread } from '../data';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * What a person opens the app on: the bots they keep close, and the
@@ -20,6 +20,7 @@ import { C, INK, createStyles } from '../theme';
  * mark it read, or to let it go.
  */
 export function ConversationsScreen() {
+  const { styles, INK, scheme } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
@@ -115,7 +116,7 @@ export function ConversationsScreen() {
       <View style={styles.searchBox}>
         <View style={styles.search}>
           <SearchIcon />
-          <TextInput
+          <TextInput keyboardAppearance={scheme}
             value={query}
             onChangeText={setQuery}
             placeholder={t("搜索机器人")}
@@ -289,7 +290,7 @@ export function ConversationsScreen() {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   root: { flex: 1, backgroundColor: C.sidebar },
   head: { paddingHorizontal: 16, paddingBottom: 11 },
   titleRow: {
@@ -314,7 +315,7 @@ const styles = createStyles({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: C.line,
     borderRadius: 17,
     backgroundColor: C.field,
   },
@@ -339,17 +340,17 @@ const styles = createStyles({
     paddingBottom: 6,
   },
   sectionText: {
-    color: '#6d6d74',
+    color: INK.quiet,
     fontSize: 9,
     fontWeight: '600',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
-  sectionCount: { color: '#56565c', fontSize: 10 },
+  sectionCount: { color: INK.quiet, fontSize: 10 },
   pinnedGrid: { flexDirection: 'row', gap: 1 },
   pinnedItem: { flex: 1, alignItems: 'center', gap: 4, paddingTop: 4, paddingBottom: 2 },
   pressed: { opacity: 0.6 },
-  pinnedName: { color: '#b4b4bb', fontSize: 10, fontWeight: '500', textAlign: 'center' },
+  pinnedName: { color: INK.quiet, fontSize: 10, fontWeight: '500', textAlign: 'center' },
 
   recent: { flex: 1 },
   recentBody: { paddingHorizontal: 7, paddingTop: 12 },
@@ -377,11 +378,11 @@ const styles = createStyles({
   threadTop: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
   threadName: { flex: 1, color: INK.title, fontSize: 13.5, fontWeight: '600', letterSpacing: -0.19 },
   threadTime: { color: INK.meta, fontSize: 10 },
-  threadPreview: { color: '#87878e', fontSize: 11, lineHeight: 14.5 },
-  threadPreviewUnread: { color: '#a4a4ab' },
+  threadPreview: { color: INK.quiet, fontSize: 11, lineHeight: 14.5 },
+  threadPreviewUnread: { color: INK.quiet },
   none: { color: INK.quiet, fontSize: 12, padding: 12 },
 
   menuBody: { paddingTop: 14, paddingHorizontal: 12 },
   menuCard: { borderRadius: 13, backgroundColor: C.cardRaised, overflow: 'hidden' },
   menuLine: { height: 1, backgroundColor: C.hairline },
-});
+}));

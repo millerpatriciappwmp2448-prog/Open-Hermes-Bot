@@ -1,6 +1,6 @@
 import { memo, useEffect, useId, useRef } from 'react';
 import { useIsFocused } from '@react-navigation/native';
-import { createStyles } from '../theme';
+import { themedStyles } from '../theme';
 import { Animated, Easing, Platform, Text, View } from 'react-native';
 import { useAvatarMotion } from './AvatarMotion';
 import Svg, { Defs, G, Mask, Path, Rect } from 'react-native-svg';
@@ -121,6 +121,7 @@ type GroupProps = {
 };
 
 export function BloubGroup({ members, size = 40, active = false }: GroupProps) {
+  const { styles, INK } = useStyles();
   const visible = members.slice(0, 3);
   const extra = members.length - visible.length;
   const px = box(size);
@@ -160,7 +161,7 @@ export function BloubGroup({ members, size = 40, active = false }: GroupProps) {
             },
           ]}
         >
-          <Text style={{ fontSize: Math.max(10, Math.round(px * 0.3 * 0.62)), color: '#1b1b19' }}>
+          <Text style={{ fontSize: Math.max(10, Math.round(px * 0.3 * 0.62)), color: INK.onPaper }}>
             +{extra}
           </Text>
         </View>
@@ -169,7 +170,7 @@ export function BloubGroup({ members, size = 40, active = false }: GroupProps) {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   groupItem: { position: 'absolute' },
   more: {
     position: 'absolute',
@@ -179,7 +180,7 @@ const styles = createStyles({
     justifyContent: 'center',
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: '#19191b',
-    backgroundColor: '#f2efe5',
+    borderColor: C.sidebar,
+    backgroundColor: C.paper,
   },
-});
+}));

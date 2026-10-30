@@ -5,7 +5,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
   type ScrollViewInstance,
@@ -23,7 +22,7 @@ import { MessageSheet } from './MessageSheet';
 import { CHAT_EVENTS, type Bot, type Message } from '../data';
 import { useStore } from '../store';
 import type { RootStackParamList } from '../nav';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -33,6 +32,7 @@ function escapeRegExp(value: string): string {
 
 /** The @ that names a bot of the round, in the bubble's own colour. */
 function MessageText({ text, users, style }: { text: string; users: Bot[]; style: object }) {
+  const { styles } = useStyles();
   const names = users.map((bot) => bot.name).sort((a, b) => b.length - a.length);
   if (names.length === 0 || !text.includes('@')) {
     return <Text style={style}>{text}</Text>;
@@ -55,6 +55,7 @@ function MessageText({ text, users, style }: { text: string; users: Bot[]; style
 }
 
 export function ChatScreen({ route, navigation }: Props) {
+  const { styles, C, INK } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
   const {
@@ -145,9 +146,9 @@ export function ChatScreen({ route, navigation }: Props) {
             {message.kind === 'attachment' && message.attachment ? (
               <View style={styles.attachment}>
                 {message.attachment.name.endsWith('.HEIC') || message.attachment.name.endsWith('.jpg') ? (
-                  <PhotoIcon color={mine ? '#4b4a45' : '#c9c9cf'} />
+                  <PhotoIcon color={mine ? INK.onPaperQuiet : C.text} />
                 ) : (
-                  <FileIcon color={mine ? '#4b4a45' : '#c9c9cf'} />
+                  <FileIcon color={mine ? INK.onPaperQuiet : C.text} />
                 )}
                 <View style={styles.attachmentCopy}>
                   <Text style={ink} numberOfLines={1}>
@@ -160,7 +161,7 @@ export function ChatScreen({ route, navigation }: Props) {
               </View>
             ) : message.kind === 'voice' ? (
               <View style={styles.voice}>
-                <MicIcon size={14} color={mine ? '#4b4a45' : '#c9c9cf'} />
+                <MicIcon size={14} color={mine ? INK.onPaperQuiet : C.text} />
                 <Text style={ink}>{t("语音消息")}</Text>
                 <Text style={[styles.voiceTime, mine ? styles.onPaperQuiet : null]}>
                   {message.duration ?? '0:07'}
@@ -295,7 +296,7 @@ export function ChatScreen({ route, navigation }: Props) {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   root: { flex: 1, backgroundColor: C.bg },
   missing: { color: INK.quiet, padding: 20, fontSize: 12 },
 
@@ -307,13 +308,13 @@ const styles = createStyles({
     paddingHorizontal: 9,
     borderBottomWidth: 1,
     borderBottomColor: C.divider,
-    backgroundColor: 'rgba(29,29,31,0.98)',
+    backgroundColor: C.bg,
   },
   navIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   chatId: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   chatTitles: { flex: 1, gap: 1 },
   chatName: { color: C.text, fontSize: 14.5, fontWeight: '600', letterSpacing: -0.23 },
-  chatSub: { color: '#83838a', fontSize: 10 },
+  chatSub: { color: INK.quiet, fontSize: 10 },
 
   body: { flex: 1 },
   bodyContent: { paddingHorizontal: 13, paddingTop: 13, paddingBottom: 2 },
@@ -333,18 +334,18 @@ const styles = createStyles({
   bubbleBot: { backgroundColor: C.bubble },
   bubbleUser: { backgroundColor: C.paper },
   bubbleGroup: { maxWidth: '100%' },
-  bubbleBotText: { color: '#f1f1f3', fontSize: 13, lineHeight: 19.4 },
+  bubbleBotText: { color: C.text, fontSize: 13, lineHeight: 19.4 },
   bubbleUserText: { color: INK.onPaper, fontSize: 13, lineHeight: 19.4 },
-  mention: { backgroundColor: 'rgba(28,27,25,0.09)', borderRadius: 4, fontWeight: '500' },
+  mention: { backgroundColor: C.mention, borderRadius: 4, fontWeight: '500' },
 
   attachment: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 150 },
   attachmentCopy: { flexShrink: 1 },
-  attachmentSize: { color: '#a9a9b0', fontSize: 9, marginTop: 1 },
-  onPaperQuiet: { color: '#6f6e66' },
+  attachmentSize: { color: INK.quiet, fontSize: 9, marginTop: 1 },
+  onPaperQuiet: { color: INK.onPaperQuiet },
   voice: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 130 },
-  voiceTime: { color: '#a9a9b0', fontSize: 10, fontVariant: ['tabular-nums'] },
+  voiceTime: { color: INK.quiet, fontSize: 10, fontVariant: ['tabular-nums'] },
 
-  author: { marginLeft: 3, marginBottom: 3, color: '#98989f', fontSize: 10, fontWeight: '600' },
+  author: { marginLeft: 3, marginBottom: 3, color: INK.quiet, fontSize: 10, fontWeight: '600' },
   tapback: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -353,13 +354,13 @@ const styles = createStyles({
     marginTop: 4,
     paddingHorizontal: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.11)',
+    borderColor: C.border,
     borderRadius: 11,
     backgroundColor: C.bean,
   },
   tapbackEmoji: { fontSize: 10 },
-  tapbackCount: { color: '#a9a9b0', fontSize: 9 },
+  tapbackCount: { color: INK.quiet, fontSize: 9 },
 
   typing: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
-  typingLabel: { color: '#8d8d94', fontSize: 10 },
-});
+  typingLabel: { color: INK.quiet, fontSize: 10 },
+}));

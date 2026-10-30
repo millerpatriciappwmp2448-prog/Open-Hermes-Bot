@@ -70,7 +70,13 @@ python3 -m hermes_bridge pair
 - 配对码：上一步生成的码。
 - 点击 **配对本机 / Pair this phone**。
 
-配对后读取真实 Hermes 机器人及会话。手机仅保存桥接地址、设备令牌和界面语言。没有配对时显示“尚未连接服务器”，会话为演示数据。无需拥有 Mac，Mac 只用于 GitHub Actions 云端编译。
+配对后读取真实 Hermes 机器人及会话。手机仅保存桥接地址、设备令牌、界面语言和外观选择。没有配对时显示“尚未连接服务器”，会话为演示数据。无需拥有 Mac，Mac 只用于 GitHub Actions 云端编译。
+
+## 外观主题
+
+打开 **设置 → 外观**，可选择 **象牙金 / 白天 / 夜间 / 跟随系统**。象牙金使用暖象牙白、香槟金和柔和卡片。首次安装默认跟随 iPhone 外观；手动选择会保存在 iOS 钥匙串，重启后恢复。切换时不重置聊天、输入草稿或服务器模型选择。聊天页、模型页、输入框、弹窗及状态栏同步适配。
+
+头像在空闲时轻轻浮动，机器人回复时动作加快。切换到后台、离开页面或开启系统“减弱动态效果”时停止动画。
 
 ## 手机选择机器人的模型
 
@@ -96,6 +102,7 @@ cd mobile
 npx tsc --noEmit
 node scripts/test-localization.cjs
 node scripts/test-server-models.cjs
+node scripts/test-appearance.cjs
 python scripts/verify-ios-ipa.py artifacts/Hermes-Bot-iOS17-ZH-EN-TrollStore.ipa
 ```
 

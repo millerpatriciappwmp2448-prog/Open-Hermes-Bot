@@ -4,6 +4,8 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { useAppearance } from './appearance';
+import type { ThemeName } from './appearance';
 
 
 /**
@@ -12,7 +14,7 @@ import {
  * never invents a colour.
  */
 
-export const C = {
+const darkColors = {
   bg: '#1d1d1f',
   sidebar: '#19191b',
   divider: 'rgba(255,255,255,0.07)',
@@ -25,7 +27,7 @@ export const C = {
   paper: '#f2efe5',
   text: '#f3f3f5',
   text2: '#9a9aa1',
-  text3: '#6f6f76',
+  text3: '#96969e',
   green: '#3ecf8e',
   blue: '#2496e8',
   red: '#ff5f57',
@@ -35,19 +37,95 @@ export const C = {
   cardRaised: '#242427',
   line: 'rgba(255,255,255,0.075)',
   hairline: 'rgba(255,255,255,0.055)',
-} as const;
+  border: 'rgba(255,255,255,0.14)',
+  strongBorder: 'rgba(255,255,255,0.3)',
+  selected: 'rgba(62,207,142,0.08)',
+  selectedBorder: '#395c4b',
+  warning: '#e4aa68',
+  recording: '#2a2426',
+  recordingButton: '#3a3234',
+  recordingInk: '#f0b9b4',
+  mention: 'rgba(28,27,25,0.09)',
+  scrim: 'rgba(8,8,10,0.62)',
+  handle: '#66666e',
+};
 
 /** The grey a body of text is allowed to be, from title to hint. */
-export const INK = {
+const darkInk = {
   title: '#f0f0f2',
   body: '#f1f1f3',
-  quiet: '#87878e',
-  quiet2: '#8c8c93',
-  label: '#6f6f76',
-  faint: '#74747b',
-  meta: '#818188',
+  quiet: '#a1a1a9',
+  quiet2: '#a1a1a9',
+  label: '#a1a1a9',
+  faint: '#a1a1a9',
+  meta: '#a1a1a9',
   onPaper: '#1c1b19',
-} as const;
+  onPaperQuiet: '#59584f',
+};
+
+export type Palette = { C: typeof darkColors; INK: typeof darkInk };
+export const palettes: Record<ThemeName, Palette> = {
+  dark: { C: darkColors, INK: darkInk },
+  light: {
+    C: {
+      bg: '#f6f5f1', sidebar: '#f6f5f1', divider: 'rgba(32,34,31,0.09)',
+      hover: 'rgba(32,34,31,0.04)', active: '#e9e8e3', field: '#eae9e4',
+      field2: '#ddded7', bubble: '#e8e9e3', bean: '#e1e3dc', paper: '#263d32',
+      text: '#202620', text2: '#60685f', text3: '#6d756c',
+      green: '#22734e', blue: '#1769a0', red: '#b63832',
+      sheet: '#f6f5f1', sheet2: '#eeeee8', card: '#eeeee8', cardRaised: '#ffffff',
+      line: 'rgba(32,34,31,0.10)', hairline: 'rgba(32,34,31,0.08)',
+      border: 'rgba(32,34,31,0.18)', strongBorder: 'rgba(32,34,31,0.35)',
+      selected: '#e8f2eb', selectedBorder: '#91bba0', warning: '#925719',
+      recording: '#f7e9e7', recordingButton: '#eddbd7', recordingInk: '#9e3e35',
+      mention: 'rgba(255,255,255,0.13)', scrim: 'rgba(20,26,22,0.30)', handle: '#a3aaa1',
+    },
+    INK: {
+      title: '#202620', body: '#202620', quiet: '#60685f', quiet2: '#60685f',
+      label: '#60685f', faint: '#60685f', meta: '#60685f',
+      onPaper: '#faf9f4', onPaperQuiet: '#d1dbcf',
+    },
+  },
+  ivory: {
+    C: {
+      bg: '#faf7f0', sidebar: '#faf7f0', divider: 'rgba(71,52,25,0.10)',
+      hover: 'rgba(137,101,46,0.05)', active: '#efe6d6', field: '#f0eade',
+      field2: '#e8ddc9', bubble: '#eee7d9', bean: '#e9dfcd', paper: '#86612e',
+      text: '#352e24', text2: '#736653', text3: '#827158',
+      green: '#80602e', blue: '#956c33', red: '#a23d31',
+      sheet: '#faf7f0', sheet2: '#f3ecdf', card: '#f3ecdf', cardRaised: '#fffdf8',
+      line: 'rgba(111,82,39,0.13)', hairline: 'rgba(111,82,39,0.09)',
+      border: 'rgba(111,82,39,0.22)', strongBorder: 'rgba(111,82,39,0.40)',
+      selected: '#f3e8d2', selectedBorder: '#c6ab78', warning: '#86521d',
+      recording: '#f4e6dc', recordingButton: '#ead7c9', recordingInk: '#8c4932',
+      mention: 'rgba(255,255,255,0.13)', scrim: 'rgba(47,36,21,0.30)', handle: '#b5a589',
+    },
+    INK: {
+      title: '#352e24', body: '#352e24', quiet: '#736653', quiet2: '#736653',
+      label: '#736653', faint: '#736653', meta: '#736653',
+      onPaper: '#fffbf3', onPaperQuiet: '#f1e1c7',
+    },
+  },
+};
+
+export function useTheme() {
+  const appearance = useAppearance();
+  const themeName: ThemeName = appearance.preference === 'ivory' ? 'ivory' : appearance.scheme;
+  return { ...appearance, themeName, ...palettes[themeName] };
+}
+
+/** Precompute every palette once. Each consumer reacts without remounting. */
+export function themedStyles<T extends Record<string, ViewStyle | TextStyle | ImageStyle>>(
+  factory: (palette: Palette) => T,
+  scale = true,
+) {
+  const build = scale ? createStyles<T> : StyleSheet.create<T>;
+  const sheets = { light: build(factory(palettes.light)), dark: build(factory(palettes.dark)), ivory: build(factory(palettes.ivory)) };
+  return function useStyles() {
+    const theme = useTheme();
+    return { ...theme, styles: sheets[theme.themeName] };
+  };
+}
 
 /** The ios system font: the mockup asks for -apple-system, and this is it. */
 export const FONT = {

@@ -1,6 +1,7 @@
 import {
   NavigationContainer,
   DarkTheme,
+  DefaultTheme,
   type Theme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -17,32 +18,28 @@ import { VoiceScreen } from './src/screens/VoiceScreen';
 import { UpdatesScreen } from './src/screens/UpdatesScreen';
 import { AppearanceScreen } from './src/screens/AppearanceScreen';
 import type { RootStackParamList } from './src/nav';
-import { C } from './src/theme';
+import { useMemo } from 'react';
+import { useTheme } from './src/theme';
+import { useInitializeAppearance } from './src/appearance';
 import { useInitializeLanguage } from './src/i18n';
 import { AvatarMotionProvider } from './src/components/AvatarMotion';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-/** The app is dark by construction: the system's light theme is not ours. */
-const theme: Theme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: C.bg,
-    card: C.bg,
-    text: C.text,
-    border: C.divider,
-    primary: C.paper,
-  },
-};
-
 export default function App() {
   useInitializeLanguage();
+  useInitializeAppearance();
+  const { C, scheme, ready } = useTheme();
+  const theme = useMemo<Theme>(() => {
+    const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+    return { ...base, colors: { ...base.colors, background: C.bg, card: C.bg, text: C.text, border: C.divider, primary: C.paper } };
+  }, [C, scheme]);
+  if (!ready) return null;
   return (
     <SafeAreaProvider>
       <StoreProvider>
         <AvatarMotionProvider>
-          <StatusBar style="light" />
+          <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
           <NavigationContainer theme={theme}>
             <Stack.Navigator
               screenOptions={{

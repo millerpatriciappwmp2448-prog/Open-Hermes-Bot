@@ -1,5 +1,15 @@
 // Interface copy only. Server messages and user input are never translation keys.
 export const english: Readonly<Record<string, string>> = {
+  "白天": "Light",
+  "夜间": "Dark",
+  "象牙金": "Ivory Gold",
+  "暖象牙白 · 香槟金": "Warm ivory, champagne gold",
+  "选择你喜欢的外观": "Make yourself at home",
+  "让每一次对话都看得舒服。": "A comfortable look for every conversation.",
+  "随 iPhone 外观自动切换": "Match your iPhone appearance",
+  "当前为{0}模式": "Currently using {0} mode",
+  "设置会保存在这台设备上，重新打开仍然生效。": "Your choice stays on this device, even after reopening the app.",
+  "无法保存外观设置，请重新选择一次。": "Could not save your appearance. Please select it again.",
   "请先连接服务器。": "Connect to your server first.",
   "连接已改变，请重新选择模型。": "The connection changed. Please select the model again.",
   "无法读取服务器模型。": "Could not read the server models.",

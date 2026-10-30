@@ -1,6 +1,6 @@
 import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Page } from '../components/Page';
 import { Bloub } from '../components/Bloub';
 import { Card, Field, Hint, PrimaryButton, Row, SectionLabel } from '../components/UI';
@@ -8,7 +8,7 @@ import { COLORS, SHAPES } from '../data';
 import type { BloubShape } from '../bloubFrames';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * The setup, walked by hand: pair the phone with the bridge, then make the
@@ -16,6 +16,7 @@ import { C, INK, createStyles } from '../theme';
  * bridge, it is the app's own, until the window closes.
  */
 export function SetupScreen() {
+  const { styles } = useStyles();
   useTranslation();
   const navigation = useAppNavigation();
   const { prefs, connection, addBot } = useStore();
@@ -143,13 +144,13 @@ export function SetupScreen() {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   progress: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingTop: 12 },
-  pip: { flex: 1, height: 3, borderRadius: 2, backgroundColor: '#333338' },
+  pip: { flex: 1, height: 3, borderRadius: 2, backgroundColor: C.field2 },
   pipOn: { backgroundColor: C.paper },
   body: { paddingHorizontal: 12, paddingTop: 14, paddingBottom: 24 },
   eyebrow: {
-    color: '#6f6f76',
+    color: INK.quiet,
     fontSize: 8,
     fontWeight: '600',
     letterSpacing: 1.04,
@@ -158,7 +159,7 @@ const styles = createStyles({
   title: { marginTop: 6, color: C.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.8 },
   lead: { marginTop: 4, color: INK.quiet, fontSize: 12 },
   card: { padding: 12 },
-  label: { marginTop: 10, marginBottom: 3, color: '#87878e', fontSize: 9, fontWeight: '500' },
+  label: { marginTop: 10, marginBottom: 3, color: INK.quiet, fontSize: 9, fontWeight: '500' },
   buttons: { marginTop: 16 },
   gap: { height: 8 },
 
@@ -173,9 +174,9 @@ const styles = createStyles({
     borderRadius: 9,
     backgroundColor: C.card,
   },
-  shapeOn: { backgroundColor: '#38383e', borderWidth: 1, borderColor: 'rgba(242,239,229,0.55)' },
+  shapeOn: { backgroundColor: C.field2, borderWidth: 1, borderColor: C.strongBorder },
   colors: { flexDirection: 'row', gap: 8, paddingHorizontal: 2 },
-  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: C.border },
   dotOn: { borderWidth: 2, borderColor: C.paper },
 
   done: { alignItems: 'center', justifyContent: 'center', flex: 1 },
@@ -189,4 +190,4 @@ const styles = createStyles({
     lineHeight: 17,
     textAlign: 'center',
   },
-});
+}));

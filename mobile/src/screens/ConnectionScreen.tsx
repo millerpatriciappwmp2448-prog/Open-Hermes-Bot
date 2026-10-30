@@ -5,7 +5,7 @@ import { Page } from '../components/Page';
 import { Card, Field, Hint, PrimaryButton, Row, SectionLabel } from '../components/UI';
 import { BridgeError } from '../api';
 import { useStore } from '../store';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * The door, with its address and its code.
@@ -16,6 +16,7 @@ import { C, INK, createStyles } from '../theme';
  * that hold one can be forgotten.
  */
 export function ConnectionScreen() {
+  const { styles, C } = useStyles();
   useTranslation();
   const { connection, connect, disconnect, devices, revokeDevice, refresh, prefs } = useStore();
   const [url, setUrl] = useState(connection.url);
@@ -77,7 +78,7 @@ export function ConnectionScreen() {
               <Row
                 name="Hermes"
                 value={connection.health?.hermes.ok ? t("正常响应") : t("无响应")}
-                valueColor={connection.health?.hermes.ok ? '#7fcfaa' : '#e09248'}
+                valueColor={connection.health?.hermes.ok ? C.green : C.warning}
                 chevron={false}
               />
               <View style={styles.line} />
@@ -184,18 +185,18 @@ export function ConnectionScreen() {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   body: { paddingHorizontal: 12, paddingBottom: 24 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 13, paddingHorizontal: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
   dotOff: { backgroundColor: INK.label },
-  dotBad: { backgroundColor: '#e09248' },
-  statusText: { flex: 1, color: '#a4a4ab', fontSize: 11 },
+  dotBad: { backgroundColor: C.warning },
+  statusText: { flex: 1, color: INK.quiet, fontSize: 11 },
   card: { padding: 12, gap: 2 },
   buttons: { marginTop: 16 },
   gap: { height: 8 },
   line: { height: 1, backgroundColor: C.hairline },
-  error: { marginTop: 10, color: '#e09248', fontSize: 11, lineHeight: 16 },
-  notice: { marginTop: 10, color: '#7fcfaa', fontSize: 11, lineHeight: 16 },
-  revoke: { color: '#e09248', fontSize: 11 },
-});
+  error: { marginTop: 10, color: C.warning, fontSize: 11, lineHeight: 16 },
+  notice: { marginTop: 10, color: C.green, fontSize: 11, lineHeight: 16 },
+  revoke: { color: C.warning, fontSize: 11 },
+}));

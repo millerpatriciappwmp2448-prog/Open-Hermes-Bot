@@ -1,8 +1,8 @@
 import { t, useTranslation } from "../i18n";
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { MODELS } from '../data';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 import { CheckIcon, SearchIcon } from './Icons';
 
 /**
@@ -16,6 +16,7 @@ export function ModelList({
   selected: string;
   onPick: (name: string) => void;
 }) {
+  const { styles, INK, scheme } = useStyles();
   const { language } = useTranslation();
   const [query, setQuery] = useState('');
 
@@ -33,11 +34,11 @@ export function ModelList({
     <View style={styles.root}>
       <View style={styles.search}>
         <SearchIcon color={INK.meta} />
-        <TextInput
+        <TextInput keyboardAppearance={scheme}
           value={query}
           onChangeText={setQuery}
           placeholder={t("搜索模型")}
-          placeholderTextColor="#82828a"
+          placeholderTextColor={INK.quiet}
           style={styles.input}
           autoCorrect={false}
         />
@@ -76,7 +77,7 @@ export function ModelList({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   root: { flex: 1, minHeight: 0 },
   search: {
     height: 33,
@@ -87,7 +88,7 @@ const styles = createStyles({
     marginHorizontal: 16,
     paddingHorizontal: 10,
     borderRadius: 9,
-    backgroundColor: '#1b1b1d',
+    backgroundColor: C.field,
   },
   input: { flex: 1, color: C.text, fontSize: 12, padding: 0 },
   body: { paddingTop: 6, paddingHorizontal: 10, paddingBottom: 18 },
@@ -114,25 +115,25 @@ const styles = createStyles({
     width: 25,
     height: 25,
     borderRadius: 7,
-    backgroundColor: '#323237',
-    color: '#b9b9c0',
+    backgroundColor: C.field2,
+    color: INK.quiet,
     fontSize: 10,
     fontWeight: '600',
     textAlign: 'center',
     lineHeight: 25,
   },
-  markActive: { backgroundColor: '#3d3d44', color: C.text },
-  name: { color: '#e8e8ec', fontSize: 13, fontWeight: '500', letterSpacing: -0.1 },
+  markActive: { backgroundColor: C.field2, color: C.text },
+  name: { color: C.text, fontSize: 13, fontWeight: '500', letterSpacing: -0.1 },
   tag: {
     marginLeft: 5,
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    color: '#9d9da4',
+    backgroundColor: C.line,
+    color: INK.quiet,
     fontSize: 8,
     textTransform: 'uppercase',
   },
-  meta: { marginLeft: 'auto', color: '#85858c', fontSize: 9 },
+  meta: { marginLeft: 'auto', color: INK.quiet, fontSize: 9 },
   empty: { color: INK.quiet, fontSize: 12, padding: 12 },
-});
+}));

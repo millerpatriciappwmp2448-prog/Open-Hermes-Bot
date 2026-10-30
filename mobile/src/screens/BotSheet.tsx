@@ -1,13 +1,13 @@
 import { t, useTranslation } from "../i18n";
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
 import { Bloub } from '../components/Bloub';
 import { ConfirmBlock, PrimaryButton, Field, SectionLabel, SheetHeader } from '../components/UI';
 import { COLORS, SHAPES } from '../data';
 import type { BloubShape } from '../bloubFrames';
 import { useStore } from '../store';
-import { C, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /**
  * One bot, as the host keeps it: a name, a shape, a colour — and the two
@@ -26,6 +26,7 @@ export function BotSheet({
   onOpen: (threadId: string) => void;
   onDeleted: () => void;
 }) {
+  const { styles } = useStyles();
   useTranslation();
   const { botById, threads, updateBot, removeBot } = useStore();
   const bot = botId ? botById(botId) : undefined;
@@ -130,7 +131,7 @@ export function BotSheet({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   scroll: { flexShrink: 1 },
   body: { paddingTop: 6, paddingHorizontal: 12, paddingBottom: 18 },
   face: { alignItems: 'center', paddingVertical: 10 },
@@ -143,11 +144,11 @@ const styles = createStyles({
     borderRadius: 9,
     backgroundColor: C.card,
   },
-  shapeOn: { backgroundColor: '#38383e', borderWidth: 1, borderColor: 'rgba(242,239,229,0.55)' },
+  shapeOn: { backgroundColor: C.field2, borderWidth: 1, borderColor: C.strongBorder },
   colorGrid: { flexDirection: 'row', gap: 8, paddingHorizontal: 2 },
-  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: C.border },
   dotOn: { borderWidth: 2, borderColor: C.paper },
   buttons: { marginTop: 16 },
   gap: { height: 8 },
-  note: { marginTop: 12, color: '#7c7c83', fontSize: 10, lineHeight: 14 },
-});
+  note: { marginTop: 12, color: INK.quiet, fontSize: 10, lineHeight: 14 },
+}));

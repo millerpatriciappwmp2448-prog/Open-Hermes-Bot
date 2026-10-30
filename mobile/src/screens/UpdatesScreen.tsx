@@ -1,12 +1,12 @@
 import { t, useTranslation } from "../i18n";
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Page } from '../components/Page';
 import { Card, Hint, PrimaryButton, Row, SectionLabel } from '../components/UI';
 import { Toggle } from '../components/Toggle';
 import { HOST } from '../data';
 import { useStore } from '../store';
-import { C, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 type Check = 'idle' | 'checking' | 'current';
 
@@ -15,6 +15,7 @@ type Check = 'idle' | 'checking' | 'current';
  * app looks at nothing, and no build is downloaded.
  */
 export function UpdatesScreen() {
+  const { styles, C } = useStyles();
   useTranslation();
   const { prefs, setPref } = useStore();
   const [check, setCheck] = useState<Check>('idle');
@@ -40,7 +41,7 @@ export function UpdatesScreen() {
           <Row
             name={t("状态")}
             value={word}
-            valueColor={check === 'current' ? '#7fcfaa' : undefined}
+            valueColor={check === 'current' ? C.green : undefined}
             chevron={false}
           />
         </Card>
@@ -76,8 +77,8 @@ export function UpdatesScreen() {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C }) => ({
   body: { paddingHorizontal: 12, paddingBottom: 24 },
   line: { height: 1, backgroundColor: C.hairline },
   buttons: { marginTop: 16 },
-});
+}));

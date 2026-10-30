@@ -2,14 +2,13 @@ import { t, useTranslation } from "../i18n";
 import type { ReactNode } from 'react';
 import {
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
   View,
   type KeyboardTypeOptions,
 } from 'react-native';
 import { ChevronIcon, CloseIcon } from './Icons';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 
 /** The head of a sheet: what it is, what it says, and the way out. */
 export function SheetHeader({
@@ -23,6 +22,7 @@ export function SheetHeader({
   onClose: () => void;
   back?: () => void;
 }) {
+  const { styles, INK } = useStyles();
   useTranslation();
   return (
     <View style={styles.head}>
@@ -33,7 +33,7 @@ export function SheetHeader({
       <Pressable style={styles.close} onPress={back ?? onClose} accessibilityLabel={back ? t("返回") : t("关闭")}>
         {back ? (
           <View style={{ transform: [{ rotate: '180deg' }] }}>
-            <ChevronIcon size={14} color="#a8a8af" />
+            <ChevronIcon size={14} color={INK.quiet} />
           </View>
         ) : (
           <CloseIcon />
@@ -44,10 +44,12 @@ export function SheetHeader({
 }
 
 export function SectionLabel({ children }: { children: ReactNode }) {
+  const { styles } = useStyles();
   return <Text style={styles.section}>{children}</Text>;
 }
 
 export function Card({ children }: { children: ReactNode }) {
+  const { styles } = useStyles();
   return <View style={styles.card}>{children}</View>;
 }
 
@@ -73,6 +75,7 @@ export function Row({
   line,
   chevron = true,
 }: RowProps) {
+  const { styles } = useStyles();
   return (
     <Pressable
       style={[styles.row, line && styles.line]}
@@ -100,6 +103,7 @@ export function PrimaryButton({
   onPress: () => void;
   tone?: 'paper' | 'danger' | 'quiet';
 }) {
+  const { styles, C } = useStyles();
   return (
     <Pressable
       style={[
@@ -113,7 +117,7 @@ export function PrimaryButton({
       <Text
         style={[
           styles.buttonText,
-          tone === 'danger' && { color: '#ff6961' },
+          tone === 'danger' && { color: C.red },
           tone === 'quiet' && { color: C.text },
         ]}
       >
@@ -124,6 +128,7 @@ export function PrimaryButton({
 }
 
 export function Hint({ children }: { children: ReactNode }) {
+  const { styles } = useStyles();
   return <Text style={styles.hint}>{children}</Text>;
 }
 
@@ -145,6 +150,7 @@ export function ConfirmBlock({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { styles } = useStyles();
   useTranslation();
   return (
     <View style={styles.confirm}>
@@ -168,6 +174,7 @@ export function Segmented<T extends string>({
   value: T;
   onChange: (id: T) => void;
 }) {
+  const { styles } = useStyles();
   return (
     <View style={styles.segmented}>
       {options.map((option) => {
@@ -203,14 +210,15 @@ export function Field({
   keyboard?: KeyboardTypeOptions;
   secure?: boolean;
 }) {
+  const { styles, INK, scheme } = useStyles();
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
+      <TextInput keyboardAppearance={scheme}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
-        placeholderTextColor="#87878e"
+        placeholderTextColor={INK.quiet}
         keyboardType={keyboard}
         secureTextEntry={secure}
         style={styles.fieldValue}
@@ -221,7 +229,7 @@ export function Field({
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   head: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -232,14 +240,14 @@ const styles = createStyles({
   },
   headCopy: { flex: 1 },
   headTitle: { color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.48 },
-  headSub: { marginTop: 3, color: '#8a8a91', fontSize: 11, lineHeight: 15 },
+  headSub: { marginTop: 3, color: INK.quiet, fontSize: 11, lineHeight: 15 },
   close: {
     width: 26,
     height: 26,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 13,
-    backgroundColor: '#34343a',
+    backgroundColor: C.field2,
   },
 
   section: {
@@ -263,9 +271,9 @@ const styles = createStyles({
   },
   line: { borderTopWidth: 1, borderTopColor: C.hairline },
   rowCopy: { flex: 1 },
-  rowName: { color: '#e9e9ec', fontSize: 12, fontWeight: '500' },
-  rowMeta: { marginTop: 1, color: '#808087', fontSize: 9 },
-  rowValue: { color: '#82828a', fontSize: 11 },
+  rowName: { color: C.text, fontSize: 12, fontWeight: '500' },
+  rowMeta: { marginTop: 1, color: INK.quiet, fontSize: 9 },
+  rowValue: { color: INK.quiet, fontSize: 11 },
 
   button: {
     height: 44,
@@ -276,32 +284,32 @@ const styles = createStyles({
   },
   buttonDanger: { backgroundColor: C.card },
   buttonQuiet: { backgroundColor: C.card },
-  buttonText: { color: '#1b1b19', fontSize: 14, fontWeight: '600' },
+  buttonText: { color: INK.onPaper, fontSize: 14, fontWeight: '600' },
 
-  hint: { marginTop: 7, color: '#7c7c83', fontSize: 10, lineHeight: 14 },
+  hint: { marginTop: 7, color: INK.quiet, fontSize: 10, lineHeight: 14 },
 
   confirm: { paddingTop: 16, paddingHorizontal: 16, paddingBottom: 20 },
   confirmTitle: { color: C.text, fontSize: 16, fontWeight: '600', letterSpacing: -0.3 },
   confirmMessage: { marginTop: 6, color: INK.quiet, fontSize: 11, lineHeight: 16 },
   confirmButtons: { marginTop: 16 },
 
-  segmented: { flexDirection: 'row', gap: 2, padding: 2, borderRadius: 9, backgroundColor: '#1b1b1d' },
+  segmented: { flexDirection: 'row', gap: 2, padding: 2, borderRadius: 9, backgroundColor: C.field },
   segment: { flex: 1, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 7 },
-  segmentOn: { backgroundColor: '#3a3a40' },
-  segmentText: { color: '#9a9aa1', fontSize: 12, fontWeight: '500' },
-  segmentTextOn: { color: '#f4f4f6' },
+  segmentOn: { backgroundColor: C.field2 },
+  segmentText: { color: INK.quiet, fontSize: 12, fontWeight: '500' },
+  segmentTextOn: { color: C.text },
 
   field: { marginTop: 10 },
-  fieldLabel: { color: '#87878e', fontSize: 9, fontWeight: '500', marginBottom: 3 },
+  fieldLabel: { color: INK.quiet, fontSize: 9, fontWeight: '500', marginBottom: 3 },
   fieldValue: {
     height: 36,
     paddingHorizontal: 10,
     paddingVertical: 0,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.11)',
+    borderColor: C.border,
     borderRadius: 9,
     backgroundColor: C.card,
     color: C.text,
     fontSize: 13,
   },
-});
+}));

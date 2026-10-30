@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { t, useTranslation } from '../i18n';
 import { Page } from '../components/Page';
 import { Bloub } from '../components/Bloub';
@@ -8,9 +8,10 @@ import { ServerModelPicker } from '../components/ServerModelPicker';
 import { Hint, PrimaryButton } from '../components/UI';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
-import { C } from '../theme';
+import { themedStyles } from '../theme';
 
 export function ModelsScreen() {
+  const { styles } = useStyles();
   useTranslation();
   const { bots, modelPicks, modelOptions, connection } = useStore();
   const navigation = useAppNavigation();
@@ -45,7 +46,7 @@ export function ModelsScreen() {
     </Page>
   );
 }
-const styles = StyleSheet.create({
+const useStyles = themedStyles(({ C }) => ({
   body: { padding: 20, gap: 10 },
   title: { color: C.text, fontSize: 24, fontWeight: '600', marginTop: 8 },
   hint: { color: C.text2, fontSize: 13, lineHeight: 20 },
@@ -56,4 +57,4 @@ const styles = StyleSheet.create({
   name: { color: C.text, fontSize: 16, fontWeight: '500' },
   meta: { color: C.text2, fontSize: 12, lineHeight: 18 },
   pressed: { opacity: 0.7 },
-});
+}), false);

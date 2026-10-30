@@ -1,10 +1,10 @@
 import { t, useTranslation } from "../i18n";
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import type { Attachment, Bot, MessageKind, Thread } from '../data';
 import { ATTACHMENTS } from '../data';
 import { useStore } from '../store';
-import { C, INK, createStyles } from '../theme';
+import { themedStyles } from '../theme';
 import { ArrowUpIcon, AttachIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon } from './Icons';
 import { Sheet } from './Sheet';
 import { Bloub } from './Bloub';
@@ -38,6 +38,7 @@ type ComposerProps = {
  * voice note, and an @ opens the roster of the round.
  */
 export function Composer({ thread, bots, onSend }: ComposerProps) {
+  const { styles, C, INK, scheme } = useStyles();
   useTranslation();
   const { prefs } = useStore();
   const [draft, setDraft] = useState('');
@@ -89,7 +90,7 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
             onPress={() => setRecording(false)}
             accessibilityLabel={t("取消语音输入")}
           >
-            <CloseIcon size={15} color="#d8c9cb" />
+            <CloseIcon size={15} color={C.recordingInk} />
           </Pressable>
           <View style={styles.waveform}>
             {WAVE.map((height, index) => (
@@ -145,7 +146,7 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
           >
             <AttachIcon />
           </Pressable>
-          <TextInput
+          <TextInput keyboardAppearance={scheme}
             value={draft}
             onChangeText={setDraft}
             placeholder={t("给 Hermes 发消息")}
@@ -213,7 +214,7 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
   );
 }
 
-const styles = createStyles({
+const useStyles = themedStyles(({ C, INK }) => ({
   dock: { paddingTop: 6, paddingHorizontal: 9, paddingBottom: 10 },
   composer: {
     flexDirection: 'row',
@@ -222,7 +223,7 @@ const styles = createStyles({
     minHeight: 50,
     padding: 5,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: C.line,
     borderRadius: 25,
     backgroundColor: C.field,
   },
@@ -240,9 +241,9 @@ const styles = createStyles({
     zIndex: 40,
     padding: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: C.line,
     borderRadius: 13,
-    backgroundColor: '#26262a',
+    backgroundColor: C.field,
   },
   option: {
     flexDirection: 'row',
@@ -252,11 +253,11 @@ const styles = createStyles({
     paddingHorizontal: 7,
     borderRadius: 8,
   },
-  optionActive: { backgroundColor: '#34343a' },
-  optionName: { color: '#d4d4da', fontSize: 12 },
+  optionActive: { backgroundColor: C.field2 },
+  optionName: { color: C.text, fontSize: 12 },
   optionRole: {
     marginLeft: 'auto',
-    color: '#84848b',
+    color: INK.quiet,
     fontSize: 8,
     letterSpacing: 0.4,
     textTransform: 'uppercase',
@@ -283,10 +284,10 @@ const styles = createStyles({
     borderWidth: 1,
     borderColor: 'rgba(255,95,87,0.16)',
     borderRadius: 27,
-    backgroundColor: '#2a2426',
+    backgroundColor: C.recording,
   },
   round: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
-  cancel: { backgroundColor: '#3a3234' },
+  cancel: { backgroundColor: C.recordingButton },
   sendButton: { backgroundColor: C.paper },
   waveform: {
     flex: 1,
@@ -297,7 +298,7 @@ const styles = createStyles({
     height: 26,
     overflow: 'hidden',
   },
-  bar: { width: 2.5, borderRadius: 2, backgroundColor: '#f0b9b4' },
-  time: { color: '#e8d9db', fontSize: 9, fontVariant: ['tabular-nums'] },
+  bar: { width: 2.5, borderRadius: 2, backgroundColor: C.recordingInk },
+  time: { color: C.recordingInk, fontSize: 9, fontVariant: ['tabular-nums'] },
   note: { marginTop: 7, color: INK.label, fontSize: 9, textAlign: 'center' },
-});
+}));
