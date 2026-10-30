@@ -35,7 +35,7 @@ export function UpdatesScreen() {
         <Card>
           <Row name={t("版本")} value={HOST.version} chevron={false} />
           <View style={styles.line} />
-          <Row name={t("服务器")} value={`Hermes ${HOST.version}`} chevron={false} />
+          <Row name={t("服务器")} value={prefs.host || t('未连接')} chevron={false} />
           <View style={styles.line} />
           <Row
             name={t("状态")}

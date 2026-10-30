@@ -310,9 +310,9 @@ export const SHAPES: { id: BloubShape; label: string }[] = [
 
 /** What the host is: the line under every face, and the settings card. */
 export const HOST = {
-  name: 'mac-studio',
-  version: '1.1.0',
-  connection: 'SSH · 8642',
+  name: '',
+  version: '1.0.0',
+  connection: 'HTTPS',
 };
 
 /** The preferences the settings pages edit. Nothing is written to disk. */
@@ -331,11 +331,11 @@ export const PREFS: Prefs = {
   host: HOST.name,
   apiPort: '8642',
   localPort: '18742',
-  sshHost: 'mac-studio.local',
+  sshHost: '',
   defaultModel: DEFAULT_MODEL,
   voice: 'host',
   autoUpdate: true,
-  connected: true,
+  connected: false,
 };
 
 /** The canned things the attach sheet can hand over, since nothing is read. */

@@ -1,5 +1,6 @@
 import { t, useTranslation, localeTag } from './i18n';
 import { localizeDemo } from './i18n/demo';
+import { modelForTurn, readModelPick, withModelPick, type ModelRef } from './modelSelection';
 import {
   createContext,
   useCallback,
@@ -35,6 +36,7 @@ import {
   type BridgeClient,
   type BridgeDevice,
   type BridgeHealth,
+  type BridgeModels,
   type BridgeSession,
 } from './api';
 
@@ -64,7 +66,7 @@ export type Connection = {
   device: string;
   error?: string;
   health?: BridgeHealth;
-  /** The model the host is on, so a turn asks for one that exists. */
+  /** Primary profile's server default, for the connection summary only. */
   model: string;
   provider: string;
 };
@@ -93,6 +95,10 @@ type Store = {
   refresh: () => Promise<void>;
   devices: BridgeDevice[];
   revokeDevice: (id: string) => Promise<void>;
+  modelOptions: Record<string, BridgeModels>;
+  modelPicks: Record<string, ModelRef>;
+  refreshModels: (botId: string) => Promise<void>;
+  selectModel: (botId: string, model: ModelRef | null) => Promise<void>;
 
   botById: (id: string) => Bot | undefined;
   threadById: (id: string) => Thread | undefined;
@@ -254,6 +260,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     provider: '',
   });
   const [devices, setDevices] = useState<BridgeDevice[]>([]);
+  const [modelOptions, setModelOptions] = useState<Record<string, BridgeModels>>({});
+  const [modelPicks, setModelPicks] = useState<Record<string, ModelRef>>({});
+  const optionsRef = useRef(modelOptions);
+  const picksRef = useRef(modelPicks);
+  const profilesRef = useRef<Record<string, string>>({});
+  const modelWrites = useRef<Promise<unknown>>(Promise.resolve());
 
   const client = useRef<BridgeClient | null>(null);
   const threadsRef = useRef<Thread[]>(threads);
@@ -288,7 +300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback(async (url: string, token: string, device: string) => {
     const bridge = createBridgeClient(url, token);
-    const [rawBots, sessions] = await Promise.all([bridge.bots(), bridge.sessions()]);
+    const [rawBots, sessions, savedPrefs] = await Promise.all([bridge.bots(), bridge.sessions(), bridge.prefs()]);
 
     const newest = (botId: string): BridgeSession | undefined =>
       sessions
@@ -298,10 +310,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const loaded = await Promise.all(
       rawBots.map(async (raw) => {
         const latest = newest(raw.id);
-        const rows = latest
-          ? await bridge.messages(raw.id, latest.id, 80).catch(() => [])
-          : [];
-        return { raw, latest, rows };
+        const [rows, options] = await Promise.all([
+          latest ? bridge.messages(raw.id, latest.id, 80).catch(() => []) : Promise.resolve([]),
+          bridge.models(raw.id).catch(() => undefined),
+        ]);
+        const pick = readModelPick(savedPrefs, raw.profile || 'default');
+        return { raw, latest, rows, options, pick };
       }),
     );
 
@@ -319,7 +333,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           entry.latest ? t("{0} 条消息", {"0": entry.latest.messageCount}) : t("暂无会话"),
         ),
         time: entry.latest ? relativeTime(entry.latest.lastActive) : '',
-        threadModel: prefs.defaultModel,
+        threadModel: entry.pick?.model || entry.options?.current || '',
         sessionId: entry.latest?.id,
         unread: false,
       };
@@ -333,22 +347,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
     });
 
-    let model = '';
-    let provider = '';
-    try {
-      const options = await bridge.models(rawBots[0]?.id ?? 'default');
-      model = options.current;
-      provider = options.currentProvider;
-    } catch {
-      // A bot without a key still lists; its turns will say why they cannot run.
-    }
-
-    // The thread's subtitle is the model the host is on, not the sample's.
-    if (model) {
-      nextThreads.forEach((thread) => {
-        thread.threadModel = model;
-      });
-    }
+    const nextOptions: Record<string, BridgeModels> = {};
+    const nextPicks: Record<string, ModelRef> = {};
+    const profiles: Record<string, string> = {};
+    loaded.forEach(({ raw, options, pick }) => {
+      profiles[raw.id] = raw.profile || 'default';
+      if (options) nextOptions[raw.id] = options;
+      if (pick) nextPicks[raw.id] = pick;
+    });
+    const primary = loaded.find(entry => entry.raw.primary);
+    const model = primary?.options?.current || '';
+    const provider = primary?.options?.currentProvider || '';
 
     let health: BridgeHealth | undefined;
     try {
@@ -358,6 +367,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     client.current = bridge;
+    profilesRef.current = profiles;
+    optionsRef.current = nextOptions;
+    picksRef.current = nextPicks;
+    setModelOptions(nextOptions);
+    setModelPicks(nextPicks);
     setBots(nextBots);
     setThreads(nextThreads);
     setMessages(nextMessages);
@@ -372,7 +386,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch {
       setDevices([]);
     }
-  }, [prefs.defaultModel]);
+  }, []);
+
+  const refreshModels = useCallback(async (botId: string) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    const options = await active.models(botId);
+    if (client.current !== active) return;
+    optionsRef.current = { ...optionsRef.current, [botId]: options };
+    setModelOptions(optionsRef.current);
+    setThreads(current => current.map(thread => thread.botId === botId
+      ? { ...thread, threadModel: picksRef.current[botId]?.model || options.current } : thread));
+  }, []);
+
+  const selectModel = useCallback(async (botId: string, pick: ModelRef | null) => {
+    const active = client.current;
+    const profile = profilesRef.current[botId];
+    if (!active || profile === undefined) throw new BridgeError(t('请先连接服务器。'));
+    // Serialize edits, read a fresh snapshot and preserve every unrelated desktop preference.
+    const write = modelWrites.current.catch(() => undefined).then(async () => {
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重新选择模型。'));
+      const saved = await active.prefs();
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重新选择模型。'));
+      await active.savePrefs(withModelPick(saved, profile, pick));
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重新选择模型。'));
+      const next = { ...picksRef.current };
+      if (pick) next[botId] = pick;
+      else delete next[botId];
+      picksRef.current = next;
+      setModelPicks(next);
+      setThreads(current => current.map(thread => thread.botId === botId
+        ? { ...thread, threadModel: pick?.model || optionsRef.current[botId]?.current || '' } : thread));
+    });
+    modelWrites.current = write;
+    await write;
+  }, []);
 
   const refresh = useCallback(async () => {
     const active = client.current;
@@ -424,6 +472,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await writeSaved(null);
     setConnection({ status: 'offline', url: '', device: '', model: '', provider: '' });
     setDevices([]);
+    profilesRef.current = {};
+    optionsRef.current = {};
+    picksRef.current = {};
+    setModelOptions({});
+    setModelPicks({});
     setBots(demo.current.bots);
     setThreads(demo.current.threads);
     setMessages(demo.current.messages);
@@ -492,7 +545,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           name: label,
           preview: online ? t("正在服务器上创建…") : t("已创建演示机器人。"),
           time: t("刚刚"),
-          threadModel: model,
+          threadModel: online ? '' : model,
         },
         ...current,
       ]);
@@ -502,13 +555,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const active = client.current;
         void active
           .createBot({ name: slug(label), title: label, color, shape })
-          .then((created) => {
+          .then(async (created) => {
+            if (client.current !== active) return;
+            profilesRef.current[created.id] = created.profile || 'default';
+            const options = await active.models(created.id).catch(() => undefined);
+            if (client.current !== active) return;
+            if (options) {
+              optionsRef.current = { ...optionsRef.current, [created.id]: options };
+              setModelOptions(optionsRef.current);
+            }
             setBots((current) =>
               current.map((entry) => (entry.id === bot.id ? toBot(created) : entry)),
             );
             setThreads((current) =>
               current.map((entry) =>
-                entry.id === threadId ? { ...entry, preview: t("暂无会话") } : entry,
+                entry.id === threadId ? { ...entry, preview: t("暂无会话"), threadModel: options?.current || '' } : entry,
               ),
             );
           })
@@ -766,17 +827,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             sessionId = created.id;
             patchThread(threadId, { sessionId });
           }
-          // The host's own current model, split into the two halves a turn
-          // wants: its name alone resolved to the provider "auto", and the
-          // run came back marked failed after writing its answer.
-          const model = connectionRef.current.model;
-          const provider = connectionRef.current.provider;
+          // Resolve this profile, never the primary profile's model or a demo label.
+          // Refresh server defaults before a turn so external config changes take effect.
+          if (!picksRef.current[botId]) {
+            try {
+              const options = await active.models(botId);
+              if (client.current !== active) return;
+              optionsRef.current = { ...optionsRef.current, [botId]: options };
+              setModelOptions(optionsRef.current);
+              patchThread(threadId, { threadModel: optionsRef.current[botId].current });
+            } catch {
+              const next = { ...optionsRef.current };
+              delete next[botId];
+              optionsRef.current = next;
+              setModelOptions(next);
+              patchThread(threadId, { threadModel: '' });
+            }
+          }
           active.turn(
             {
               bot: botId,
               session: sessionId,
               message: body,
-              ...(model && provider ? { model, provider } : {}),
+              ...modelForTurn(picksRef.current[botId], optionsRef.current[botId]),
             },
             {
               onDelta: (delta) => {
@@ -836,6 +909,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refresh,
       devices,
       revokeDevice,
+      modelOptions,
+      modelPicks,
+      refreshModels,
+      selectModel,
       botById,
       threadById,
       addBot,
@@ -886,6 +963,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateBot,
       updateGroup,
       revokeDevice,
+      modelOptions,
+      modelPicks,
+      refreshModels,
+      selectModel,
     ],
   );
 

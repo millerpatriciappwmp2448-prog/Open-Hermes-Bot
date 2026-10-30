@@ -94,7 +94,7 @@ export function ConversationsScreen() {
           </View>
         </View>
         <Text style={styles.hostLine}>
-          {prefs.host} ·{' '}
+          {prefs.host || t('尚未连接服务器')} ·{' '}
           {connection.status === 'connected'
             ? t("已连接")
             : connection.status === 'connecting'

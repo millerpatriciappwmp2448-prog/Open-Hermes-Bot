@@ -1,9 +1,11 @@
-import { t, useTranslation } from "../i18n";
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
+import { t, useTranslation } from '../i18n';
 import { Page } from '../components/Page';
-import { ModelList } from '../components/ModelList';
-import { Card, Hint, Row, SectionLabel } from '../components/UI';
+import { ServerModelPicker } from '../components/ServerModelPicker';
+import { Card, Hint, PrimaryButton, Row, SectionLabel } from '../components/UI';
 import { useStore } from '../store';
+import { useAppNavigation } from '../nav';
 import { C, createStyles } from '../theme';
 
 /**
@@ -13,30 +15,43 @@ import { C, createStyles } from '../theme';
  */
 export function ModelsScreen() {
   useTranslation();
-  const { prefs, setPref } = useStore();
+  const { bots, modelPicks, modelOptions, connection } = useStore();
+  const navigation = useAppNavigation();
+  const [selected, setSelected] = useState('');
+  const bot = bots.find(b => b.id === selected);
 
   return (
     <Page title={t("模型")}>
-      <ScrollView contentContainerStyle={styles.body}>
-        <SectionLabel>{t("新会话")}</SectionLabel>
-        <Card>
-          <Row name={t("默认模型")} value={prefs.defaultModel} chevron={false} />
-        </Card>
-
-        <SectionLabel>{t("所有模型")}</SectionLabel>
-        <View style={styles.list}>
-          <ModelList selected={prefs.defaultModel} onPick={(picked) => setPref('defaultModel', picked)} />
+      {connection.status !== 'connected' ? (
+        <View style={styles.body}>
+          <Hint>{t('连接服务器后，可为每个机器人选择模型。手机不需要填写模型 API Key。')}</Hint>
+          <PrimaryButton label={t('连接服务器')} onPress={() => navigation.navigate('Connection')} />
         </View>
-
-        <Hint>
-          {t("当前模型列表为演示内容，选择仅影响应用内显示。实际回复使用服务器当前配置的模型。")}
-        </Hint>
-      </ScrollView>
+      ) : bot ? (
+        <View style={styles.picker}>
+          <View style={styles.body}>
+            <PrimaryButton label={t('选择其他机器人')} tone="quiet" onPress={() => setSelected('')} />
+            <Text style={styles.name}>{bot.name}</Text>
+          </View>
+          <ServerModelPicker key={bot.id} botId={bot.id} />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.body}>
+          <SectionLabel>{t('机器人的模型')}</SectionLabel>
+          <Card>{bots.map((b, index) => (
+            <Row key={b.id} name={b.name} line={index > 0}
+              meta={modelPicks[b.id]?.model || modelOptions[b.id]?.current || t('跟随服务器')}
+              onPress={() => setSelected(b.id)} />
+          ))}</Card>
+          <Hint>{t('每个机器人分别选择模型。模型服务地址和密钥均由服务器管理。')}</Hint>
+        </ScrollView>
+      )}
     </Page>
   );
 }
 
 const styles = createStyles({
-  body: { paddingHorizontal: 12, paddingBottom: 24 },
-  list: { height: 420, borderRadius: 13, backgroundColor: C.cardRaised, overflow: 'hidden', paddingTop: 2 },
+  body: { padding: 12 },
+  picker: { flex: 1, minHeight: 0 },
+  name: { color: C.text, fontSize: 16, marginTop: 12 },
 });

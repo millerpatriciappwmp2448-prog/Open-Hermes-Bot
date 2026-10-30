@@ -64,11 +64,24 @@ python3 -m hermes_bridge pair
 - 配对码：上一步生成的码。
 - 点击 **配对本机 / Pair this phone**。
 
-配对后读取真实 Hermes 机器人及会话。手机仅保存桥接地址和设备令牌。没配对时看到的 `mac-studio` 和机器人是示例，不是你的服务器。
+配对后读取真实 Hermes 机器人及会话。手机仅保存桥接地址、设备令牌和界面语言。没有配对时显示“尚未连接服务器”，会话为演示数据。无需拥有 Mac，Mac 只用于 GitHub Actions 云端编译。
+
+## 手机选择机器人的模型
+
+进入 **设置 → 模型 → 选择机器人**，或打开聊天后点机器人详情里的 **模型**。
+
+- 每个机器人分别读取服务器可用模型；点击后保存到服务器，从下一条消息开始使用。
+- **自定义模型**：如果你使用的 Base URL 没有提供模型列表，可以输入该 API 支持的准确模型 ID，继续使用该机器人已有的服务地址和密钥。
+- **跟随服务器**：清除该机器人的手动选择，使用其服务器默认模型。发送前会重新读取默认配置；无法读取时由 Hermes 决定实际模型。
+- 选择保存失败会显示错误，不会假装已切换。模型的展示名称与实际请求 ID 分开处理。
+
+服务器原有的 **模型 Base URL / API Key** 不用填到手机。`API_SERVER_KEY` 是桥接访问 Hermes 的另一个密钥，也留在服务器。手机只填写 **桥接 HTTPS 地址 + 一次性配对码**。
+
+新机器人会复制主配置的 `config.yaml` 和 `.env` 中的模型服务配置，创建后可以单独选模型。若你的 API Key 仅通过 systemd / Docker 的进程环境注入，需要确认新 profile 的 Hermes 进程也能读取它；不能假定它已经写进 `.env`。
 
 ## 当前原项目的功能限制
 
-文字会话已接入桥接服务。模型选择列表、群组、语音、附件和应用内更新仍有演示或未接入部分；实际聊天使用服务器当前模型。手机更新通过 TrollStore 导入新版 IPA。
+文字会话和每个机器人的模型选择已接入桥接服务。群组、语音、附件和应用内更新仍有演示或未接入部分。手机更新通过 TrollStore 导入新版 IPA。
 
 ## 验证命令
 
@@ -76,6 +89,7 @@ python3 -m hermes_bridge pair
 cd mobile
 npx tsc --noEmit
 node scripts/test-localization.cjs
+node scripts/test-server-models.cjs
 python scripts/verify-ios-ipa.py artifacts/Hermes-Bot-iOS17-ZH-EN-TrollStore.ipa
 ```
 

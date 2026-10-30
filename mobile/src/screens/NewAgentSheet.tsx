@@ -33,7 +33,8 @@ export function NewAgentSheet({
   onCreated?: (threadId: string) => void;
 }) {
   useTranslation();
-  const { bots, prefs, addBot, addGroup } = useStore();
+  const { bots, prefs, connection, addBot, addGroup } = useStore();
+  const online = connection.status === 'connected';
   const window = useWindowDimensions();
   const [tab, setTab] = useState<'bot' | 'group'>('bot');
   const [name, setName] = useState('Atlas');
@@ -122,7 +123,7 @@ export function NewAgentSheet({
             </View>
             <Text style={styles.hint}>
               {tab === 'bot'
-                ? t("将在 {0} 上创建“{1}”的 Hermes 配置。", {"0": prefs.host, "1": name.trim() || t("机器人")})
+                ? online ? t("将在 {0} 上创建“{1}”的 Hermes 配置。", {"0": prefs.host, "1": name.trim() || t("机器人")}) : t('当前未连接服务器，仅创建演示机器人。')
                 : t("每个成员独立回复，也可通过 @ 提及其他成员并交接任务。")}
             </Text>
 
@@ -198,12 +199,12 @@ export function NewAgentSheet({
             <View style={styles.section}>
               <Text style={styles.label}>{t("模型")}</Text>
               <View style={styles.card}>
-                <Pressable style={styles.row} onPress={() => setPickingModel(true)}>
+                <Pressable style={styles.row} disabled={online} onPress={() => setPickingModel(true)}>
                   <View style={styles.rowCopy}>
-                    <Text style={styles.rowName}>{model}</Text>
-                    <Text style={styles.rowMeta}>{t("Anthropic · 默认")}</Text>
+                    <Text style={styles.rowName}>{online ? t('继承服务器配置') : model}</Text>
+                    <Text style={styles.rowMeta}>{online ? t('创建后可在机器人详情中选择模型。') : t('演示模型')}</Text>
                   </View>
-                  <ChevronIcon />
+                  {!online ? <ChevronIcon /> : null}
                 </Pressable>
               </View>
             </View>

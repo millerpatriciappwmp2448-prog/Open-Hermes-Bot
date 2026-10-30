@@ -35,7 +35,7 @@ export function SettingsScreen() {
         <Pressable style={styles.connection} onPress={() => navigation.navigate('Connection')}>
           <Bloub shape="cercle" color="#8b5cf6" size={30} />
           <View style={styles.connectionCopy}>
-            <Text style={styles.connectionName}>{prefs.host}</Text>
+            <Text style={styles.connectionName}>{prefs.host || t('你的 Hermes 服务器')}</Text>
             <Text style={styles.connectionMeta}>
               {connection.status === 'connected'
                 ? t("已连接 · {0}", {"0": connection.device || t("本机")})
@@ -67,7 +67,7 @@ export function SettingsScreen() {
           />
           <Row
             name={t("模型")}
-            value={prefs.defaultModel}
+            value={connection.status === 'connected' ? t('按机器人选择') : t('请先连接')}
             line
             onPress={() => navigation.navigate('Models')}
           />
@@ -142,7 +142,7 @@ export function SettingsScreen() {
         <Text style={styles.groupLabel}>{t("关于")}</Text>
         <View style={styles.group}>
           <Row name={t("版本")} value={HOST.version} chevron={false} />
-          <Row name={t("服务器")} value={`Hermes ${HOST.version}`} line chevron={false} />
+          <Row name={t("服务器")} value={prefs.host || t('未连接')} line chevron={false} />
         </View>
 
         <Text style={styles.foot}>{t("Hermes Bot · 随时连接你的服务器")}</Text>

@@ -213,7 +213,7 @@ export function ChatScreen({ route, navigation }: Props) {
                 {thread.name}
               </Text>
               <Text style={styles.chatSub} numberOfLines={1}>
-                {isGroup ? thread.subtitle : t("Hermes 主机 · {0}", {"0": thread.threadModel})}
+                {isGroup ? thread.subtitle : t("Hermes 主机 · {0}", {"0": thread.threadModel || t('跟随服务器')})}
               </Text>
             </View>
           </Pressable>

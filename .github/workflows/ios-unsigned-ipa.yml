@@ -47,6 +47,9 @@ jobs:
       - name: Check interface translations
         run: node scripts/test-localization.cjs
 
+      - name: Check server model selection
+        run: node scripts/test-server-models.cjs
+
       - name: Check Xcode
         run: xcodebuild -version
 

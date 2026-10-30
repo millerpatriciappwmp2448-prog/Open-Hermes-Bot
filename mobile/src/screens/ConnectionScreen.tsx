@@ -174,10 +174,11 @@ export function ConnectionScreen() {
             <Card>
               <Row name={t("本机")} value={connection.device || t("尚未配对")} chevron={false} />
               <View style={styles.line} />
-              <Row name={t("主机")} value={prefs.host} chevron={false} />
+              <Row name={t("主机")} value={prefs.host || t('尚未连接服务器')} chevron={false} />
             </Card>
           </>
         )}
+        <Hint>{t('无需 Mac。桥接服务安装在运行 Hermes 的 Linux 服务器上。这里填写桥接服务地址，不是模型的 Base URL；配对码也不是模型的 API Key。')}</Hint>
       </ScrollView>
     </Page>
   );

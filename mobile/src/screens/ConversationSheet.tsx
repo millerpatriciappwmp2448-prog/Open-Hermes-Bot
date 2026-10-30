@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
 import { Bloub } from '../components/Bloub';
 import { ModelList } from '../components/ModelList';
+import { ServerModelPicker } from '../components/ServerModelPicker';
 import { Toggle } from '../components/Toggle';
 import { ConfirmBlock, PrimaryButton, Row, SectionLabel, SheetHeader } from '../components/UI';
 import { useStore } from '../store';
@@ -41,23 +42,23 @@ export function ConversationSheet({
         <>
           <SheetHeader
             title={t("模型")}
-            sub={t("仅用于当前会话，机器人的记忆保持不变。")}
+            sub={thread.id.startsWith('bot:') ? t('从下一条消息生效，机器人的记忆保持不变。') : t('演示模型')}
             onClose={onClose}
             back={() => setPicking(false)}
           />
-          <ModelList
+          {thread.id.startsWith('bot:') ? <ServerModelPicker botId={thread.botId} onPicked={() => setPicking(false)} /> : <ModelList
             selected={thread.threadModel}
             onPick={(picked) => {
               setModel(thread.id, picked);
               setPicking(false);
             }}
-          />
+          />}
         </>
       ) : (
         <>
           <SheetHeader
             title={thread.name}
-            sub={t("Hermes 主机 · {0}", {"0": thread.threadModel})}
+            sub={t("Hermes 主机 · {0}", {"0": thread.threadModel || t('跟随服务器')})}
             onClose={onClose}
           />
           {confirming ? (
@@ -93,7 +94,7 @@ export function ConversationSheet({
 
             <SectionLabel>{t("会话")}</SectionLabel>
             <View style={styles.card}>
-              <Row name={t("模型")} value={thread.threadModel} onPress={() => setPicking(true)} />
+              <Row name={t("模型")} value={thread.threadModel || t('跟随服务器')} onPress={() => setPicking(true)} />
               <View style={styles.line} />
               <Row name={t("会话数")} value={t("1 个会话")} chevron={false} />
               <View style={styles.line} />
