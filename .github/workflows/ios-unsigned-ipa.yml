@@ -19,7 +19,9 @@ concurrency:
 jobs:
   build-ios:
     name: Build TrollStore IPA
-    runs-on: macos-26
+    # The arm64 hosted pool can time out before acquiring a runner. Intel can
+    # cross-compile the same arm64 iPhone app with the pinned Xcode toolchain.
+    runs-on: macos-26-intel
     timeout-minutes: 60
     env:
       CI: '1'
