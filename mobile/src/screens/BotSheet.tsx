@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
@@ -25,6 +26,7 @@ export function BotSheet({
   onOpen: (threadId: string) => void;
   onDeleted: () => void;
 }) {
+  useTranslation();
   const { botById, threads, updateBot, removeBot } = useStore();
   const bot = botId ? botById(botId) : undefined;
   const [name, setName] = useState(bot?.name ?? '');
@@ -55,15 +57,15 @@ export function BotSheet({
     <Sheet visible={visible} onClose={onClose}>
       <SheetHeader
         title={bot.name}
-        sub={`${bot.role} · session ${bot.session}`}
+        sub={t("{0} · 会话 {1}", {"0": bot.role, "1": bot.session})}
         onClose={onClose}
       />
 
       {confirming ? (
         <ConfirmBlock
-          title={`Delete ${bot.name}?`}
-          message="Its conversation goes too. The other bots stay, and every session they hold stays with them."
-          confirmLabel="Delete this bot"
+          title={t("删除 {0}？", {"0": bot.name})}
+          message={t("该机器人的会话也将移除，其他机器人及其会话不受影响。")}
+          confirmLabel={t("删除此机器人")}
           onCancel={() => setConfirming(false)}
           onConfirm={() => {
             removeBot(bot.id);
@@ -77,39 +79,39 @@ export function BotSheet({
           <Bloub shape={shape} color={color} size={72} />
         </View>
 
-        <Field label="Name" value={name} onChange={setName} placeholder="Bot name" />
+        <Field label={t("名称")} value={name} onChange={setName} placeholder={t("机器人名称")} />
 
-        <SectionLabel>Shape</SectionLabel>
+        <SectionLabel>{t("形状")}</SectionLabel>
         <View style={styles.shapeGrid}>
           {SHAPES.map((option) => (
             <Pressable
               key={option.id}
               style={[styles.shapeOption, shape === option.id && styles.shapeOn]}
               onPress={() => setShape(option.id)}
-              accessibilityLabel={option.label}
+              accessibilityLabel={t(option.label)}
             >
               <Bloub shape={option.id} color="#9a9aa2" size={22} />
             </Pressable>
           ))}
         </View>
 
-        <SectionLabel>Colour</SectionLabel>
+        <SectionLabel>{t("颜色")}</SectionLabel>
         <View style={styles.colorGrid}>
           {COLORS.map((dot) => (
             <Pressable
               key={dot}
               onPress={() => setColor(dot)}
               style={[styles.dot, { backgroundColor: dot }, color === dot && styles.dotOn]}
-              accessibilityLabel={`Colour ${dot}`}
+              accessibilityLabel={t("颜色 {0}", {"0": dot})}
             />
           ))}
         </View>
 
         <View style={styles.buttons}>
-          <PrimaryButton label="Save the changes" onPress={save} />
+          <PrimaryButton label={t("保存更改")} onPress={save} />
           <View style={styles.gap} />
           <PrimaryButton
-            label="Open the conversation"
+            label={t("打开会话")}
             tone="quiet"
             onPress={() => {
               onClose();
@@ -117,10 +119,10 @@ export function BotSheet({
             }}
           />
           <View style={styles.gap} />
-          <PrimaryButton label="Delete this bot" tone="danger" onPress={() => setConfirming(true)} />
+          <PrimaryButton label={t("删除此机器人")} tone="danger" onPress={() => setConfirming(true)} />
         </View>
         <Text style={styles.note}>
-          The memory lives on the host; this sheet only changes the face the app draws.
+          {t("记忆保存在服务器上，此处仅修改机器人的名称和外观。")}
         </Text>
       </ScrollView>
       )}

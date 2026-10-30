@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Attachment, Bot, MessageKind, Thread } from '../data';
@@ -37,6 +38,7 @@ type ComposerProps = {
  * voice note, and an @ opens the roster of the round.
  */
 export function Composer({ thread, bots, onSend }: ComposerProps) {
+  useTranslation();
   const { prefs } = useStore();
   const [draft, setDraft] = useState('');
   const [recording, setRecording] = useState(false);
@@ -79,13 +81,13 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
       <View style={styles.dock}>
         <View style={styles.recordingMeta}>
           <View style={styles.liveDot} />
-          <Text style={styles.recordingLabel}>Listening</Text>
+          <Text style={styles.recordingLabel}>{t("正在聆听")}</Text>
         </View>
         <View style={styles.recorder}>
           <Pressable
             style={[styles.round, styles.cancel]}
             onPress={() => setRecording(false)}
-            accessibilityLabel="Cancel dictation"
+            accessibilityLabel={t("取消语音输入")}
           >
             <CloseIcon size={15} color="#d8c9cb" />
           </Pressable>
@@ -97,11 +99,11 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
           <Text style={styles.time}>{clock(seconds)}</Text>
           <Pressable
             style={[styles.round, styles.sendButton]}
-            accessibilityLabel="Send dictation"
+            accessibilityLabel={t("发送语音")}
             onPress={() => {
               const duration = clock(seconds);
               setRecording(false);
-              onSend({ text: `Voice note · ${duration}`, kind: 'voice', duration });
+              onSend({ text: t("语音消息 · {0}", {"0": duration}), kind: 'voice', duration });
             }}
           >
             <ArrowUpIcon size={17} />
@@ -109,8 +111,8 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
         </View>
         <Text style={styles.note}>
           {prefs.voice === 'host'
-            ? 'Transcribed by your Hermes host · nothing leaves the machine'
-            : 'Transcribed on this device · nothing leaves the phone'}
+            ? t("由 Hermes 主机转写 · 当前为演示功能")
+            : t("在本机转写 · 当前为演示功能")}
         </Text>
       </View>
     );
@@ -139,14 +141,14 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
           <Pressable
             style={[styles.button, styles.attach]}
             onPress={() => setAttaching(true)}
-            accessibilityLabel="Attach a file"
+            accessibilityLabel={t("添加附件")}
           >
             <AttachIcon />
           </Pressable>
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder="Message Hermes"
+            placeholder={t("给 Hermes 发消息")}
             placeholderTextColor={INK.meta}
             style={styles.input}
             returnKeyType="send"
@@ -157,7 +159,7 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
             <Pressable
               style={[styles.button, styles.cream]}
               onPress={send}
-              accessibilityLabel="Send"
+              accessibilityLabel={t("发送")}
             >
               <ArrowUpIcon />
             </Pressable>
@@ -168,7 +170,7 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
                 setSeconds(0);
                 setRecording(true);
               }}
-              accessibilityLabel="Dictate"
+              accessibilityLabel={t("语音输入")}
             >
               <MicIcon />
             </Pressable>
@@ -178,25 +180,25 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
 
       <Sheet visible={attaching} onClose={() => setAttaching(false)}>
         <SheetHeader
-          title="Attach"
-          sub="Nothing is read from the phone: these are the files of the demo."
+          title={t("添加附件")}
+          sub={t("这里展示的是演示文件，不会读取手机上的真实文件。")}
           onClose={() => setAttaching(false)}
         />
         <View style={styles.attachBody}>
           {ATTACHMENTS.map((item, index) => (
             <View key={item.kind} style={index > 0 ? styles.attachLine : undefined}>
               <Row
-                name={item.kind}
-                meta={`${item.name} · ${item.size}`}
+                name={t(item.kind)}
+                meta={`${t(item.name)} · ${item.size}`}
                 chevron={false}
                 onPress={() => {
                   setAttaching(false);
                   onSend({ text: item.name, kind: 'attachment', attachment: item });
                 }}
                 right={
-                  item.kind === 'Photo' ? (
+                  item.kind === "照片" ? (
                     <PhotoIcon />
-                  ) : item.kind === 'File' ? (
+                  ) : item.kind === "文件" ? (
                     <FileIcon />
                   ) : (
                     <CameraIcon />

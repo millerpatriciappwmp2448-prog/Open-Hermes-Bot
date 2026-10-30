@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Bloub } from './Bloub';
 import { PlusIcon } from './Icons';
@@ -14,20 +15,20 @@ export function FirstRunBody({
   onCreate: () => void;
   onSetup?: () => void;
 }) {
+  useTranslation();
   return (
     <View style={styles.body}>
       <Bloub shape="cercle" color="#8b5cf6" size={86} />
-      <Text style={styles.title}>No bots yet</Text>
+      <Text style={styles.title}>{t("暂无机器人")}</Text>
       <Text style={styles.copy}>
-        Your host is connected. Create the first bot and Hermes keeps its memory, its face, and
-        its sessions.
+        {t("已连接服务器。创建第一个机器人后，Hermes 会保存它的记忆、外观和会话。")}
       </Text>
       <Pressable style={styles.primary} onPress={onCreate}>
         <PlusIcon size={15} color="#1b1b19" />
-        <Text style={styles.primaryText}>Create a bot</Text>
+        <Text style={styles.primaryText}>{t("创建机器人")}</Text>
       </Pressable>
       <Pressable onPress={onSetup} accessibilityRole="button" disabled={!onSetup}>
-        <Text style={[styles.link, !onSetup && styles.linkOff]}>Run the setup again</Text>
+        <Text style={[styles.link, !onSetup && styles.linkOff]}>{t("重新运行初始设置")}</Text>
       </Pressable>
     </View>
   );

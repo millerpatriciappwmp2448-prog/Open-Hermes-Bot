@@ -1,3 +1,5 @@
+import { t, useTranslation, localeTag } from './i18n';
+import { localizeDemo } from './i18n/demo';
 import {
   createContext,
   useCallback,
@@ -136,14 +138,14 @@ function uniqueId(base: string, taken: string[]): string {
 function relativeTime(epoch: number): string {
   if (!epoch) return '';
   const seconds = Math.max(0, Math.floor(Date.now() / 1000) - epoch);
-  if (seconds < 60) return 'now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds < 60) return t("刚刚");
+  if (seconds < 3600) return t("{0}分钟前", {"0": Math.floor(seconds / 60)});
+  if (seconds < 86400) return t("{0}小时前", {"0": Math.floor(seconds / 3600)});
   const date = new Date(epoch * 1000);
   if (seconds < 7 * 86400) {
-    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+    return [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")][date.getDay()];
   }
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(localeTag(), { month: 'short', day: 'numeric' });
 }
 
 function hostOf(url: string): string {
@@ -201,7 +203,7 @@ function toBot(raw: BridgeBot): Bot {
     name: raw.name,
     shape: (raw.shape || 'cercle') as BloubShape,
     color: raw.color || '#8b5cf6',
-    role: raw.primary ? 'Default' : 'Hermes',
+    role: raw.primary ? t("默认") : 'Hermes',
     session: raw.profile === 'default' ? '' : raw.profile.slice(0, 4),
   };
 }
@@ -227,6 +229,7 @@ function previewOf(rows: Message[], fallback: string): string {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const { language } = useTranslation();
   const demo = useRef({
     bots: Object.values(BOTS),
     threads: THREADS,
@@ -270,10 +273,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPrefs((current) => ({ ...current, [key]: value }));
   }, []);
 
-  const botById = useCallback((id: string) => bots.find((bot) => bot.id === id), [bots]);
+  const display = useMemo(() => {
+    const view = { bots, threads, messages };
+    return client.current ? view : localizeDemo(view, demo.current, t);
+  }, [bots, threads, messages, language, connection.status]);
+
+  const botById = useCallback((id: string) => display.bots.find((bot) => bot.id === id), [display.bots]);
   const threadById = useCallback(
-    (id: string) => threads.find((thread) => thread.id === id),
-    [threads],
+    (id: string) => display.threads.find((thread) => thread.id === id),
+    [display.threads],
   );
 
   /* --------------------------------------------------------- the bridge */
@@ -308,7 +316,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         name: entry.raw.name,
         preview: previewOf(
           rows,
-          entry.latest ? `${entry.latest.messageCount} messages` : 'No conversation yet',
+          entry.latest ? t("{0} 条消息", {"0": entry.latest.messageCount}) : t("暂无会话"),
         ),
         time: entry.latest ? relativeTime(entry.latest.lastActive) : '',
         threadModel: prefs.defaultModel,
@@ -374,7 +382,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await adopt(current.url, active.token, current.device);
     } catch (error) {
       const message =
-        error instanceof BridgeError ? error.message : 'The bridge could not be read.';
+        error instanceof BridgeError ? error.message : t("无法从桥接服务读取数据。");
       setConnection((state) => ({ ...state, status: 'error', error: message }));
     }
   }, [adopt]);
@@ -382,18 +390,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(
     async (rawUrl: string, code: string) => {
       const url = normalizeUrl(rawUrl);
-      if (!url) throw new BridgeError('Give the bridge an address first.', 'no_url');
-      if (!code.trim()) throw new BridgeError('The pairing code is on the host.', 'no_code');
+      if (!url) throw new BridgeError(t("请先填写桥接服务的 HTTPS 地址。"), 'no_url');
+      if (!code.trim()) throw new BridgeError(t("请填写在服务器上生成的配对码。"), 'no_code');
       setConnection((state) => ({ ...state, status: 'connecting', url, error: undefined }));
 
       try {
         const health = await bridgeHealth(url);
         if (!health.ok) {
-          throw new BridgeError('The bridge is up but Hermes is not answering.', 'no_hermes');
+          throw new BridgeError(t("桥接服务已运行，但 Hermes 未响应。"), 'no_hermes');
         }
 
         const deviceName =
-          Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android' : 'This browser';
+          Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android' : t("当前浏览器");
         const paired = await bridgePair(url, code, deviceName);
 
         client.current = createBridgeClient(url, paired.token);
@@ -403,7 +411,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const message =
           error instanceof BridgeError
             ? error.message
-            : 'The bridge could not be reached.';
+            : t("无法连接桥接服务，请检查地址、Tailscale 和服务器状态。");
         setConnection((state) => ({ ...state, status: 'error', error: message, url }));
         throw error;
       }
@@ -449,7 +457,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           error:
             error instanceof BridgeError
               ? error.message
-              : 'The bridge is not answering. Is Tailscale on?',
+              : t("桥接服务未响应，请检查 Tailscale 是否已连接。"),
         });
       }
     })();
@@ -462,7 +470,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addBot = useCallback<Store['addBot']>(
     ({ name, shape, color, model }) => {
-      const label = name.trim() || 'New bot';
+      const label = name.trim() || t("新机器人");
       const online = connectionRef.current.status === 'connected';
       const taken = bots.map((bot) => bot.id);
       const id = uniqueId(slug(label), taken);
@@ -471,7 +479,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         name: label,
         shape,
         color,
-        role: online ? 'Hermes' : 'New',
+        role: online ? 'Hermes' : t("新建"),
         session: Math.random().toString(16).slice(2, 6),
       };
       setBots((current) => [...current, bot]);
@@ -482,8 +490,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           kind: 'bot',
           botId: bot.id,
           name: label,
-          preview: online ? 'Starting on the host…' : 'Created on mac-studio.',
-          time: 'now',
+          preview: online ? t("正在服务器上创建…") : t("已创建演示机器人。"),
+          time: t("刚刚"),
           threadModel: model,
         },
         ...current,
@@ -500,13 +508,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             );
             setThreads((current) =>
               current.map((entry) =>
-                entry.id === threadId ? { ...entry, preview: 'No conversation yet' } : entry,
+                entry.id === threadId ? { ...entry, preview: t("暂无会话") } : entry,
               ),
             );
           })
           .catch((error: unknown) => {
             const message =
-              error instanceof BridgeError ? error.message : 'The bot could not be made.';
+              error instanceof BridgeError ? error.message : t("无法创建机器人。");
             setThreads((current) =>
               current.map((entry) =>
                 entry.id === threadId ? { ...entry, preview: `⚠︎ ${message}` } : entry,
@@ -574,7 +582,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addGroup = useCallback<Store['addGroup']>(
     ({ name, members, model }) => {
-      const label = name.trim() || 'Crew';
+      const label = name.trim() || t("团队");
       const id = uniqueId(
         `${slug(label)}-group`,
         threads.map((thread) => thread.id),
@@ -588,12 +596,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           botId: members[0] ?? '',
           name: label,
           preview: online
-            ? 'A group is not wired to Hermes yet.'
-            : `${first?.name ?? 'A bot'} · Group created on mac-studio.`,
-          time: 'now',
+            ? t("群组功能尚未接入 Hermes。")
+            : t("{0} · 已创建演示群组。", {"0": first?.name ?? t("机器人")}),
+          time: t("刚刚"),
           threadModel: model,
           members,
-          subtitle: `${members.length} bots · one session each`,
+          subtitle: t("{0} 个机器人 · 各自独立会话", {"0": members.length}),
         },
         ...current,
       ]);
@@ -612,7 +620,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ...patch,
               subtitle:
                 patch.members && patch.members.length > 0
-                  ? `${patch.members.length} bots · one session each`
+                  ? t("{0} 个机器人 · 各自独立会话", {"0": patch.members.length})
                   : thread.subtitle,
             }
           : thread,
@@ -702,17 +710,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...current,
         [threadId]: [...(current[threadId] ?? []), userMessage],
       }));
-      patchThread(threadId, { preview: body, unread: false, time: 'now' });
+      patchThread(threadId, { preview: body, unread: false, time: t("刚刚") });
 
       if (!online || !thread || thread.kind !== 'bot') {
         if (online && thread?.kind === 'group') {
-          patchThread(threadId, { preview: 'A group is not wired to Hermes yet.' });
+          patchThread(threadId, { preview: t("群组功能尚未接入 Hermes。") });
         }
         return;
       }
       if (payload.kind === 'attachment' || payload.kind === 'voice') {
         // The bridge takes both; this app does not send the bytes yet.
-        patchThread(threadId, { preview: 'Files and dictation are not sent to the bridge yet.' });
+        patchThread(threadId, { preview: t("附件和语音暂不支持发送到桥接服务。") });
         return;
       }
 
@@ -737,7 +745,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         patchThread(threadId, {
           typing: false,
           preview: failed ? text : text.replace(/\s+/g, ' ').slice(0, 90),
-          time: 'now',
+          time: t("刚刚"),
         });
       };
 
@@ -786,7 +794,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           );
         } catch (error) {
           settle(
-            error instanceof BridgeError ? error.message : 'The bot could not be reached.',
+            error instanceof BridgeError ? error.message : t("无法连接机器人。"),
             true,
           );
         }
@@ -815,9 +823,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Store>(
     () => ({
-      bots,
-      threads,
-      messages,
+      bots: display.bots,
+      threads: display.threads,
+      messages: display.messages,
       toggles,
       toggle,
       prefs,
@@ -847,6 +855,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeMessage,
     }),
     [
+      display,
       addBot,
       addGroup,
       botById,

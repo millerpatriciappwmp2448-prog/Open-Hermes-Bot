@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +20,7 @@ import { C, INK, createStyles } from '../theme';
  * mark it read, or to let it go.
  */
 export function ConversationsScreen() {
+  useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
   const { bots, threads, botById, prefs, connection, togglePin, markRead, markUnread, removeThread } =
@@ -72,19 +74,19 @@ export function ConversationsScreen() {
       <View style={styles.head}>
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={1}>
-            Conversations
+            {t("会话")}
           </Text>
           <View style={styles.actions}>
             <Pressable
               style={styles.round}
-              accessibilityLabel="Settings"
+              accessibilityLabel={t("设置")}
               onPress={() => navigation.navigate('Settings')}
             >
               <SettingsIcon />
             </Pressable>
             <Pressable
               style={styles.round}
-              accessibilityLabel="New agent"
+              accessibilityLabel={t("新建智能体")}
               onPress={() => setCreating(true)}
             >
               <PlusIcon />
@@ -94,12 +96,12 @@ export function ConversationsScreen() {
         <Text style={styles.hostLine}>
           {prefs.host} ·{' '}
           {connection.status === 'connected'
-            ? 'connected'
+            ? t("已连接")
             : connection.status === 'connecting'
-              ? 'connecting'
+              ? t("正在连接")
               : connection.status === 'error'
-                ? 'bridge not answering'
-                : 'sample conversation'}
+                ? t("桥接服务无响应")
+                : t("演示会话")}
         </Text>
       </View>
 
@@ -116,7 +118,7 @@ export function ConversationsScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search bots"
+            placeholder={t("搜索机器人")}
             placeholderTextColor={INK.meta}
             style={styles.searchInput}
             autoCorrect={false}
@@ -128,7 +130,7 @@ export function ConversationsScreen() {
       {pinned.length > 0 ? (
         <View style={styles.pinned}>
           <View style={styles.sectionLabel}>
-            <Text style={styles.sectionText}>Pinned</Text>
+            <Text style={styles.sectionText}>{t("已置顶")}</Text>
             <Text style={styles.sectionCount}>{pinned.length}</Text>
           </View>
           <View style={styles.pinnedGrid}>
@@ -152,7 +154,7 @@ export function ConversationsScreen() {
 
       <ScrollView style={styles.recent} contentContainerStyle={styles.recentBody}>
         <View style={styles.sectionLabel}>
-          <Text style={styles.sectionText}>Recent</Text>
+          <Text style={styles.sectionText}>{t("最近")}</Text>
           <Text style={styles.sectionCount}>{recent.length}</Text>
         </View>
 
@@ -160,12 +162,12 @@ export function ConversationsScreen() {
           <SwipeRow
             key={thread.id}
             left={{
-              label: thread.pinned ? 'Unpin' : 'Pin',
+              label: thread.pinned ? t("取消置顶") : t("置顶"),
               glyph: '⌖',
               onPress: () => togglePin(thread.id),
             }}
             right={{
-              label: thread.unread ? 'Read' : 'Unread',
+              label: thread.unread ? t("已读") : t("未读"),
               glyph: thread.unread ? '✓' : '●',
               onPress: () => (thread.unread ? markRead(thread.id) : markUnread(thread.id)),
             }}
@@ -201,10 +203,10 @@ export function ConversationsScreen() {
         {recent.length === 0 ? (
           <Text style={styles.none}>
             {needle
-              ? 'No bot by that name.'
+              ? t("没有找到匹配的机器人。")
               : threads.length === 0
-                ? 'No conversation yet. The plus makes the first one.'
-                : 'Everything is pinned above.'}
+                ? t("暂无会话，点击加号创建第一个会话。")
+                : t("所有会话均已置顶。")}
           </Text>
         ) : null}
       </ScrollView>
@@ -229,9 +231,9 @@ export function ConversationsScreen() {
       >
         {menu && confirmDelete ? (
           <ConfirmBlock
-            title={`Delete ${menu.name}?`}
-            message="The conversation goes. The bot stays, with its memory and its session."
-            confirmLabel="Delete"
+            title={t("删除 {0}？", {"0": menu.name})}
+            message={t("将删除该会话，机器人及其记忆仍会保留。")}
+            confirmLabel={t("删除")}
             onCancel={() => setConfirmDelete(null)}
             onConfirm={() => {
               removeThread(menu.id);
@@ -243,13 +245,13 @@ export function ConversationsScreen() {
           <>
             <SheetHeader
               title={menu.name}
-              sub={menu.kind === 'group' ? menu.subtitle : 'One bot, one session'}
+              sub={menu.kind === 'group' ? menu.subtitle : t("一个机器人，一个会话")}
               onClose={() => setMenu(null)}
             />
             <View style={styles.menuBody}>
               <View style={styles.menuCard}>
                 <Row
-                  name={menu.pinned ? 'Unpin' : 'Pin to the top'}
+                  name={menu.pinned ? t("取消置顶") : t("置顶会话")}
                   chevron={false}
                   onPress={() => {
                     togglePin(menu.id);
@@ -258,7 +260,7 @@ export function ConversationsScreen() {
                 />
                 <View style={styles.menuLine} />
                 <Row
-                  name={menu.unread ? 'Mark as read' : 'Mark as unread'}
+                  name={menu.unread ? t("标为已读") : t("标为未读")}
                   chevron={false}
                   onPress={() => {
                     if (menu.unread) markRead(menu.id);
@@ -268,7 +270,7 @@ export function ConversationsScreen() {
                 />
                 <View style={styles.menuLine} />
                 <Row
-                  name="Open"
+                  name={t("打开")}
                   chevron={false}
                   onPress={() => {
                     const target = menu;
@@ -277,7 +279,7 @@ export function ConversationsScreen() {
                   }}
                 />
                 <View style={styles.menuLine} />
-                <Row name="Delete" chevron={false} onPress={() => setConfirmDelete(menu)} />
+                <Row name={t("删除")} chevron={false} onPress={() => setConfirmDelete(menu)} />
               </View>
             </View>
           </>

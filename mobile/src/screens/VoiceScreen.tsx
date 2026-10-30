@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Page } from '../components/Page';
 import { Card, Hint, Row, SectionLabel, Segmented } from '../components/UI';
@@ -9,45 +10,45 @@ import { C, INK, createStyles } from '../theme';
  * recorded and no audio leaves the phone either way.
  */
 export function VoiceScreen() {
+  useTranslation();
   const { prefs, setPref } = useStore();
 
   return (
-    <Page title="Voice">
+    <Page title={t("语音")}>
       <ScrollView contentContainerStyle={styles.body}>
-        <SectionLabel>Transcription</SectionLabel>
+        <SectionLabel>{t("语音转写")}</SectionLabel>
         <Card>
           <View style={styles.card}>
             <Segmented
               options={[
-                { id: 'host' as const, label: 'Hermes host' },
-                { id: 'device' as const, label: 'On this phone' },
+                { id: 'host' as const, label: t("Hermes 主机") },
+                { id: 'device' as const, label: t("在本机上") },
               ]}
               value={prefs.voice}
               onChange={(voice) => setPref('voice', voice)}
             />
             <Text style={styles.note}>
               {prefs.voice === 'host'
-                ? 'Transcribed by your Hermes host · nothing leaves the machine'
-                : 'Transcribed on this device · nothing leaves the phone'}
+                ? t("由 Hermes 主机转写 · 当前为演示功能")
+                : t("在本机转写 · 当前为演示功能")}
             </Text>
           </View>
         </Card>
 
-        <SectionLabel>What it means</SectionLabel>
+        <SectionLabel>{t("转写位置说明")}</SectionLabel>
         <Card>
-          <Row name="Host" meta="The machine running Hermes hears the note" chevron={false} />
+          <Row name={t("主机")} meta={t("由运行 Hermes 的服务器处理音频")} chevron={false} />
           <View style={styles.line} />
-          <Row name="Device" meta="The phone transcribes it, the host never sees audio" chevron={false} />
+          <Row name={t("设备")} meta={t("由手机转为文字，不向服务器发送音频")} chevron={false} />
         </Card>
 
         <Hint>
-          The dictation of this demo counts the seconds and posts a voice note; no microphone is
-          opened and no audio is requested.
+          {t("当前语音功能仅演示计时和语音消息，不会开启麦克风或录制音频。")}
         </Hint>
 
-        <SectionLabel>Language</SectionLabel>
+        <SectionLabel>{t("语言")}</SectionLabel>
         <Card>
-          <Row name="Follows the host" value="English" chevron={false} />
+          <Row name={t("跟随主机设置")} value={t("由主机决定")} chevron={false} />
         </Card>
       </ScrollView>
     </Page>

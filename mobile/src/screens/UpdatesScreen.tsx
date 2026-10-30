@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Page } from '../components/Page';
@@ -14,6 +15,7 @@ type Check = 'idle' | 'checking' | 'current';
  * app looks at nothing, and no build is downloaded.
  */
 export function UpdatesScreen() {
+  useTranslation();
   const { prefs, setPref } = useStore();
   const [check, setCheck] = useState<Check>('idle');
 
@@ -24,19 +26,19 @@ export function UpdatesScreen() {
   }, [check]);
 
   const word =
-    check === 'checking' ? 'Looking…' : check === 'current' ? 'Up to date' : 'Not checked yet';
+    check === 'checking' ? t("正在检查…") : check === 'current' ? t("已是最新版本") : t("尚未检查");
 
   return (
-    <Page title="Updates">
+    <Page title={t("更新")}>
       <ScrollView contentContainerStyle={styles.body}>
-        <SectionLabel>This app</SectionLabel>
+        <SectionLabel>{t("当前应用")}</SectionLabel>
         <Card>
-          <Row name="Version" value={HOST.version} chevron={false} />
+          <Row name={t("版本")} value={HOST.version} chevron={false} />
           <View style={styles.line} />
-          <Row name="Server" value={`Hermes ${HOST.version}`} chevron={false} />
+          <Row name={t("服务器")} value={`Hermes ${HOST.version}`} chevron={false} />
           <View style={styles.line} />
           <Row
-            name="State"
+            name={t("状态")}
             value={word}
             valueColor={check === 'current' ? '#7fcfaa' : undefined}
             chevron={false}
@@ -45,30 +47,29 @@ export function UpdatesScreen() {
 
         <View style={styles.buttons}>
           <PrimaryButton
-            label={check === 'checking' ? 'Checking…' : 'Check for updates'}
+            label={check === 'checking' ? t("正在检查…") : t("检查更新")}
             onPress={() => setCheck('checking')}
           />
         </View>
 
-        <SectionLabel>When there is one</SectionLabel>
+        <SectionLabel>{t("发现更新时")}</SectionLabel>
         <Card>
           <Row
-            name="Download in the background"
-            meta="The app takes over when it is closed"
+            name={t("后台下载")}
+            meta={t("关闭应用后应用更新")}
             chevron={false}
             right={
               <Toggle
                 on={prefs.autoUpdate}
                 onChange={() => setPref('autoUpdate', !prefs.autoUpdate)}
-                label="Automatic updates"
+                label={t("自动更新")}
               />
             }
           />
         </Card>
 
         <Hint>
-          Simulated: nothing is fetched and no version is installed. The desktop app is the one
-          that owns Squirrel and the release feed.
+          {t("此处为演示功能，不会实际下载或安装更新。手机端请通过巨魔导入新版 IPA 更新。")}
         </Hint>
       </ScrollView>
     </Page>

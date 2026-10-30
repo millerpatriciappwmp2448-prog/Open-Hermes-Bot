@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Page } from '../components/Page';
@@ -15,6 +16,7 @@ import { C, INK, createStyles } from '../theme';
  * bridge, it is the app's own, until the window closes.
  */
 export function SetupScreen() {
+  useTranslation();
   const navigation = useAppNavigation();
   const { prefs, connection, addBot } = useStore();
   const [step, setStep] = useState(0);
@@ -25,7 +27,7 @@ export function SetupScreen() {
   const ready = name.trim().length > 0;
 
   return (
-    <Page title="Setup">
+    <Page title={t("初始设置")}>
       <View style={styles.progress}>
         {[0, 1, 2].map((index) => (
           <View key={index} style={[styles.pip, index <= step && styles.pipOn]} />
@@ -34,16 +36,16 @@ export function SetupScreen() {
 
       {step === 0 ? (
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <Text style={styles.eyebrow}>The setup · 1 of 3</Text>
-          <Text style={styles.title}>Connect your Hermes.</Text>
-          <Text style={styles.lead}>The bridge on the host, and a code for this phone.</Text>
+          <Text style={styles.eyebrow}>{t("初始设置 · 第 1 步，共 3 步")}</Text>
+          <Text style={styles.title}>{t("连接你的 Hermes")}</Text>
+          <Text style={styles.lead}>{t("通过服务器上的桥接服务和配对码连接本机。")}</Text>
 
-          <SectionLabel>Connection</SectionLabel>
+          <SectionLabel>{t("连接")}</SectionLabel>
           <Card>
             <View style={styles.card}>
               <Row
-                name="Bridge"
-                value={connection.status === 'connected' ? prefs.host : 'Not connected'}
+                name={t("桥接服务")}
+                value={connection.status === 'connected' ? prefs.host : t("未连接")}
                 onPress={() => navigation.navigate('Connection')}
               />
             </View>
@@ -53,8 +55,8 @@ export function SetupScreen() {
             <PrimaryButton
               label={
                 connection.status === 'connected'
-                  ? 'Continue'
-                  : 'Open the connection page'
+                  ? t("继续")
+                  : t("打开连接设置")
               }
               onPress={() =>
                 connection.status === 'connected'
@@ -64,54 +66,53 @@ export function SetupScreen() {
             />
           </View>
           <Hint>
-            Nothing about the conversation is kept on the phone. The bridge hands out a token;
-            the Hermes keys stay on the host.
+            {t("会话内容保存在服务器上。手机仅持有桥接服务的设备令牌，Hermes 密钥始终留在服务器。")}
           </Hint>
         </ScrollView>
       ) : null}
 
       {step === 1 ? (
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <Text style={styles.eyebrow}>Your first bot · 2 of 3</Text>
-          <Text style={styles.title}>What is it called?</Text>
-          <Text style={styles.lead}>The name you will call it by.</Text>
+          <Text style={styles.eyebrow}>{t("第一个机器人 · 第 2 步，共 3 步")}</Text>
+          <Text style={styles.title}>{t("给它起个名字")}</Text>
+          <Text style={styles.lead}>{t("设置你希望使用的机器人名称。")}</Text>
 
           <View style={styles.preview}>
             <Bloub shape={shape} color={color} size={64} />
             <View style={styles.nameField}>
-              <Field label="Bot name" value={name} onChange={setName} placeholder="Atlas" />
+              <Field label={t("机器人名称")} value={name} onChange={setName} placeholder="Atlas" />
             </View>
           </View>
 
-          <SectionLabel>Shape</SectionLabel>
+          <SectionLabel>{t("形状")}</SectionLabel>
           <View style={styles.shapeGrid}>
             {SHAPES.map((option) => (
               <Pressable
                 key={option.id}
                 style={[styles.shape, shape === option.id && styles.shapeOn]}
                 onPress={() => setShape(option.id)}
-                accessibilityLabel={option.label}
+                accessibilityLabel={t(option.label)}
               >
                 <Bloub shape={option.id} color="#9a9aa2" size={22} />
               </Pressable>
             ))}
           </View>
 
-          <SectionLabel>Colour</SectionLabel>
+          <SectionLabel>{t("颜色")}</SectionLabel>
           <View style={styles.colors}>
             {COLORS.map((dot) => (
               <Pressable
                 key={dot}
                 onPress={() => setColor(dot)}
                 style={[styles.dot, { backgroundColor: dot }, color === dot && styles.dotOn]}
-                accessibilityLabel={`Colour ${dot}`}
+                accessibilityLabel={t("颜色 {0}", {"0": dot})}
               />
             ))}
           </View>
 
           <View style={styles.buttons}>
             <PrimaryButton
-              label={ready ? 'Create the bot' : 'Give it a name'}
+              label={ready ? t("创建机器人") : t("请先填写名称")}
               onPress={() => {
                 if (!ready) return;
                 addBot({ name, shape, color, model: prefs.defaultModel });
@@ -119,7 +120,7 @@ export function SetupScreen() {
               }}
             />
             <View style={styles.gap} />
-            <PrimaryButton label="Back" tone="quiet" onPress={() => setStep(0)} />
+            <PrimaryButton label={t("返回")} tone="quiet" onPress={() => setStep(0)} />
           </View>
         </ScrollView>
       ) : null}
@@ -127,15 +128,14 @@ export function SetupScreen() {
       {step === 2 ? (
         <View style={[styles.body, styles.done]}>
           <Bloub shape={shape} color={color} size={86} />
-          <Text style={styles.doneTitle}>All set.</Text>
+          <Text style={styles.doneTitle}>{t("设置完成")}</Text>
           <Text style={styles.doneCopy}>
-            {name || 'Your bot'} is on {prefs.host}. Hermes keeps its memory, its face, and its
-            sessions.
+            {name || t("你的机器人")} {t("已创建于")} {prefs.host}{t("。Hermes 会保存它的记忆、外观和会话。")}
           </Text>
           <View style={styles.buttons}>
-            <PrimaryButton label="Open the app" onPress={() => navigation.navigate('Chats')} />
+            <PrimaryButton label={t("开始使用")} onPress={() => navigation.navigate('Chats')} />
             <View style={styles.gap} />
-            <PrimaryButton label="Walk it again" tone="quiet" onPress={() => setStep(0)} />
+            <PrimaryButton label={t("重新设置")} tone="quiet" onPress={() => setStep(0)} />
           </View>
         </View>
       ) : null}

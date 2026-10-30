@@ -18,6 +18,7 @@ import { UpdatesScreen } from './src/screens/UpdatesScreen';
 import { AppearanceScreen } from './src/screens/AppearanceScreen';
 import type { RootStackParamList } from './src/nav';
 import { C } from './src/theme';
+import { useInitializeLanguage } from './src/i18n';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -35,6 +36,7 @@ const theme: Theme = {
 };
 
 export default function App() {
+  useInitializeLanguage();
   return (
     <SafeAreaProvider>
       <StoreProvider>

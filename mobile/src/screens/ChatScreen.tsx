@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -54,6 +55,7 @@ function MessageText({ text, users, style }: { text: string; users: Bot[]; style
 }
 
 export function ChatScreen({ route, navigation }: Props) {
+  useTranslation();
   const insets = useSafeAreaInsets();
   const {
     threads,
@@ -84,14 +86,14 @@ export function ChatScreen({ route, navigation }: Props) {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.nav}>
-          <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel="Back">
+          <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
             <BackIcon />
           </Pressable>
           <View style={styles.chatId}>
-            <Text style={styles.chatName}>This conversation is gone</Text>
+            <Text style={styles.chatName}>{t("此会话已不存在")}</Text>
           </View>
         </View>
-        <Text style={styles.missing}>It was deleted. The chat list has the rest.</Text>
+        <Text style={styles.missing}>{t("此会话已删除，可返回会话列表查看其他会话。")}</Text>
       </View>
     );
   }
@@ -138,7 +140,7 @@ export function ChatScreen({ route, navigation }: Props) {
               mine ? styles.bubbleUser : styles.bubbleBot,
               isGroup && styles.bubbleGroup,
             ]}
-            accessibilityHint="Long press for tapback, copy or delete"
+            accessibilityHint={t("长按可添加表情回应、复制或删除")}
           >
             {message.kind === 'attachment' && message.attachment ? (
               <View style={styles.attachment}>
@@ -159,7 +161,7 @@ export function ChatScreen({ route, navigation }: Props) {
             ) : message.kind === 'voice' ? (
               <View style={styles.voice}>
                 <MicIcon size={14} color={mine ? '#4b4a45' : '#c9c9cf'} />
-                <Text style={ink}>Voice note</Text>
+                <Text style={ink}>{t("语音消息")}</Text>
                 <Text style={[styles.voiceTime, mine ? styles.onPaperQuiet : null]}>
                   {message.duration ?? '0:07'}
                 </Text>
@@ -173,7 +175,7 @@ export function ChatScreen({ route, navigation }: Props) {
             <Pressable
               style={styles.tapback}
               onPress={() => setActive(message)}
-              accessibilityLabel="Change the tapback"
+              accessibilityLabel={t("更改表情回应")}
             >
               <Text style={styles.tapbackEmoji}>{message.reaction.emoji}</Text>
               <Text style={styles.tapbackCount}>{message.reaction.count}</Text>
@@ -191,7 +193,7 @@ export function ChatScreen({ route, navigation }: Props) {
     >
       <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.nav}>
-          <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel="Back">
+          <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
             <BackIcon />
           </Pressable>
 
@@ -199,7 +201,7 @@ export function ChatScreen({ route, navigation }: Props) {
             style={styles.chatId}
             onPress={() => (isGroup ? setDetailsOpen(true) : setBotOpen(true))}
             accessibilityRole="button"
-            accessibilityLabel={`Open ${thread.name}`}
+            accessibilityLabel={t("打开 {0}", {"0": thread.name})}
           >
             {isGroup ? (
               <BloubGroup members={faces} size={30} />
@@ -211,7 +213,7 @@ export function ChatScreen({ route, navigation }: Props) {
                 {thread.name}
               </Text>
               <Text style={styles.chatSub} numberOfLines={1}>
-                {isGroup ? thread.subtitle : `Hermes host · ${thread.threadModel}`}
+                {isGroup ? thread.subtitle : t("Hermes 主机 · {0}", {"0": thread.threadModel})}
               </Text>
             </View>
           </Pressable>
@@ -219,7 +221,7 @@ export function ChatScreen({ route, navigation }: Props) {
           <Pressable
             style={styles.navIcon}
             onPress={() => (isGroup ? setDetailsOpen(true) : setModelsOpen(true))}
-            accessibilityLabel={isGroup ? 'Group details' : 'Conversation details'}
+            accessibilityLabel={isGroup ? t("群组详情") : t("会话详情")}
           >
             <MoreIcon />
           </Pressable>
@@ -233,14 +235,14 @@ export function ChatScreen({ route, navigation }: Props) {
         >
           {meta ? (
             <>
-              <Text style={styles.event}>{meta.event}</Text>
-              <Text style={styles.time}>{meta.time}</Text>
+              <Text style={styles.event}>{t(meta.event)}</Text>
+              <Text style={styles.time}>{t(meta.time)}</Text>
             </>
           ) : null}
 
           {turns.length === 0 ? (
             <Text style={styles.empty}>
-              Nothing said yet. The turn is yours — the bot keeps its memory on the host.
+              {t("还没有消息，发送第一条消息开始聊天。机器人的记忆保存在服务器上。")}
             </Text>
           ) : null}
 
@@ -249,7 +251,7 @@ export function ChatScreen({ route, navigation }: Props) {
           {meta?.typing || thread.typing ? (
             <View style={styles.typing}>
               <Bloub shape={bot?.shape ?? 'capsule'} color={bot?.color ?? '#4f9d8f'} size={18} />
-              <Text style={styles.typingLabel}>{thread.name} is thinking</Text>
+              <Text style={styles.typingLabel}>{thread.name} {t("正在思考")}</Text>
               <TypingDots />
             </View>
           ) : null}

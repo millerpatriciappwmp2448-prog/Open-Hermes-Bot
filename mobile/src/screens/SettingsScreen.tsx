@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,12 +9,14 @@ import { HOST } from '../data';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
 import { C, INK, createStyles } from '../theme';
+import { Segmented } from '../components/UI';
 
 /**
  * Where the host, the conversation and the app are set. Every row opens the
  * page that holds it; the switches live in the store and take effect at once.
  */
 export function SettingsScreen() {
+  const { preference, setPreference, saveError } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
   const { toggles, toggle, prefs, connection } = useStore();
@@ -21,10 +24,10 @@ export function SettingsScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel="Back">
+        <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
           <BackIcon />
         </Pressable>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.title}>{t("设置")}</Text>
         <View style={{ width: 30 }} />
       </View>
 
@@ -35,12 +38,12 @@ export function SettingsScreen() {
             <Text style={styles.connectionName}>{prefs.host}</Text>
             <Text style={styles.connectionMeta}>
               {connection.status === 'connected'
-                ? `Connected · ${connection.device || 'this phone'}`
+                ? t("已连接 · {0}", {"0": connection.device || t("本机")})
                 : connection.status === 'connecting'
-                  ? 'Connecting…'
+                  ? t("正在连接…")
                   : connection.status === 'error'
-                    ? 'Not connected · the bridge refused'
-                    : 'Not connected · running the sample'}
+                    ? t("未连接 · 桥接服务拒绝连接")
+                    : t("未连接 · 当前为演示模式")}
             </Text>
           </View>
           <View style={styles.connectionState}>
@@ -50,7 +53,7 @@ export function SettingsScreen() {
                 connection.status !== 'connected' && styles.stateDotOff,
               ]}
             />
-            <Text style={styles.stateText}>Bridge</Text>
+            <Text style={styles.stateText}>{t("桥接服务")}</Text>
           </View>
           <ChevronIcon />
         </Pressable>
@@ -58,50 +61,65 @@ export function SettingsScreen() {
         <Text style={styles.groupLabel}>Hermes</Text>
         <View style={styles.group}>
           <Row
-            name="Connection"
-            value={connection.status === 'connected' ? 'Connected' : 'Not connected'}
+            name={t("连接")}
+            value={connection.status === 'connected' ? t("已连接") : t("未连接")}
             onPress={() => navigation.navigate('Connection')}
           />
           <Row
-            name="Models"
+            name={t("模型")}
             value={prefs.defaultModel}
             line
             onPress={() => navigation.navigate('Models')}
           />
           <Row
-            name="Voice"
-            value={prefs.voice === 'host' ? 'Host transcription' : 'On this phone'}
+            name={t("语音")}
+            value={prefs.voice === 'host' ? t("主机转写") : t("在本机上")}
             line
             onPress={() => navigation.navigate('Voice')}
           />
           <Row
-            name="Updates"
-            value={prefs.autoUpdate ? 'Automatic' : 'Manual'}
+            name={t("更新")}
+            value={prefs.autoUpdate ? t("自动") : t("手动")}
             valueColor="#7fcfaa"
             line
             onPress={() => navigation.navigate('Updates')}
           />
         </View>
 
-        <Text style={styles.groupLabel}>Conversation</Text>
+        <Text style={styles.groupLabel}>{t("会话")}</Text>
         <View style={styles.group}>
           <View style={styles.row}>
-            <Text style={styles.rowName}>Tapbacks</Text>
+            <Text style={styles.rowName}>{t("表情回应")}</Text>
             <View style={styles.spacer} />
-            <Toggle on={toggles.tapbacks} onChange={() => toggle('tapbacks')} label="Tapbacks" />
+            <Toggle on={toggles.tapbacks} onChange={() => toggle('tapbacks')} label={t("表情回应")} />
           </View>
           <View style={[styles.row, styles.line]}>
-            <Text style={styles.rowName}>Sounds</Text>
+            <Text style={styles.rowName}>{t("声音")}</Text>
             <View style={styles.spacer} />
-            <Toggle on={toggles.sounds} onChange={() => toggle('sounds')} label="Sounds" />
+            <Toggle on={toggles.sounds} onChange={() => toggle('sounds')} label={t("声音")} />
           </View>
         </View>
 
-        <Text style={styles.groupLabel}>App</Text>
+        <Text style={styles.groupLabel}>语言 / Language</Text>
+        <View style={[styles.group, { padding: 10 }]}>
+          <Segmented
+            options={[
+              { id: 'system', label: t('跟随系统') },
+              { id: 'zh', label: '简体中文' },
+              { id: 'en', label: 'English' },
+            ]}
+            value={preference}
+            onChange={setPreference}
+          />
+          <Text style={styles.foot}>{t('切换界面语言不会翻译服务器返回的聊天内容。')}</Text>
+          {saveError ? <Text style={styles.foot}>{t('无法保存语言设置，重启后可能恢复默认语言。')}</Text> : null}
+        </View>
+
+        <Text style={styles.groupLabel}>{t("应用")}</Text>
         <View style={styles.group}>
-          <Row name="Appearance" value="Dark" onPress={() => navigation.navigate('Appearance')} />
+          <Row name={t("外观")} value={t("深色")} onPress={() => navigation.navigate('Appearance')} />
           <View style={[styles.row, styles.line]}>
-            <Text style={styles.rowName}>Haptics</Text>
+            <Text style={styles.rowName}>{t("触感反馈")}</Text>
             <View style={styles.spacer} />
             <Toggle
               on={toggles.haptics}
@@ -110,24 +128,24 @@ export function SettingsScreen() {
                 if (!toggles.haptics) void Haptics.selectionAsync();
                 toggle('haptics');
               }}
-              label="Haptics"
+              label={t("触感反馈")}
             />
           </View>
           <Row
-            name="Setup"
-            value="Run again"
+            name={t("初始设置")}
+            value={t("重新设置")}
             line
             onPress={() => navigation.navigate('Setup')}
           />
         </View>
 
-        <Text style={styles.groupLabel}>About</Text>
+        <Text style={styles.groupLabel}>{t("关于")}</Text>
         <View style={styles.group}>
-          <Row name="Version" value={HOST.version} chevron={false} />
-          <Row name="Server" value={`Hermes ${HOST.version}`} line chevron={false} />
+          <Row name={t("版本")} value={HOST.version} chevron={false} />
+          <Row name={t("服务器")} value={`Hermes ${HOST.version}`} line chevron={false} />
         </View>
 
-        <Text style={styles.foot}>Hermes Bot · a window onto your host</Text>
+        <Text style={styles.foot}>{t("Hermes Bot · 随时连接你的服务器")}</Text>
       </ScrollView>
     </View>
   );

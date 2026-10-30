@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,7 @@ export function Page({
   children: ReactNode;
   right?: ReactNode;
 }) {
+  useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
 
@@ -27,7 +29,7 @@ export function Page({
         <Pressable
           style={styles.navIcon}
           onPress={() => navigation.goBack()}
-          accessibilityLabel="Back"
+          accessibilityLabel={t("返回")}
         >
           <BackIcon />
         </Pressable>

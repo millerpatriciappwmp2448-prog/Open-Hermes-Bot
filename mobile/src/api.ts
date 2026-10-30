@@ -1,12 +1,6 @@
-/**
- * The bridge, as the phone sees it.
- *
- * The app keeps no conversation: this file asks the bridge on the Hermes host
- * for the bots, the sessions and the transcripts, and streams one turn back.
- * The token it carries is the phone's own — it opens the bridge and nothing
- * else, and it never sees a Hermes key.
- */
+import { t } from './i18n';
 
+/** The phone talks to the bridge; Hermes keys and conversations stay on the host. */
 export type BridgeHealth = {
   ok: boolean;
   service: string;
@@ -71,6 +65,44 @@ export function normalizeUrl(raw: string): string {
   return url.replace(/\/+$/, '');
 }
 
+// Translate stable bridge codes; keep unknown upstream details available.
+const BRIDGE_ERRORS: Readonly<Record<string, string>> = {
+  bad_code: '配对码错误或已过期，请在服务器上重新生成。',
+  too_many: '尝试次数过多，请等待几分钟后重试。',
+  unauthorized: '本机尚未授权或授权已撤销，请重新配对。',
+  no_key: '服务器尚未配置此机器人的 API_SERVER_KEY，请在服务器上配置并重启 Hermes。',
+  bad_key: '服务器的 API_SERVER_KEY 与 Hermes 网关不匹配，请检查服务器配置。',
+  unreachable: '桥接服务无法连接 Hermes，请检查服务器上的 Hermes 网关和 API 服务。',
+  no_bot: '找不到该机器人，请刷新服务器数据。',
+  no_session: 'Hermes 未返回会话编号，请检查服务器日志。',
+  no_device: '找不到该配对设备，请刷新设备列表。',
+  no_title: '请输入会话名称。',
+  empty_message: '请先输入消息内容。',
+  empty: '发送内容为空。',
+  too_large: '发送内容过大，请缩小后重试。',
+  bad_json: '请求格式错误，请检查应用与桥接服务的版本。',
+  bad_length: '请求长度无效，请重试。',
+  bad_prefs: '设置格式无效，请重试。',
+  not_found: '桥接服务不支持此接口，请检查地址和服务版本。',
+  internal: '桥接服务发生内部错误，请查看服务器日志。',
+  bad_name: '配置名称格式无效，请使用小写英文字母、数字或连字符。',
+  reserved_name: '该名称由 Hermes 保留，请换一个名称。',
+  exists: '该机器人已存在，请换一个名称。',
+  bad_color: '不支持此颜色，请重新选择。',
+  bad_shape: '不支持此外观形状，请重新选择。',
+  primary: '主机器人是 Hermes 本身，无法删除。',
+  timeout: 'Hermes 回复超时，请稍后重试。',
+  silent: 'Hermes 长时间没有返回数据，请检查服务器状态。',
+};
+
+function bridgeErrorMessage(code: string, fallback: string): string {
+  if (Object.hasOwn(BRIDGE_ERRORS, code)) return t(BRIDGE_ERRORS[code]);
+  if (code === 'hermes_error' || code === 'turn_failed') {
+    return t("Hermes 执行失败：{0}", {"0": fallback});
+  }
+  return fallback;
+}
+
 async function readError(response: Response, fallback: string): Promise<BridgeError> {
   let code = 'error';
   let message = fallback;
@@ -83,7 +115,7 @@ async function readError(response: Response, fallback: string): Promise<BridgeEr
   } catch {
     // A proxy, a tailnet error page: the status is all we have.
   }
-  return new BridgeError(message, code, response.status);
+  return new BridgeError(bridgeErrorMessage(code, message), code, response.status);
 }
 
 async function withTimeout<T>(
@@ -97,7 +129,7 @@ async function withTimeout<T>(
   } catch (error) {
     if ((error as Error)?.name === 'AbortError') {
       throw new BridgeError(
-        'The bridge did not answer in time — is Tailscale on, and the host awake?',
+        t("连接超时，请检查 Tailscale 和服务器是否正常运行。"),
         'timeout',
       );
     }
@@ -116,11 +148,11 @@ export function bridgeHealth(baseUrl: string): Promise<BridgeHealth> {
       response = await fetch(`${root}/v1/health`, { signal, headers: { Accept: 'application/json' } });
     } catch {
       throw new BridgeError(
-        'Nothing answers at that address. Is the phone on the tailnet, and the bridge running?',
+        t("该地址无响应，请确认手机与服务器位于同一 Tailscale 网络，且桥接服务已启动。"),
         'unreachable',
       );
     }
-    if (!response.ok) throw await readError(response, `The bridge answered HTTP ${response.status}`);
+    if (!response.ok) throw await readError(response, t("桥接服务返回 HTTP {0}", {"0": response.status}));
     return (await response.json()) as BridgeHealth;
   }, 15000);
 }
@@ -139,7 +171,7 @@ export async function bridgePair(
       body: JSON.stringify({ code: code.trim().toUpperCase(), name: deviceName }),
       signal,
     });
-    if (!response.ok) throw await readError(response, 'That code was refused.');
+    if (!response.ok) throw await readError(response, t("配对码被拒绝，请在服务器重新生成配对码。"));
     const body = await response.json();
     return { token: String(body.token), device: body.device as BridgeDevice };
   }, 20000);
@@ -169,9 +201,9 @@ export function createBridgeClient(rawBase: string, token: string) {
         });
       } catch (error) {
         if (error instanceof BridgeError) throw error;
-        throw new BridgeError('The bridge is not answering.', 'unreachable');
+        throw new BridgeError(t("桥接服务未响应。"), 'unreachable');
       }
-      if (!response.ok) throw await readError(response, `The bridge answered HTTP ${response.status}`);
+      if (!response.ok) throw await readError(response, t("桥接服务返回 HTTP {0}", {"0": response.status}));
       if (response.status === 204) return {} as T;
       return (await response.json()) as T;
     }, timeout);
@@ -314,7 +346,7 @@ export function createBridgeClient(rawBase: string, token: string) {
         } else if (event === 'error') {
           finished = true;
           handlers.onError?.(
-            String(payload.message ?? 'The bot stopped before answering.'),
+            bridgeErrorMessage(String(payload.code ?? ''), String(payload.message ?? t("机器人在回复前停止了运行。"))),
             payload.code ? String(payload.code) : undefined,
           );
         }
@@ -343,19 +375,19 @@ export function createBridgeClient(rawBase: string, token: string) {
       xhr.onerror = () => {
         if (finished) return;
         finished = true;
-        handlers.onError?.('The connection to the bridge dropped.', 'network');
+        handlers.onError?.(t("与桥接服务的连接已断开。"), 'network');
       };
 
       xhr.ontimeout = () => {
         if (finished) return;
         finished = true;
-        handlers.onError?.('The bot took more than five minutes to answer.', 'timeout');
+        handlers.onError?.(t("机器人回复超时，已等待超过五分钟。"), 'timeout');
       };
 
       xhr.onload = () => {
         if (finished) return;
         if (xhr.status >= 400) {
-          let message = `The bridge answered HTTP ${xhr.status}`;
+          let message = t("桥接服务返回 HTTP {0}", {"0": xhr.status});
           let code = 'error';
           try {
             const body = JSON.parse(xhr.responseText || '{}');
@@ -365,12 +397,12 @@ export function createBridgeClient(rawBase: string, token: string) {
             // Keep the status.
           }
           finished = true;
-          handlers.onError?.(message, code);
+          handlers.onError?.(bridgeErrorMessage(code, message), code);
           return;
         }
         // A stream that ended without `done` is still an answer that stopped.
         finished = true;
-        handlers.onError?.('The bridge closed the stream before the answer ended.', 'incomplete');
+        handlers.onError?.(t("回复尚未完成，桥接服务就关闭了连接。"), 'incomplete');
       };
 
       xhr.send(

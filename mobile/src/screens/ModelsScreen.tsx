@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Page } from '../components/Page';
 import { ModelList } from '../components/ModelList';
@@ -11,24 +12,24 @@ import { C, createStyles } from '../theme';
  * way.
  */
 export function ModelsScreen() {
+  useTranslation();
   const { prefs, setPref } = useStore();
 
   return (
-    <Page title="Models">
+    <Page title={t("模型")}>
       <ScrollView contentContainerStyle={styles.body}>
-        <SectionLabel>New conversations</SectionLabel>
+        <SectionLabel>{t("新会话")}</SectionLabel>
         <Card>
-          <Row name="Default model" value={prefs.defaultModel} chevron={false} />
+          <Row name={t("默认模型")} value={prefs.defaultModel} chevron={false} />
         </Card>
 
-        <SectionLabel>All models</SectionLabel>
+        <SectionLabel>{t("所有模型")}</SectionLabel>
         <View style={styles.list}>
           <ModelList selected={prefs.defaultModel} onPick={(picked) => setPref('defaultModel', picked)} />
         </View>
 
         <Hint>
-          The list is the host's, in the mockup's words. Choosing here only sets where the next
-          conversation starts.
+          {t("当前模型列表为演示内容，选择仅影响应用内显示。实际回复使用服务器当前配置的模型。")}
         </Hint>
       </ScrollView>
     </Page>

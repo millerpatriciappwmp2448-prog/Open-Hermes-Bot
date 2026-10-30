@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import type { ReactNode } from 'react';
 import {
   Pressable,
@@ -22,13 +23,14 @@ export function SheetHeader({
   onClose: () => void;
   back?: () => void;
 }) {
+  useTranslation();
   return (
     <View style={styles.head}>
       <View style={styles.headCopy}>
         <Text style={styles.headTitle}>{title}</Text>
         {sub ? <Text style={styles.headSub}>{sub}</Text> : null}
       </View>
-      <Pressable style={styles.close} onPress={back ?? onClose} accessibilityLabel={back ? 'Back' : 'Close'}>
+      <Pressable style={styles.close} onPress={back ?? onClose} accessibilityLabel={back ? t("返回") : t("关闭")}>
         {back ? (
           <View style={{ transform: [{ rotate: '180deg' }] }}>
             <ChevronIcon size={14} color="#a8a8af" />
@@ -143,6 +145,7 @@ export function ConfirmBlock({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  useTranslation();
   return (
     <View style={styles.confirm}>
       <Text style={styles.confirmTitle}>{title}</Text>
@@ -150,7 +153,7 @@ export function ConfirmBlock({
       <View style={styles.confirmButtons}>
         <PrimaryButton label={confirmLabel} tone="danger" onPress={onConfirm} />
         <View style={{ height: 8 }} />
-        <PrimaryButton label="Cancel" tone="quiet" onPress={onCancel} />
+        <PrimaryButton label={t("取消")} tone="quiet" onPress={onCancel} />
       </View>
     </View>
   );

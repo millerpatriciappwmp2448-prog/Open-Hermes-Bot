@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Page } from '../components/Page';
@@ -15,6 +16,7 @@ import { C, INK, createStyles } from '../theme';
  * that hold one can be forgotten.
  */
 export function ConnectionScreen() {
+  useTranslation();
   const { connection, connect, disconnect, devices, revokeDevice, refresh, prefs } = useStore();
   const [url, setUrl] = useState(connection.url);
   const [code, setCode] = useState('');
@@ -32,12 +34,12 @@ export function ConnectionScreen() {
     try {
       await connect(url, code);
       setCode('');
-      setNotice('Paired. The bots below come from Hermes, not from this phone.');
+      setNotice(t("配对成功，已加载 Hermes 主机上的机器人。"));
     } catch (failure) {
       setError(
         failure instanceof BridgeError
           ? failure.message
-          : 'The bridge could not be reached.',
+          : t("无法连接桥接服务，请检查地址、Tailscale 和服务器状态。"),
       );
     } finally {
       setBusy(false);
@@ -45,7 +47,7 @@ export function ConnectionScreen() {
   }
 
   return (
-    <Page title="Connection">
+    <Page title={t("连接")}>
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         <View style={styles.status}>
           <View
@@ -57,58 +59,58 @@ export function ConnectionScreen() {
           />
           <Text style={styles.statusText}>
             {online
-              ? `Connected · ${connection.device || 'this phone'}${connection.health ? ` · bridge ${connection.health.version}` : ''}`
+              ? t("已连接 · {0}{1}", {"0": connection.device || t("本机"), "1": connection.health ? t(" · 桥接服务 {0}", {"0": connection.health.version}) : ''})
               : connection.status === 'connecting'
-                ? 'Connecting…'
+                ? t("正在连接…")
                 : connection.status === 'error'
-                  ? 'Not connected · the bridge refused or did not answer'
-                  : 'Not connected · nothing answers yet'}
+                  ? t("未连接 · 桥接服务拒绝连接或未响应")
+                  : t("未连接 · 等待配对")}
           </Text>
         </View>
 
         {online ? (
           <>
-            <SectionLabel>The bridge</SectionLabel>
+            <SectionLabel>{t("桥接服务")}</SectionLabel>
             <Card>
-              <Row name="Address" value={connection.url.replace(/^https?:\/\//i, '')} chevron={false} />
+              <Row name={t("地址")} value={connection.url.replace(/^https?:\/\//i, '')} chevron={false} />
               <View style={styles.line} />
               <Row
                 name="Hermes"
-                value={connection.health?.hermes.ok ? 'answering' : 'not answering'}
+                value={connection.health?.hermes.ok ? t("正常响应") : t("无响应")}
                 valueColor={connection.health?.hermes.ok ? '#7fcfaa' : '#e09248'}
                 chevron={false}
               />
               <View style={styles.line} />
-              <Row name="Model" value={connection.model || 'the host default'} chevron={false} />
+              <Row name={t("模型")} value={connection.model || t("主机默认模型")} chevron={false} />
               <View style={styles.line} />
-              <Row name="On the host" value={prefs.host} chevron={false} />
+              <Row name={t("所在主机")} value={prefs.host} chevron={false} />
             </Card>
 
             <View style={styles.buttons}>
               <PrimaryButton
-                label={busy ? 'Reading…' : 'Read it again'}
+                label={busy ? t("正在读取…") : t("刷新")}
                 tone="quiet"
                 onPress={async () => {
                   setError('');
                   setBusy(true);
                   try {
                     await refresh();
-                    setNotice('Read again from Hermes.');
+                    setNotice(t("已从 Hermes 刷新数据。"));
                   } catch {
-                    setError('The bridge did not answer.');
+                    setError(t("桥接服务未响应。"));
                   } finally {
                     setBusy(false);
                   }
                 }}
               />
               <View style={styles.gap} />
-              <PrimaryButton label="Disconnect this phone" tone="quiet" onPress={() => void disconnect()} />
+              <PrimaryButton label={t("断开本机连接")} tone="quiet" onPress={() => void disconnect()} />
             </View>
 
-            <SectionLabel>Devices</SectionLabel>
+            <SectionLabel>{t("已配对设备")}</SectionLabel>
             <Card>
               {devices.length === 0 ? (
-                <Row name="No device paired" value="" chevron={false} />
+                <Row name={t("暂无配对设备")} value="" chevron={false} />
               ) : (
                 devices.map((device, index) => (
                   <Row
@@ -117,8 +119,8 @@ export function ConnectionScreen() {
                     meta={device.id}
                     line={index > 0}
                     right={
-                      <Pressable onPress={() => void revokeDevice(device.id)} accessibilityLabel={`Revoke ${device.name}`}>
-                        <Text style={styles.revoke}>Revoke</Text>
+                      <Pressable onPress={() => void revokeDevice(device.id)} accessibilityLabel={t("撤销 {0} 的授权", {"0": device.name})}>
+                        <Text style={styles.revoke}>{t("撤销授权")}</Text>
                       </Pressable>
                     }
                     chevron={false}
@@ -127,23 +129,22 @@ export function ConnectionScreen() {
               )}
             </Card>
             <Hint>
-              Revoking a device takes its token away for good. Its Hermes keys were never on it:
-              the bridge reads them here, on the host.
+              {t("撤销授权后，该设备的令牌将永久失效。Hermes 密钥始终保存在服务器上，由桥接服务读取。")}
             </Hint>
           </>
         ) : (
           <>
-            <SectionLabel>Bridge</SectionLabel>
+            <SectionLabel>{t("桥接服务")}</SectionLabel>
             <Card>
               <View style={styles.card}>
                 <Field
-                  label="Address"
+                  label={t("地址")}
                   value={url}
                   onChange={setUrl}
                   placeholder="https://host.tailnet.ts.net"
                 />
                 <Field
-                  label="Pairing code"
+                  label={t("配对码")}
                   value={code}
                   onChange={setCode}
                   placeholder="ABCD-EFGH"
@@ -153,7 +154,7 @@ export function ConnectionScreen() {
 
             <View style={styles.buttons}>
               <PrimaryButton
-                label={working ? 'Pairing…' : 'Pair this phone'}
+                label={working ? t("正在配对…") : t("配对本机")}
                 onPress={() => void pair()}
               />
             </View>
@@ -163,20 +164,17 @@ export function ConnectionScreen() {
             {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
             <Hint>
-              The address is the bridge on the machine that runs Hermes, published by Tailscale.
-              The phone must be on the same tailnet. On the host, a code is minted with
-              `python3 -m hermes_bridge pair`; it works once, and for twenty minutes.
+              {t("填写服务器通过 Tailscale 提供的 HTTPS 根地址，例如 https://host.tailnet.ts.net。手机与服务器需登录同一 Tailscale 网络。在服务器的 ~/hermes-bridge 目录运行 python3 -m hermes_bridge pair 生成配对码；有效期为 20 分钟，仅能使用一次。")}
             </Hint>
             <Hint>
-              Nothing about the conversations is kept here. The token this page earns opens the
-              bridge and nothing else.
+              {t("会话内容由服务器保存。本机仅保存桥接地址和设备令牌，该令牌只能访问桥接服务。")}
             </Hint>
 
-            <SectionLabel>State</SectionLabel>
+            <SectionLabel>{t("状态")}</SectionLabel>
             <Card>
-              <Row name="This phone" value={connection.device || 'not paired'} chevron={false} />
+              <Row name={t("本机")} value={connection.device || t("尚未配对")} chevron={false} />
               <View style={styles.line} />
-              <Row name="Host" value={prefs.host} chevron={false} />
+              <Row name={t("主机")} value={prefs.host} chevron={false} />
             </Card>
           </>
         )}

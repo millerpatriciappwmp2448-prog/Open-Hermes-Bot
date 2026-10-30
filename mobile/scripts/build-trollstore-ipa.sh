@@ -59,7 +59,7 @@ codesign --verify --deep --strict --verbose=2 "$app"
 staging="$(mktemp -d "$PWD/artifacts/package.XXXXXX")"
 mkdir -p "$staging/Payload"
 ditto "$app" "$staging/Payload/$(basename "$app")"
-ipa="$PWD/artifacts/Hermes-Bot-iOS17-TrollStore.ipa"
+ipa="$PWD/artifacts/Hermes-Bot-iOS17-ZH-EN-TrollStore.ipa"
 test ! -e "$ipa"
 (cd "$staging" && /usr/bin/zip -qry "$ipa" Payload)
 python3 scripts/verify-ios-ipa.py "$ipa" > artifacts/verification.json

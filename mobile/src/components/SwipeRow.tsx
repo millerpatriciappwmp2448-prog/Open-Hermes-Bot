@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, Text, View } from 'react-native';
 import { C, box, createStyles } from '../theme';
@@ -27,6 +28,7 @@ type Props = {
 };
 
 export function SwipeRow({ children, left, right }: Props) {
+  useTranslation();
   const slide = useRef(new Animated.Value(0)).current;
   const from = useRef(0);
   const [open, setOpen] = useState<'left' | 'right' | null>(null);
@@ -116,7 +118,7 @@ export function SwipeRow({ children, left, right }: Props) {
             },
           ]}
           onPress={() => settle(0, null)}
-          accessibilityLabel="Close the actions"
+          accessibilityLabel={t("收起操作菜单")}
         />
       ) : null}
     </View>

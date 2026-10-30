@@ -82,6 +82,7 @@ def verify(path):
             'bundle_identifier': info['CFBundleIdentifier'],
             'version': info['CFBundleShortVersionString'],
             'build': info['CFBundleVersion'],
+            'localizations': info.get('CFBundleLocalizations', []),
             'minimum_ios': info['MinimumOSVersion'],
             'javascript_bundled': True,
             'binaries': binaries,

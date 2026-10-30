@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
@@ -24,6 +25,7 @@ export function GroupDetailsSheet({
   threadId: string;
   onLeave: () => void;
 }) {
+  useTranslation();
   const { threadById, botById, setModel, toggles, toggle, updateGroup, leaveGroup } = useStore();
   const [picking, setPicking] = useState(false);
   const [pending, setPending] = useState<
@@ -44,7 +46,7 @@ export function GroupDetailsSheet({
             <Pressable style={styles.back} onPress={() => setPicking(false)}>
               <ChevronIcon size={14} color="#a8a8af" />
             </Pressable>
-            <Text style={styles.pickTitle}>Model</Text>
+            <Text style={styles.pickTitle}>{t("模型")}</Text>
           </View>
           <ModelList
             selected={thread.threadModel}
@@ -57,25 +59,25 @@ export function GroupDetailsSheet({
       ) : (
         <>
           <View style={styles.top}>
-            <Pressable style={styles.close} onPress={onClose} accessibilityLabel="Close">
+            <Pressable style={styles.close} onPress={onClose} accessibilityLabel={t("关闭")}>
               <CloseIcon />
             </Pressable>
             <BloubGroup members={faces} size={58} />
-            <Text style={styles.name}>{thread?.name ?? 'Group'}</Text>
+            <Text style={styles.name}>{thread?.name ?? t("群组")}</Text>
             <Text style={styles.sub}>{thread?.subtitle ?? ''}</Text>
           </View>
 
           {pending ? (
             <ConfirmBlock
               title={
-                pending.kind === 'leave' ? 'Leave this group?' : `Remove ${pending.name}?`
+                pending.kind === 'leave' ? t("退出此群组？") : t("移除 {0}？", {"0": pending.name})
               }
               message={
                 pending.kind === 'leave'
-                  ? 'Its conversation goes; the bots stay, each with its own session.'
-                  : 'The bot keeps its own session and memory; only the round loses it.'
+                  ? t("群组会话将被移除，每个机器人的独立会话仍会保留。")
+                  : t("该机器人将退出群组，其独立会话和记忆仍会保留。")
               }
-              confirmLabel={pending.kind === 'leave' ? 'Leave' : 'Remove'}
+              confirmLabel={pending.kind === 'leave' ? t("退出") : t("移除")}
               onCancel={() => setPending(null)}
               onConfirm={() => {
                 if (pending.kind === 'leave') {
@@ -93,7 +95,7 @@ export function GroupDetailsSheet({
             />
           ) : (
           <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-            <Text style={styles.label}>Members</Text>
+            <Text style={styles.label}>{t("成员")}</Text>
             <View style={styles.card}>
               {members.map((bot, index) => (
                 <Pressable
@@ -107,7 +109,7 @@ export function GroupDetailsSheet({
                   <View style={styles.copy}>
                     <Text style={styles.rowName}>{bot!.name}</Text>
                     <Text style={styles.rowMeta}>
-                      {bot!.role} · session {bot!.session}
+                      {bot!.role} {t("· 会话")} {bot!.session}
                     </Text>
                   </View>
                   <ChevronIcon />
@@ -115,48 +117,48 @@ export function GroupDetailsSheet({
               ))}
             </View>
             <Text style={styles.hint}>
-              Every member answers on its own, and can @ another to hand over the floor.
+              {t("每个成员独立回复，也可通过 @ 提及其他成员并交接任务。")}
             </Text>
 
-            <Text style={styles.label}>Conversation</Text>
+            <Text style={styles.label}>{t("会话")}</Text>
             <View style={styles.card}>
               <Pressable style={styles.row} onPress={() => setPicking(true)}>
                 <View style={styles.copy}>
-                  <Text style={styles.rowName}>Model</Text>
+                  <Text style={styles.rowName}>{t("模型")}</Text>
                 </View>
                 <Text style={styles.value}>{thread?.threadModel}</Text>
                 <ChevronIcon />
               </Pressable>
               <View style={[styles.row, styles.line]}>
                 <View style={styles.copy}>
-                  <Text style={styles.rowName}>Sessions</Text>
+                  <Text style={styles.rowName}>{t("会话数")}</Text>
                 </View>
-                <Text style={styles.value}>{members.length} separate</Text>
+                <Text style={styles.value}>{members.length} {t("个独立会话")}</Text>
               </View>
               <View style={[styles.row, styles.line]}>
                 <View style={styles.copy}>
-                  <Text style={styles.rowName}>Tapbacks</Text>
+                  <Text style={styles.rowName}>{t("表情回应")}</Text>
                 </View>
                 <Toggle
                   on={toggles.tapbacks}
                   onChange={() => toggle('tapbacks')}
-                  label="Tapbacks"
+                  label={t("表情回应")}
                 />
               </View>
               <View style={[styles.row, styles.line]}>
                 <View style={styles.copy}>
-                  <Text style={styles.rowName}>Notifications</Text>
+                  <Text style={styles.rowName}>{t("通知")}</Text>
                 </View>
                 <Toggle
                   on={toggles.notifications}
                   onChange={() => toggle('notifications')}
-                  label="Notifications"
+                  label={t("通知")}
                 />
               </View>
             </View>
 
             <Pressable style={styles.danger} onPress={() => setPending({ kind: 'leave' })}>
-              <Text style={styles.dangerText}>Leave group</Text>
+              <Text style={styles.dangerText}>{t("退出群组")}</Text>
             </Pressable>
           </ScrollView>
           )}

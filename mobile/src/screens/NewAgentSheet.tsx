@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
 import {
   Pressable,
@@ -12,7 +13,7 @@ import { Sheet } from '../components/Sheet';
 import { Bloub } from '../components/Bloub';
 import { BackIcon, ChevronIcon, CloseIcon } from '../components/Icons';
 import { ModelList } from '../components/ModelList';
-import { COLORS, DEFAULT_MODEL, SHAPES, HOST } from '../data';
+import { COLORS, DEFAULT_MODEL, SHAPES } from '../data';
 import type { BloubShape } from '../bloubFrames';
 import { useStore } from '../store';
 import { C, INK, createStyles } from '../theme';
@@ -31,6 +32,7 @@ export function NewAgentSheet({
   onClose: () => void;
   onCreated?: (threadId: string) => void;
 }) {
+  useTranslation();
   const { bots, prefs, addBot, addGroup } = useStore();
   const window = useWindowDimensions();
   const [tab, setTab] = useState<'bot' | 'group'>('bot');
@@ -48,7 +50,7 @@ export function NewAgentSheet({
     const id =
       tab === 'bot'
         ? addBot({ name, shape, color, model })
-        : addGroup({ name: name || 'Crew', members, model });
+        : addGroup({ name: name || t("团队"), members, model });
     onClose();
     onCreated?.(id);
     setTab('bot');
@@ -58,19 +60,19 @@ export function NewAgentSheet({
     <Sheet visible={visible} onClose={onClose}>
       <View style={styles.head}>
         <View style={styles.headCopy}>
-          <Text style={styles.title}>{pickingModel ? 'Model' : 'New agent'}</Text>
+          <Text style={styles.title}>{pickingModel ? t("模型") : t("新建智能体")}</Text>
           <Text style={styles.sub}>
             {pickingModel
-              ? 'For this conversation only. The bot keeps its memory.'
+              ? t("仅用于当前会话，机器人的记忆保持不变。")
               : tab === 'bot'
-                ? 'Create a bot, or bring a few together.'
-                : 'Brings bots together in one conversation.'}
+                ? t("创建机器人，或将多个机器人组成群组。")
+                : t("让多个机器人加入同一会话。")}
           </Text>
         </View>
         <Pressable
           style={styles.close}
           onPress={() => (pickingModel ? setPickingModel(false) : onClose())}
-          accessibilityLabel={pickingModel ? 'Back' : 'Close'}
+          accessibilityLabel={pickingModel ? t("返回") : t("关闭")}
         >
           {pickingModel ? <BackIcon size={15} color="#a8a8af" /> : <CloseIcon />}
         </Pressable>
@@ -97,7 +99,7 @@ export function NewAgentSheet({
                   onPress={() => setTab(entry)}
                 >
                   <Text style={[styles.segmentText, tab === entry && styles.segmentTextActive]}>
-                    {entry === 'bot' ? 'Bot' : 'Group'}
+                    {entry === 'bot' ? t("机器人") : t("群组")}
                   </Text>
                 </Pressable>
               ))}
@@ -106,12 +108,12 @@ export function NewAgentSheet({
             <View style={styles.preview}>
               <Bloub shape={shape} color={color} size={56} />
               <View style={styles.nameField}>
-                <Text style={styles.fieldLabel}>{tab === 'bot' ? 'Bot name' : 'Group name'}</Text>
+                <Text style={styles.fieldLabel}>{tab === 'bot' ? t("机器人名称") : t("群组名称")}</Text>
                 <TextInput
                   value={name}
                   onChangeText={setName}
                   style={styles.fieldValue}
-                  placeholder="Name"
+                  placeholder={t("名称")}
                   placeholderTextColor="#87878e"
                   autoCorrect={false}
                   returnKeyType="done"
@@ -120,21 +122,21 @@ export function NewAgentSheet({
             </View>
             <Text style={styles.hint}>
               {tab === 'bot'
-                ? `Creates the Hermes profile “${name.toLowerCase().replace(/\s+/g, '-') || 'bot'}” on ${HOST.name}.`
-                : 'Every member answers on its own, and can @ another to hand over the floor.'}
+                ? t("将在 {0} 上创建“{1}”的 Hermes 配置。", {"0": prefs.host, "1": name.trim() || t("机器人")})
+                : t("每个成员独立回复，也可通过 @ 提及其他成员并交接任务。")}
             </Text>
 
             {tab === 'bot' ? (
               <>
                 <View style={styles.section}>
-                  <Text style={styles.label}>Shape</Text>
+                  <Text style={styles.label}>{t("形状")}</Text>
                   <View style={styles.shapeGrid}>
                     {SHAPES.map((option) => (
                       <Pressable
                         key={option.id}
                         style={[styles.shapeOption, shape === option.id && styles.shapeActive]}
                         onPress={() => setShape(option.id)}
-                        accessibilityLabel={option.label}
+                        accessibilityLabel={t(option.label)}
                       >
                         <Bloub shape={option.id} color="#9a9aa2" size={22} />
                       </Pressable>
@@ -143,7 +145,7 @@ export function NewAgentSheet({
                 </View>
 
                 <View style={styles.section}>
-                  <Text style={styles.label}>Color</Text>
+                  <Text style={styles.label}>{t("颜色")}</Text>
                   <View style={styles.colorGrid}>
                     {COLORS.map((dot) => (
                       <Pressable
@@ -154,7 +156,7 @@ export function NewAgentSheet({
                           { backgroundColor: dot },
                           color === dot && styles.dotActive,
                         ]}
-                        accessibilityLabel={`Colour ${dot}`}
+                        accessibilityLabel={t("颜色 {0}", {"0": dot})}
                       />
                     ))}
                   </View>
@@ -162,7 +164,7 @@ export function NewAgentSheet({
               </>
             ) : (
               <View style={styles.section}>
-                <Text style={styles.label}>Members</Text>
+                <Text style={styles.label}>{t("成员")}</Text>
                 <View style={styles.card}>
                   {bots.map((bot, index) => {
                     const on = members.includes(bot.id);
@@ -181,7 +183,7 @@ export function NewAgentSheet({
                         <Bloub shape={bot.shape} color={bot.color} size={26} />
                         <View style={styles.rowCopy}>
                           <Text style={styles.rowName}>{bot.name}</Text>
-                          <Text style={styles.rowMeta}>{bot.role} · session {bot.session}</Text>
+                          <Text style={styles.rowMeta}>{bot.role} {t("· 会话")} {bot.session}</Text>
                         </View>
                         <View style={[styles.check, on && styles.checkOn]}>
                           {on ? <Text style={styles.checkMark}>✓</Text> : null}
@@ -194,12 +196,12 @@ export function NewAgentSheet({
             )}
 
             <View style={styles.section}>
-              <Text style={styles.label}>Model</Text>
+              <Text style={styles.label}>{t("模型")}</Text>
               <View style={styles.card}>
                 <Pressable style={styles.row} onPress={() => setPickingModel(true)}>
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowName}>{model}</Text>
-                    <Text style={styles.rowMeta}>Anthropic · default</Text>
+                    <Text style={styles.rowMeta}>{t("Anthropic · 默认")}</Text>
                   </View>
                   <ChevronIcon />
                 </Pressable>
@@ -207,7 +209,7 @@ export function NewAgentSheet({
             </View>
 
             <Text style={styles.hint}>
-              The bot keeps its own memory, its own session, and the face you picked.
+              {t("每个机器人都有独立的记忆、会话和你选择的外观。")}
             </Text>
           </ScrollView>
 
@@ -217,7 +219,7 @@ export function NewAgentSheet({
               onPress={create}
               disabled={!ready}
             >
-              <Text style={styles.primaryText}>{tab === 'bot' ? 'Create bot' : 'Create group'}</Text>
+              <Text style={styles.primaryText}>{tab === 'bot' ? t("创建机器人") : t("创建群组")}</Text>
             </Pressable>
           </View>
         </>

@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MODELS } from '../data';
@@ -15,6 +16,7 @@ export function ModelList({
   selected: string;
   onPick: (name: string) => void;
 }) {
+  const { language } = useTranslation();
   const [query, setQuery] = useState('');
 
   const groups = useMemo(() => {
@@ -22,10 +24,10 @@ export function ModelList({
     return MODELS.map((group) => ({
       ...group,
       models: group.models.filter((model) =>
-        `${model.name} ${model.meta ?? ''}`.toLowerCase().includes(needle),
+        `${t(model.name)} ${model.meta ?? ''}`.toLowerCase().includes(needle),
       ),
     })).filter((group) => group.models.length > 0);
-  }, [query]);
+  }, [query, language]);
 
   return (
     <View style={styles.root}>
@@ -34,7 +36,7 @@ export function ModelList({
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search models"
+          placeholder={t("搜索模型")}
           placeholderTextColor="#82828a"
           style={styles.input}
           autoCorrect={false}
@@ -44,23 +46,23 @@ export function ModelList({
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         {groups.map((group) => (
           <View key={group.group}>
-            <Text style={styles.groupName}>{group.group}</Text>
+            <Text style={styles.groupName}>{t(group.group)}</Text>
             {group.models.map((model) => {
               // The default is named by what it runs: one row marked, never two.
               const active =
                 model.name === selected ||
-                (model.name === 'Hermes default' && model.meta === selected);
+                (model.name === "Hermes 默认模型" && model.meta === selected);
               return (
                 <Pressable
                   key={model.name}
                   style={[styles.row, active && styles.rowActive]}
-                  onPress={() => onPick(model.name === 'Hermes default' ? (model.meta ?? model.name) : model.name)}
+                  onPress={() => onPick(model.name === "Hermes 默认模型" ? (model.meta ?? model.name) : model.name)}
                 >
                   <Text style={[styles.mark, active && styles.markActive]}>{model.mark}</Text>
                   <Text style={styles.name} numberOfLines={1}>
-                    {model.name}
+                    {t(model.name)}
                   </Text>
-                  {model.tag && active ? <Text style={styles.tag}>{model.tag}</Text> : null}
+                  {model.tag && active ? <Text style={styles.tag}>{t(model.tag)}</Text> : null}
                   {model.meta && !active ? <Text style={styles.meta}>{model.meta}</Text> : null}
                   {active ? <CheckIcon /> : null}
                 </Pressable>
@@ -68,7 +70,7 @@ export function ModelList({
             })}
           </View>
         ))}
-        {groups.length === 0 ? <Text style={styles.empty}>No model by that name.</Text> : null}
+        {groups.length === 0 ? <Text style={styles.empty}>{t("没有找到匹配的模型。")}</Text> : null}
       </ScrollView>
     </View>
   );

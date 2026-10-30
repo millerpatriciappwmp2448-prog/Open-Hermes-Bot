@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { ScrollView, StyleSheet } from 'react-native';
 import { Page } from '../components/Page';
 import { Card, Hint, Row, SectionLabel } from '../components/UI';
@@ -10,23 +11,23 @@ import { createStyles } from '../theme';
  * so there is no motion left to switch off.
  */
 export function AppearanceScreen() {
+  useTranslation();
   const { toggles } = useStore();
 
   return (
-    <Page title="Appearance">
+    <Page title={t("外观")}>
       <ScrollView contentContainerStyle={styles.body}>
-        <SectionLabel>Theme</SectionLabel>
+        <SectionLabel>{t("主题")}</SectionLabel>
         <Card>
-          <Row name="Dark" value="Only" chevron={false} />
+          <Row name={t("深色")} value={t("唯一主题")} chevron={false} />
         </Card>
         <Hint>
-          Hermes Bot is dark by construction, in the window and on the phone: the same charcoal,
-          the same paper bubble. No light theme exists to pick.
+          {t("Hermes Bot 的桌面端和手机端均采用深色主题，目前尚未提供浅色主题。")}
         </Hint>
 
-        <SectionLabel>Haptics</SectionLabel>
+        <SectionLabel>{t("触感反馈")}</SectionLabel>
         <Card>
-          <Row name="Follows the App switch" value={toggles.haptics ? 'On' : 'Off'} chevron={false} />
+          <Row name={t("跟随应用设置")} value={toggles.haptics ? t("开启") : t("关闭")} chevron={false} />
         </Card>
       </ScrollView>
     </Page>

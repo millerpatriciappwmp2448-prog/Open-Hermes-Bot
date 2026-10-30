@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
@@ -36,6 +37,7 @@ type SheetProps = {
 };
 
 export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps) {
+  useTranslation();
   const insets = useSafeAreaInsets();
   const fade = useRef(new Animated.Value(0)).current;
   const dim = useRef(new Animated.Value(0)).current;
@@ -97,7 +99,7 @@ export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps
       statusBarTranslucent
     >
       <View style={styles.root}>
-        <Pressable style={styles.scrimPress} onPress={onClose} accessibilityLabel="Close">
+        <Pressable style={styles.scrimPress} onPress={onClose} accessibilityLabel={t("关闭")}>
           <Animated.View style={[styles.scrim, { opacity: dim }]} />
         </Pressable>
         <Animated.View

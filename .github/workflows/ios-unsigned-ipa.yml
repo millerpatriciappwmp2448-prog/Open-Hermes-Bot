@@ -44,6 +44,9 @@ jobs:
       - name: Typecheck the mobile app
         run: npx tsc --noEmit
 
+      - name: Check interface translations
+        run: node scripts/test-localization.cjs
+
       - name: Check Xcode
         run: xcodebuild -version
 
@@ -59,9 +62,9 @@ jobs:
       - name: Upload IPA and verification report
         uses: actions/upload-artifact@v4
         with:
-          name: Hermes-Bot-iOS17-TrollStore
+          name: Hermes-Bot-iOS17-ZH-EN-TrollStore
           path: |
-            mobile/artifacts/Hermes-Bot-iOS17-TrollStore.ipa
+            mobile/artifacts/Hermes-Bot-iOS17-ZH-EN-TrollStore.ipa
             mobile/artifacts/verification.json
           if-no-files-found: error
           retention-days: 30

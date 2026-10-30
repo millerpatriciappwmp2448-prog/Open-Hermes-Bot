@@ -1,3 +1,4 @@
+import { t, useTranslation } from "../i18n";
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -25,6 +26,7 @@ export function MessageSheet({
   threadId: string;
   message: Message | null;
 }) {
+  useTranslation();
   const { react, removeMessage } = useStore();
   const [copied, setCopied] = useState(false);
 
@@ -33,8 +35,8 @@ export function MessageSheet({
   return (
     <Sheet visible={visible} onClose={onClose}>
       <SheetHeader
-        title="Message"
-        sub={message.from === 'user' ? 'Yours' : 'The bot’s'}
+        title={t("消息")}
+        sub={message.from === 'user' ? t("你发送的消息") : t("机器人的消息")}
         onClose={onClose}
       />
 
@@ -47,7 +49,7 @@ export function MessageSheet({
               react(threadId, message.id, emoji);
               onClose();
             }}
-            accessibilityLabel={`React ${emoji}`}
+            accessibilityLabel={t("回应 {0}", {"0": emoji})}
           >
             <Text style={styles.emoji}>{emoji}</Text>
           </Pressable>
@@ -56,7 +58,7 @@ export function MessageSheet({
 
       <View style={styles.actions}>
         <Row
-          name={copied ? 'Copied' : 'Copy the text'}
+          name={copied ? t("已复制") : t("复制文本")}
           chevron={false}
           onPress={async () => {
             await Clipboard.setStringAsync(message.text);
@@ -66,7 +68,7 @@ export function MessageSheet({
         />
         <View style={styles.line} />
         <Row
-          name="Delete"
+          name={t("删除")}
           chevron={false}
           onPress={() => {
             removeMessage(threadId, message.id);
@@ -77,7 +79,7 @@ export function MessageSheet({
       </View>
 
       <View style={styles.hint}>
-        <Hint>Nothing is stored: a tapback and a delete live until the app closes.</Hint>
+        <Hint>{t("表情回应和本页删除操作仅在当前应用运行期间有效，不会写入服务器。")}</Hint>
       </View>
     </Sheet>
   );
