@@ -1,0 +1,76 @@
+name: Build iOS 17 TrollStore IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/ios17-trollstore-ipa
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    name: Build TrollStore IPA
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CI: '1'
+      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: npm ci --fetch-retries=5
+
+      - name: Typecheck the mobile app
+        run: npx tsc --noEmit
+
+      - name: Check Xcode
+        run: xcodebuild -version
+
+      - name: Generate the iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods dependencies
+        run: pod install --project-directory=ios
+
+      - name: Build and package device app for TrollStore
+        run: bash scripts/build-trollstore-ipa.sh
+
+      - name: Upload IPA and verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hermes-Bot-iOS17-TrollStore
+          path: |
+            mobile/artifacts/Hermes-Bot-iOS17-TrollStore.ipa
+            mobile/artifacts/verification.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: mobile/artifacts/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7

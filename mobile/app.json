@@ -8,7 +8,10 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#1d1d1f",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hermesbot.mobile",
+      "buildNumber": "1",
+      "deploymentTarget": "17.0"
     },
     "android": {
       "adaptiveIcon": {
