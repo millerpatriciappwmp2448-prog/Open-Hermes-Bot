@@ -52,6 +52,9 @@ jobs:
       - name: Check server model selection
         run: node scripts/test-server-models.cjs
 
+      - name: Check chat settings preferences
+        run: node scripts/test-chat-preferences.cjs
+
       - name: Check appearance preferences
         run: node scripts/test-appearance.cjs
 

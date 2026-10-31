@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
 import { BackIcon, ChevronIcon } from '../components/Icons';
 import { Toggle } from '../components/Toggle';
-import { HOST } from '../data';
+import appConfig from '../../app.json';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
 import { themedStyles } from '../theme';
@@ -68,7 +68,7 @@ export function SettingsScreen() {
           />
           <Row
             name={t("模型")}
-            value={connection.status === 'connected' ? t('按机器人选择') : t('请先连接')}
+            value={connection.status === 'connected' ? t('按智能体选择') : t('请先连接')}
             line
             onPress={() => navigation.navigate('Models')}
           />
@@ -128,7 +128,7 @@ export function SettingsScreen() {
 
         <Text style={styles.groupLabel}>{t("关于")}</Text>
         <View style={styles.group}>
-          <Row name={t("版本")} value={HOST.version} chevron={false} />
+          <Row name={t("版本")} value={`${appConfig.expo.version} (${appConfig.expo.ios.buildNumber})`} chevron={false} />
           <Row name={t("服务器")} value={prefs.host || t('未连接')} line chevron={false} />
         </View>
 
@@ -179,7 +179,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     borderBottomWidth: 1,
     borderBottomColor: C.divider,
   },
-  navIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
+  navIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   title: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.17 },
 
   scroll: { flex: 1 },
@@ -214,7 +214,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     textTransform: 'uppercase',
   },
   group: { overflow: 'hidden', borderRadius: 13, backgroundColor: C.cardRaised },
-  row: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11 },
+  row: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11 },
   line: { borderTopWidth: 1, borderTopColor: C.hairline },
   rowName: { color: C.text, fontSize: 12, fontWeight: '500' },
   rowValue: { marginLeft: 'auto', color: INK.quiet, fontSize: 11 },

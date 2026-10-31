@@ -50,7 +50,7 @@ export const Bloub = memo(function Bloub({ shape = 'cercle', color, variant = 'n
     if (!moving) return;
     // Transform only: iOS drives this on the UI thread, without rerendering the
     // SVG paths or blocking interactions. Offscreen navigation stops the loop.
-    const duration = active ? 620 : 2100 + (shape.length % 4) * 170;
+    const duration = active ? 620 : 1400 + (shape.length % 4) * 170;
     const step = (toValue: number) => Animated.timing(motion, {
       toValue, duration, easing: Easing.inOut(Easing.sin),
       useNativeDriver: Platform.OS !== 'web', isInteraction: false,
@@ -64,10 +64,10 @@ export const Bloub = memo(function Bloub({ shape = 'cercle', color, variant = 'n
     <Animated.View
       testID={moving ? (active ? 'avatar-thinking' : 'avatar-idle') : 'avatar-still'}
       style={{ width: px, height: px, transform: [
-        { translateY: motion.interpolate({ inputRange: [0, 1], outputRange: [0, -px * (active ? 0.07 : 0.035)] }) },
-        { rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', active ? '5deg' : '2deg'] }) },
-        { scaleX: motion.interpolate({ inputRange: [0, 1], outputRange: [1, active ? 1.045 : 1.025] }) },
-        { scaleY: motion.interpolate({ inputRange: [0, 1], outputRange: [1, active ? 0.96 : 0.98] }) },
+        { translateY: motion.interpolate({ inputRange: [0, 1], outputRange: [0, -px * (active ? 0.10 : 0.065)] }) },
+        { rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', active ? '8deg' : '5deg'] }) },
+        { scaleX: motion.interpolate({ inputRange: [0, 1], outputRange: [1, active ? 1.07 : 1.045] }) },
+        { scaleY: motion.interpolate({ inputRange: [0, 1], outputRange: [1, active ? 0.93 : 0.96] }) },
       ] }}
     >
       <Svg

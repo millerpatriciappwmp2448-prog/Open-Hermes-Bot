@@ -66,9 +66,9 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
   return (
     <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
       <View style={styles.identity}>
-        <View style={styles.avatar}><Bloub shape={bot?.shape} color={bot?.color ?? C.green} size={40} /></View>
-        <View style={styles.flex}><Text style={styles.botName}>{bot?.name}</Text><Text style={styles.caption}>{t('机器人的模型')}</Text></View>
-        {onChangeBot ? <Pressable accessibilityRole="button" accessibilityLabel={t('选择其他机器人')}
+        <View style={styles.avatar}><Bloub shape={bot?.shape} color={bot?.color ?? C.green} size={36} /></View>
+        <View style={styles.flex}><Text style={styles.botName}>{bot?.name}</Text><Text style={styles.caption}>{t('智能体的模型')}</Text></View>
+        {onChangeBot ? <Pressable accessibilityRole="button" accessibilityLabel={t('选择其他智能体')}
           onPress={onChangeBot} style={({ pressed }) => [styles.change, pressed && styles.pressed]}>
           <Text style={styles.changeText}>{t('切换')}</Text><ChevronIcon size={10} color={C.text2} />
         </Pressable> : null}
@@ -159,13 +159,13 @@ const useStyles = themedStyles(({ C }) => ({
   flex: { flex: 1, minWidth: 0 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   identity: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
-  avatar: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
-  botName: { color: C.text, fontSize: 19, fontWeight: '600', marginBottom: 5 },
+  avatar: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  botName: { color: C.text, fontSize: 17, fontWeight: '600', marginBottom: 5 },
   caption: { color: C.text2, fontSize: 12, lineHeight: 18 },
   change: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 8 },
   changeText: { color: C.text2, fontSize: 13 },
   currentCard: { padding: 16, backgroundColor: C.cardRaised, borderRadius: 18, borderWidth: 1, borderColor: C.line, gap: 6 },
-  current: { color: C.text, fontSize: 20, lineHeight: 27, fontWeight: '600', flexShrink: 1 },
+  current: { color: C.text, fontSize: 17, lineHeight: 24, fontWeight: '600', flexShrink: 1 },
   modelId: { color: C.text2, fontSize: 12, lineHeight: 18 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.green },
@@ -177,7 +177,7 @@ const useStyles = themedStyles(({ C }) => ({
   search: { minHeight: 44, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: C.field, borderRadius: 12, marginTop: -8 },
   searchInput: { flex: 1, minWidth: 0, color: C.text, fontSize: 14, paddingVertical: 12 },
   options: { backgroundColor: C.cardRaised, borderRadius: 16, overflow: 'hidden' },
-  choice: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 16, minHeight: 72 },
+  choice: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
   line: { borderTopWidth: 1, borderTopColor: C.line },
   radio: { width: 21, height: 21, borderRadius: 11, borderWidth: 1.5, borderColor: C.text3, alignItems: 'center', justifyContent: 'center' },
   radioSelected: { backgroundColor: C.green, borderColor: C.green },

@@ -72,10 +72,10 @@ const BRIDGE_ERRORS: Readonly<Record<string, string>> = {
   bad_code: '配对码错误或已过期，请在服务器上重新生成。',
   too_many: '尝试次数过多，请等待几分钟后重试。',
   unauthorized: '本机尚未授权或授权已撤销，请重新配对。',
-  no_key: '服务器尚未配置此机器人的 API_SERVER_KEY，请在服务器上配置并重启 Hermes。',
+  no_key: '服务器尚未配置此智能体的 API_SERVER_KEY，请在服务器上配置并重启 Hermes。',
   bad_key: '服务器的 API_SERVER_KEY 与 Hermes 网关不匹配，请检查服务器配置。',
   unreachable: '桥接服务无法连接 Hermes，请检查服务器上的 Hermes 网关和 API 服务。',
-  no_bot: '找不到该机器人，请刷新服务器数据。',
+  no_bot: '找不到该智能体，请刷新服务器数据。',
   no_session: 'Hermes 未返回会话编号，请检查服务器日志。',
   no_device: '找不到该配对设备，请刷新设备列表。',
   no_title: '请输入会话名称。',
@@ -89,10 +89,10 @@ const BRIDGE_ERRORS: Readonly<Record<string, string>> = {
   internal: '桥接服务发生内部错误，请查看服务器日志。',
   bad_name: '配置名称格式无效，请使用小写英文字母、数字或连字符。',
   reserved_name: '该名称由 Hermes 保留，请换一个名称。',
-  exists: '该机器人已存在，请换一个名称。',
+  exists: '该智能体已存在，请换一个名称。',
   bad_color: '不支持此颜色，请重新选择。',
   bad_shape: '不支持此外观形状，请重新选择。',
-  primary: '主机器人是 Hermes 本身，无法删除。',
+  primary: '主智能体是 Hermes 本身，无法删除。',
   timeout: 'Hermes 回复超时，请稍后重试。',
   silent: 'Hermes 长时间没有返回数据，请检查服务器状态。',
   no_cron: '服务器 Hermes 未启用定时任务，请更新 Hermes 并保持网关与 cron 运行。',
@@ -235,8 +235,15 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     bots: async (): Promise<BridgeBot[]> => (await request<{ bots: BridgeBot[] }>('/v1/bots')).bots,
 
-    sessions: async (): Promise<BridgeSession[]> =>
-      (await request<{ sessions: BridgeSession[] }>('/v1/sessions')).sessions,
+    sessions: async (botId?: string): Promise<BridgeSession[]> => {
+      const result = await request<{
+        sessions: BridgeSession[];
+        errors?: { bot: string; code: string; message: string }[];
+      }>(`/v1/sessions${botId ? `?bot=${bot(botId)}` : ''}`);
+      const error = botId ? result.errors?.find(item => item.bot === botId) : undefined;
+      if (error) throw new BridgeError(bridgeErrorMessage(error.code, error.message), error.code);
+      return result.sessions;
+    },
 
     messages: async (botId: string, sessionId: string, limit = 200): Promise<BridgeMessage[]> =>
       (
@@ -394,7 +401,7 @@ export function createBridgeClient(rawBase: string, token: string) {
         } else if (event === 'error') {
           finished = true;
           handlers.onError?.(
-            bridgeErrorMessage(String(payload.code ?? ''), String(payload.message ?? t("机器人在回复前停止了运行。"))),
+            bridgeErrorMessage(String(payload.code ?? ''), String(payload.message ?? t("智能体在回复前停止了运行。"))),
             payload.code ? String(payload.code) : undefined,
           );
         }
@@ -439,7 +446,7 @@ export function createBridgeClient(rawBase: string, token: string) {
       xhr.ontimeout = () => {
         if (finished) return;
         finished = true;
-        handlers.onError?.(t("机器人回复超时，已等待超过五分钟。"), 'timeout');
+        handlers.onError?.(t("智能体回复超时，已等待超过五分钟。"), 'timeout');
       };
 
       xhr.onload = () => {

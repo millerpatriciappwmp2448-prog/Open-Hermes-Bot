@@ -28,7 +28,9 @@ export function MessageSheet({
 }) {
   const { styles } = useStyles();
   useTranslation();
-  const { react, removeMessage } = useStore();
+  const { react, removeMessage, chatPreferences, threadById } = useStore();
+  const botId = threadById(threadId)?.botId ?? '';
+  const tapbacks = chatPreferences[botId]?.tapbacks !== false;
   const [copied, setCopied] = useState(false);
 
   if (!message) return null;
@@ -37,11 +39,11 @@ export function MessageSheet({
     <Sheet visible={visible} onClose={onClose}>
       <SheetHeader
         title={t("消息")}
-        sub={message.from === 'user' ? t("你发送的消息") : t("机器人的消息")}
+        sub={message.from === 'user' ? t("你发送的消息") : t("智能体的消息")}
         onClose={onClose}
       />
 
-      <View style={styles.emojiRow}>
+      {tapbacks ? <View style={styles.emojiRow}>
         {EMOJI.map((emoji) => (
           <Pressable
             key={emoji}
@@ -55,7 +57,7 @@ export function MessageSheet({
             <Text style={styles.emoji}>{emoji}</Text>
           </Pressable>
         ))}
-      </View>
+      </View> : null}
 
       <View style={styles.actions}>
         <Row

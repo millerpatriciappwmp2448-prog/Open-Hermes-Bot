@@ -34,6 +34,8 @@ export function BotSheet({
   const [shape, setShape] = useState<BloubShape>(bot?.shape ?? 'cercle');
   const [color, setColor] = useState(bot?.color ?? COLORS[0]);
   const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // A different bot is a different face: the sheet is reused, the fields are not.
   useEffect(() => {
@@ -43,6 +45,7 @@ export function BotSheet({
     setColor(bot.color);
     // A question asked about another bot is not asked about this one.
     setConfirming(false);
+    setDeleteError('');
   }, [bot?.id]);
 
   if (!bot) return null;
@@ -55,23 +58,26 @@ export function BotSheet({
   }
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={() => { if (!deleting) onClose(); }}>
       <SheetHeader
         title={bot.name}
         sub={t("{0} · 会话 {1}", {"0": bot.role, "1": bot.session})}
-        onClose={onClose}
+        onClose={() => { if (!deleting) onClose(); }}
       />
 
       {confirming ? (
         <ConfirmBlock
           title={t("删除 {0}？", {"0": bot.name})}
-          message={t("该机器人的会话也将移除，其他机器人及其会话不受影响。")}
-          confirmLabel={t("删除此机器人")}
+          message={t("该智能体的会话也将移除，其他智能体及其会话不受影响。")}
+          confirmLabel={t("删除此智能体")}
           onCancel={() => setConfirming(false)}
+          busy={deleting} error={deleteError}
           onConfirm={() => {
-            removeBot(bot.id);
-            onClose();
-            onDeleted();
+            if (deleting) return;
+            setDeleting(true); setDeleteError('');
+            void removeBot(bot.id).then(() => { onClose(); onDeleted(); })
+              .catch(error => setDeleteError(error instanceof Error ? error.message : t('无法删除智能体。')))
+              .finally(() => setDeleting(false));
           }}
         />
       ) : (
@@ -80,7 +86,7 @@ export function BotSheet({
           <Bloub shape={shape} color={color} size={72} />
         </View>
 
-        <Field label={t("名称")} value={name} onChange={setName} placeholder={t("机器人名称")} />
+        <Field label={t("名称")} value={name} onChange={setName} placeholder={t("智能体名称")} />
 
         <SectionLabel>{t("形状")}</SectionLabel>
         <View style={styles.shapeGrid}>
@@ -120,10 +126,10 @@ export function BotSheet({
             }}
           />
           <View style={styles.gap} />
-          <PrimaryButton label={t("删除此机器人")} tone="danger" onPress={() => setConfirming(true)} />
+          <PrimaryButton label={bot.primary ? t("主智能体不能删除。") : t("删除此智能体")} disabled={Boolean(bot.primary)} tone="danger" onPress={() => setConfirming(true)} />
         </View>
         <Text style={styles.note}>
-          {t("记忆保存在服务器上，此处仅修改机器人的名称和外观。")}
+          {t("记忆保存在服务器上，此处仅修改智能体的名称和外观。")}
         </Text>
       </ScrollView>
       )}

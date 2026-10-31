@@ -2,6 +2,7 @@ import { t, useTranslation, localeTag } from './i18n';
 import { localizeDemo } from './i18n/demo';
 import { modelForTurn, readModelPick, withModelPick, type ModelRef } from './modelSelection';
 import { profileNameFor } from './botNames';
+import { readChatPreferences, withChatPreferences, sessionsForBot, type ChatPreferences } from './chatPreferences';
 import { readSchedules, type Schedule } from './schedules';
 import {
   createContext,
@@ -102,13 +103,16 @@ type Store = {
   modelPicks: Record<string, ModelRef>;
   refreshModels: (botId: string) => Promise<void>;
   selectModel: (botId: string, model: ModelRef | null) => Promise<void>;
+  chatPreferences: Record<string, ChatPreferences>;
+  saveChatPreferences: (botId: string, value: ChatPreferences) => Promise<void>;
+  loadSessions: (botId: string) => Promise<BridgeSession[]>;
 
   botById: (id: string) => Bot | undefined;
   threadById: (id: string) => Thread | undefined;
 
   addBot: (input: NewBot) => string;
   updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color'>>) => void;
-  removeBot: (id: string) => void;
+  removeBot: (id: string) => Promise<void>;
   /** Write what the bot is for into its SOUL.md; it applies from its next session. */
   saveDescription: (botId: string, text: string) => Promise<void>;
   loadJobs: (botId: string) => Promise<Schedule[]>;
@@ -225,6 +229,7 @@ function toBot(raw: BridgeBot): Bot {
     role: raw.primary ? t("默认") : 'Hermes',
     session: raw.profile === 'default' ? '' : raw.profile.slice(0, 4),
     description: raw.role || '',
+    primary: raw.primary,
   };
 }
 
@@ -273,6 +278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [devices, setDevices] = useState<BridgeDevice[]>([]);
   const [modelOptions, setModelOptions] = useState<Record<string, BridgeModels>>({});
   const [modelPicks, setModelPicks] = useState<Record<string, ModelRef>>({});
+  const [chatPreferences, setChatPreferences] = useState<Record<string, ChatPreferences>>({});
   const optionsRef = useRef(modelOptions);
   const picksRef = useRef(modelPicks);
   const profilesRef = useRef<Record<string, string>>({});
@@ -385,6 +391,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     picksRef.current = nextPicks;
     setModelOptions(nextOptions);
     setModelPicks(nextPicks);
+    setChatPreferences(Object.fromEntries(rawBots.map(raw => [raw.id, readChatPreferences(savedPrefs, raw.profile || 'default')])));
     setBots(nextBots);
     setThreads(nextThreads);
     setMessages(nextMessages);
@@ -452,6 +459,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       throw error;
     }
   }, [adopt]);
+
+  const saveChatPreferences = useCallback<Store['saveChatPreferences']>(async (botId, value) => {
+    const active = client.current;
+    const profile = profilesRef.current[botId];
+    if (!active || profile === undefined) {
+      if (threadsRef.current.some(thread => thread.botId === botId && thread.id.startsWith('bot:'))) {
+        throw new BridgeError(t('请先连接服务器。'));
+      }
+      setChatPreferences(current => ({ ...current, [botId]: value }));
+      return;
+    }
+    // All whole-document preference writes share the model queue.
+    const write = modelWrites.current.catch(() => undefined).then(async () => {
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      const saved = await active.prefs();
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      await active.savePrefs(withChatPreferences(saved, profile, value));
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      setChatPreferences(current => ({ ...current, [botId]: value }));
+    });
+    modelWrites.current = write;
+    await write;
+  }, []);
+
+  const loadSessions = useCallback<Store['loadSessions']>(async botId => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    const rows = await active.sessions(botId);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    return sessionsForBot(rows, botId);
+  }, []);
 
   const retry = useCallback(async () => {
     const saved = savedRef.current;
@@ -524,6 +562,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     picksRef.current = {};
     setModelOptions({});
     setModelPicks({});
+    setChatPreferences({});
     setBots(demo.current.bots);
     setThreads(demo.current.threads);
     setMessages(demo.current.messages);
@@ -587,7 +626,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addBot = useCallback<Store['addBot']>(
     ({ name, shape, color, model }) => {
-      const label = name.trim() || t("新机器人");
+      const label = name.trim() || t("新智能体");
       const online = connectionRef.current.status === 'connected';
       const taken = bots.map((bot) => bot.id);
       // A Hermes profile name is ASCII; the display name travels as the title.
@@ -611,7 +650,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           kind: 'bot',
           botId: bot.id,
           name: label,
-          preview: online ? t("正在服务器上创建…") : t("已创建演示机器人。"),
+          preview: online ? t("正在服务器上创建…") : t("已创建演示智能体。"),
           time: t("刚刚"),
           threadModel: online ? '' : model,
         },
@@ -651,11 +690,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           })
           .catch((error: unknown) => {
             const message =
-              error instanceof BridgeError ? error.message : t("无法创建机器人。");
+              error instanceof BridgeError ? error.message : t("无法创建智能体。");
             // Nothing exists on the server, so the placeholder goes away.
             setBots((current) => current.filter((entry) => entry.id !== id));
             setThreads((current) => current.filter((entry) => entry.id !== threadId));
-            setConnection((state) => ({ ...state, error: t("无法创建机器人：{0}", { "0": message }) }));
+            setConnection((state) => ({ ...state, error: t("无法创建智能体：{0}", { "0": message }) }));
           });
       }
       return threadId;
@@ -681,7 +720,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...(patch.shape ? { shape: patch.shape } : {}),
           })
           .catch((error: unknown) => {
-            const message = error instanceof BridgeError ? error.message : t("无法保存机器人。");
+            const message = error instanceof BridgeError ? error.message : t("无法保存智能体。");
             setThreads((current) =>
               current.map((thread) =>
                 thread.kind === 'bot' && thread.botId === id
@@ -699,10 +738,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveDescription = useCallback<Store['saveDescription']>(async (botId, text) => {
     const active = client.current;
-    if (!active) throw new BridgeError(t('请先连接服务器。'));
     const wanted = text.trim();
+    const serverBot = threadsRef.current.some(thread => thread.botId === botId && thread.id.startsWith('bot:'));
+    if (!serverBot && !active && !savedRef.current) {
+      setBots(current => current.map(bot => bot.id === botId ? { ...bot, description: wanted } : bot));
+      return;
+    }
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
     const saved = await active.updateBot(botId, { description: wanted, soul: true });
-    if (client.current !== active) return;
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     const description = typeof saved?.role === 'string' ? saved.role : wanted;
     setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, description } : bot)));
   }, []);
@@ -737,43 +781,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return toMessages(`run:${sessionId}`, botId, await active.messages(botId, sessionId));
   }, []);
 
-  const removeBot = useCallback<Store['removeBot']>(
-    (id) => {
-      setBots((current) => current.filter((bot) => bot.id !== id));
-      setThreads((current) =>
-        current
-          .filter((thread) => !(thread.kind === 'bot' && thread.botId === id))
-          .map((thread) =>
-            thread.kind === 'group' && thread.members
-              ? { ...thread, members: thread.members.filter((member) => member !== id) }
-              : thread,
-          )
-          // A group of one is not a group: the last two bots are the round.
-          .filter((thread) => thread.kind !== 'group' || (thread.members?.length ?? 0) >= 2),
-      );
-      setMessages((current) => {
-        const next: Record<string, Message[]> = {};
-        for (const [key, value] of Object.entries(current)) {
-          if (key !== `${id}-thread` && key !== `bot:${id}`) next[key] = value;
-        }
-        return next;
-      });
-      if (connectionRef.current.status === 'connected' && client.current) {
-        const active = client.current;
-        void active.deleteBot(id).catch(async (error: unknown) => {
-          const message = error instanceof BridgeError ? error.message : t("无法删除机器人。");
-          // Show the server's real list again.
-          if (client.current === active) {
-            const saved = savedRef.current;
-            const current = connectionRef.current;
-            await adopt(saved?.url ?? current.url, active.token, saved?.device ?? current.device).catch(() => undefined);
-          }
-          setConnection((state) => ({ ...state, error: t("服务器未删除机器人：{0}", { "0": message }) }));
-        });
-      }
-    },
-    [adopt],
-  );
+  const removeBot = useCallback<Store['removeBot']>(async (id) => {
+    if (botById(id)?.primary) throw new BridgeError(t('主智能体不能删除。'));
+    const active = client.current;
+    const serverBot = threadsRef.current.some(thread => thread.botId === id && thread.id.startsWith('bot:'));
+    if (serverBot || active || savedRef.current) {
+      if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+      await active.deleteBot(id);
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    }
+    const removed = new Set(threadsRef.current.filter(thread =>
+      (thread.kind === 'bot' && thread.botId === id) ||
+      (thread.kind === 'group' && (thread.members ?? []).filter(member => member !== id).length < 2)
+    ).map(thread => thread.id));
+    for (const threadId of removed) { turnsRef.current[threadId]?.(); delete turnsRef.current[threadId]; }
+    setBots(current => current.filter(bot => bot.id !== id));
+    setThreads(current => current.filter(thread => !removed.has(thread.id)).map(thread =>
+      thread.kind === 'group' ? { ...thread, members: thread.members?.filter(member => member !== id) } : thread));
+    setMessages(current => Object.fromEntries(Object.entries(current).filter(([key]) => !removed.has(key))));
+    const nextPicks = { ...picksRef.current }; delete nextPicks[id];
+    picksRef.current = nextPicks; setModelPicks(nextPicks);
+    const nextOptions = { ...optionsRef.current }; delete nextOptions[id];
+    optionsRef.current = nextOptions; setModelOptions(nextOptions);
+    setChatPreferences(current => { const next = { ...current }; delete next[id]; return next; });
+    delete profilesRef.current[id];
+  }, [botById]);
 
   /* ----------------------------------------------------------- the groups */
 
@@ -794,11 +826,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           name: label,
           preview: online
             ? t("群组功能尚未接入 Hermes。")
-            : t("{0} · 已创建演示群组。", {"0": first?.name ?? t("机器人")}),
+            : t("{0} · 已创建演示群组。", {"0": first?.name ?? t("智能体")}),
           time: t("刚刚"),
           threadModel: model,
           members,
-          subtitle: t("{0} 个机器人 · 各自独立会话", {"0": members.length}),
+          subtitle: t("{0} 个智能体 · 各自独立会话", {"0": members.length}),
         },
         ...current,
       ]);
@@ -817,7 +849,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ...patch,
               subtitle:
                 patch.members && patch.members.length > 0
-                  ? t("{0} 个机器人 · 各自独立会话", {"0": patch.members.length})
+                  ? t("{0} 个智能体 · 各自独立会话", {"0": patch.members.length})
                   : thread.subtitle,
             }
           : thread,
@@ -1073,7 +1105,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (settled) close();
         } catch (error) {
           settle(
-            error instanceof BridgeError ? error.message : t("无法连接机器人。"),
+            error instanceof BridgeError ? error.message : t("无法连接智能体。"),
             true,
           );
         }
@@ -1124,6 +1156,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       modelPicks,
       refreshModels,
       selectModel,
+      chatPreferences,
+      saveChatPreferences,
+      loadSessions,
       botById,
       threadById,
       addBot,
@@ -1187,6 +1222,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       modelPicks,
       refreshModels,
       selectModel,
+      chatPreferences,
+      saveChatPreferences,
+      loadSessions,
       saveDescription,
       loadJobs,
       createJob,

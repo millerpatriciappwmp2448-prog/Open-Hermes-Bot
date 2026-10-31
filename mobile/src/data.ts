@@ -14,6 +14,7 @@ export type Bot = {
   session: string;
   /** What the bot is for, as written in its SOUL.md on the server. */
   description?: string;
+  primary?: boolean;
 };
 
 export type Reaction = { emoji: string; count: number };
@@ -132,7 +133,7 @@ export const THREADS: Thread[] = [
     pinned: true,
     threadModel: DEFAULT_MODEL,
     members: CREW,
-    subtitle: "3 个机器人 · 各自独立会话",
+    subtitle: "3 个智能体 · 各自独立会话",
   },
   {
     id: 'chief-thread',
@@ -278,7 +279,7 @@ export const MESSAGES: Record<string, Message[]> = {
 };
 
 export const CHAT_EVENTS: Record<string, { event: string; time: string; typing?: boolean }> = {
-  crew: { event: "3 个机器人已加入 · 会话相互独立", time: "今天 · 14:04", typing: true },
+  crew: { event: "3 个智能体已加入 · 会话相互独立", time: "今天 · 14:04", typing: true },
   'chief-thread': { event: "会话开始于昨天 09:12", time: "今天 · 14:02" },
 };
 

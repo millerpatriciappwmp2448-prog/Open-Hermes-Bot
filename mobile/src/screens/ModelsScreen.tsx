@@ -21,15 +21,15 @@ export function ModelsScreen() {
     <Page title={t('模型')}>
       {connection.status !== 'connected' ? (
         <View style={styles.body}>
-          <Hint>{t('连接服务器后，可为每个机器人选择模型。手机不需要填写模型 API Key。')}</Hint>
+          <Hint>{t('连接服务器后，可为每个智能体选择模型。手机不需要填写模型 API Key。')}</Hint>
           <PrimaryButton label={t('连接服务器')} onPress={() => navigation.navigate('Connection')} />
         </View>
       ) : bot ? (
         <ServerModelPicker key={bot.id} botId={bot.id} onChangeBot={() => setSelected('')} />
       ) : (
         <ScrollView contentContainerStyle={styles.body}>
-          <Text style={styles.title}>{t('机器人的模型')}</Text>
-          <Text style={styles.hint}>{t('为每个机器人选择合适的模型')}</Text>
+          <Text style={styles.title}>{t('智能体的模型')}</Text>
+          <Text style={styles.hint}>{t('为每个智能体选择合适的模型')}</Text>
           <View style={styles.list}>{bots.map((b, index) => (
             <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={b.name}
               style={({ pressed }) => [styles.row, index > 0 && styles.line, pressed && styles.pressed]} onPress={() => setSelected(b.id)}>
@@ -48,10 +48,10 @@ export function ModelsScreen() {
 }
 const useStyles = themedStyles(({ C }) => ({
   body: { padding: 20, gap: 10 },
-  title: { color: C.text, fontSize: 24, fontWeight: '600', marginTop: 8 },
+  title: { color: C.text, fontSize: 20, fontWeight: '600', marginTop: 8 },
   hint: { color: C.text2, fontSize: 13, lineHeight: 20 },
   list: { backgroundColor: C.cardRaised, borderRadius: 18, marginVertical: 14, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   line: { borderTopWidth: 1, borderTopColor: C.line },
   copy: { flex: 1, minWidth: 0, gap: 5 },
   name: { color: C.text, fontSize: 16, fontWeight: '500' },

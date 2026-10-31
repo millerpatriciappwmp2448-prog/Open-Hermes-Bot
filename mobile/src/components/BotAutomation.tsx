@@ -47,7 +47,9 @@ function BotIdentity({ botId, caption }: { botId: string; caption: string }) {
 export function DescriptionEditor({ botId, onSaved, embedded = false }: { botId: string; onSaved?: () => void; embedded?: boolean }) {
   const { styles, C, scheme } = useStyles();
   useTranslation();
-  const { botById, saveDescription } = useStore();
+  const { botById, saveDescription, threads, connection } = useStore();
+  const serverBot = threads.some(thread => thread.botId === botId && thread.id.startsWith('bot:'));
+  const offline = serverBot && connection.status !== 'connected';
   const stored = botById(botId)?.description ?? '';
   const [text, setText] = useState(stored);
   const [busy, setBusy] = useState(false);
@@ -55,10 +57,10 @@ export function DescriptionEditor({ botId, onSaved, embedded = false }: { botId:
   const [saved, setSaved] = useState(false);
   const pending = useRef(false);
   const changed = text.trim() !== stored.trim();
-  const disabled = busy || !changed;
+  const disabled = busy || !changed || offline;
 
   async function save() {
-    if (pending.current || !changed) return;
+    if (pending.current || disabled) return;
     pending.current = true;
     setBusy(true); setError(''); setSaved(false);
     try {
@@ -76,11 +78,11 @@ export function DescriptionEditor({ botId, onSaved, embedded = false }: { botId:
   const content = (
     <>
       {embedded ? null : <BotIdentity botId={botId} caption={t('描述')} />}
-      {embedded ? null : <Text style={styles.caption}>{t('说明这个机器人负责什么。从下一次新会话生效，保存在服务器 SOUL.md 中由本应用管理的段落。')}</Text>}
+      {embedded ? null : <Text style={styles.caption}>{t('说明这个智能体负责什么。从下一次新会话生效，保存在服务器 SOUL.md 中由本应用管理的段落。')}</Text>}
       <View style={styles.field}>
         <TextInput keyboardAppearance={scheme} accessibilityLabel={t('描述')} value={text}
           onChangeText={(value) => { setText(value); setSaved(false); setError(''); }}
-          placeholder={t('这个机器人的用途')} placeholderTextColor={C.text2}
+          placeholder={t('这个智能体的用途')} placeholderTextColor={C.text2}
           style={[styles.input, styles.multiline]} multiline maxLength={LIMIT} editable={!busy}
           textAlignVertical="top" />
         <Text style={styles.counter}>{text.length}/{LIMIT}</Text>
@@ -90,7 +92,8 @@ export function DescriptionEditor({ botId, onSaved, embedded = false }: { botId:
         <Text style={styles.applyText}>{busy ? t('正在保存…') : t('保存')}</Text>
       </Pressable> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {saved && !busy ? <Text accessibilityLiveRegion="polite" style={styles.success}>{t('已保存到服务器。')}</Text> : null}
+      {saved && !busy ? <Text accessibilityLiveRegion="polite" style={styles.success}>{serverBot ? t('已保存到服务器。') : t('已保存演示描述，重启后重置。')}</Text> : null}
+      {offline ? <Text style={styles.caption}>{t('连接服务器后可保存。')}</Text> : null}
     </>
   );
   return embedded ? <View style={styles.embedded}>{content}</View> : (
@@ -301,7 +304,7 @@ function Fact({ label, value, bad }: { label: string; value: string; bad?: boole
 }
 
 /** One scheduled run, read back as it happened on the server. */
-export function RunTranscript({ botId, runId }: { botId: string; runId: string }) {
+export function RunTranscript({ botId, runId, kind = 'run' }: { botId: string; runId: string; kind?: 'run' | 'session' }) {
   const { styles, C } = useStyles();
   useTranslation();
   const { loadRunMessages } = useStore();
@@ -317,7 +320,7 @@ export function RunTranscript({ botId, runId }: { botId: string; runId: string }
       const list = await loadRunMessages(botId, runId);
       if (ticket === latest.current) setMessages(list);
     } catch (e) {
-      if (ticket === latest.current) setError(failure(e, t('无法读取这次运行。')));
+      if (ticket === latest.current) setError(failure(e, kind === 'session' ? t('无法读取会话内容。') : t('无法读取这次运行。')));
     } finally {
       if (ticket === latest.current) setLoading(false);
     }
@@ -337,7 +340,8 @@ export function RunTranscript({ botId, runId }: { botId: string; runId: string }
           </Pressable>
         </View>
       ) : null}
-      {messages && !messages.length ? <Text style={styles.caption}>{t('这次运行没有可显示的消息')}</Text> : null}
+      {messages && !messages.length ? <Text style={styles.caption}>{kind === 'session' ? t('此会话暂无消息') : t('这次运行没有可显示的消息')}</Text> : null}
+      {kind === 'session' ? <Text style={styles.caption}>{t('最多显示前 200 条消息')}</Text> : null}
       {(messages ?? []).map((message) => {
         const mine = message.from === 'user';
         return (
@@ -366,7 +370,7 @@ const useStyles = themedStyles(({ C }) => ({
   meta: { color: C.text2, fontSize: 12, lineHeight: 18 },
   field: { backgroundColor: C.field, borderRadius: 16 },
   input: { minHeight: 46, backgroundColor: C.field, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, lineHeight: 20, color: C.text },
-  multiline: { minHeight: 120 },
+  multiline: { minHeight: 96 },
   counter: { color: C.text2, fontSize: 11, textAlign: 'right', paddingHorizontal: 12, paddingBottom: 8 },
   apply: { minHeight: 46, padding: 12, backgroundColor: C.paper, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   applyText: { color: C.bg, fontSize: 14, fontWeight: '600' },

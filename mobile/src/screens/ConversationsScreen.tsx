@@ -119,7 +119,7 @@ export function ConversationsScreen() {
           <TextInput keyboardAppearance={scheme}
             value={query}
             onChangeText={setQuery}
-            placeholder={t("搜索机器人")}
+            placeholder={t("搜索智能体")}
             placeholderTextColor={INK.meta}
             style={styles.searchInput}
             autoCorrect={false}
@@ -204,7 +204,7 @@ export function ConversationsScreen() {
         {recent.length === 0 ? (
           <Text style={styles.none}>
             {needle
-              ? t("没有找到匹配的机器人。")
+              ? t("没有找到匹配的智能体。")
               : threads.length === 0
                 ? t("暂无会话，点击加号创建第一个会话。")
                 : t("所有会话均已置顶。")}
@@ -233,7 +233,7 @@ export function ConversationsScreen() {
         {menu && confirmDelete ? (
           <ConfirmBlock
             title={t("删除 {0}？", {"0": menu.name})}
-            message={t("将删除该会话，机器人及其记忆仍会保留。")}
+            message={t("将删除该会话，智能体及其记忆仍会保留。")}
             confirmLabel={t("删除")}
             onCancel={() => setConfirmDelete(null)}
             onConfirm={() => {
@@ -246,7 +246,7 @@ export function ConversationsScreen() {
           <>
             <SheetHeader
               title={menu.name}
-              sub={menu.kind === 'group' ? menu.subtitle : t("一个机器人，一个会话")}
+              sub={menu.kind === 'group' ? menu.subtitle : t("一个智能体，一个会话")}
               onClose={() => setMenu(null)}
             />
             <View style={styles.menuBody}>
@@ -302,26 +302,26 @@ const useStyles = themedStyles(({ C, INK }) => ({
   title: {
     flexShrink: 1,
     color: C.text,
-    fontSize: 27,
-    fontWeight: '700',
-    letterSpacing: -1.08,
-    lineHeight: 28,
+    fontSize: 20,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+    lineHeight: 26,
   },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   hostLine: { marginTop: 3, color: INK.faint, fontSize: 10 },
   round: {
-    width: 33,
-    height: 33,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: C.line,
-    borderRadius: 17,
+    borderRadius: 20,
     backgroundColor: C.field,
   },
   searchBox: { paddingHorizontal: 16 },
   search: {
-    height: 34,
+    height: 40,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,

@@ -74,8 +74,8 @@ export function GroupDetailsSheet({
               }
               message={
                 pending.kind === 'leave'
-                  ? t("群组会话将被移除，每个机器人的独立会话仍会保留。")
-                  : t("该机器人将退出群组，其独立会话和记忆仍会保留。")
+                  ? t("群组会话将被移除，每个智能体的独立会话仍会保留。")
+                  : t("该智能体将退出群组，其独立会话和记忆仍会保留。")
               }
               confirmLabel={pending.kind === 'leave' ? t("退出") : t("移除")}
               onCancel={() => setPending(null)}

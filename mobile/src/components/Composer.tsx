@@ -237,7 +237,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     borderRadius: 25,
     backgroundColor: C.field,
   },
-  button: { width: 37, height: 37, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  button: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
   attach: { backgroundColor: C.field2 },
   cream: { backgroundColor: C.paper },
   input: { flex: 1, paddingHorizontal: 3, color: C.text, fontSize: 13 },

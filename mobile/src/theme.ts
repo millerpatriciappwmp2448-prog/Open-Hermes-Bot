@@ -132,23 +132,16 @@ export const FONT = {
   regular: undefined,
 } as const;
 
-/**
- * The mockup was drawn at 360 points wide, with type down to 9. On a phone
- * that reads as a footnote, so every screen is scaled once, here: the body
- * text by nearly half again, the display type by less (a 27 point title does
- * not need the same boost as an 11 point preview), every box by a quarter.
+/** Legacy mockup sizes are normalized to compact, readable native points.
+ * Tiny labels keep an 11pt floor; regular body copy lands near 15-16pt.
+ * The OS remains free to apply Dynamic Type on top of these defaults.
  */
-const TEXT_SCALE = 1.48;
-const BOX_SCALE = 1.26;
+const TEXT_SCALE = 1.18;
+const BOX_SCALE = 1.1;
 
-/**
- * Below 16 points the full increase; above it, a smaller share, so a title
- * grows by a third instead of by half and still fits beside its button.
- */
 function textFactor(size: number): number {
-  if (size <= 0) return TEXT_SCALE;
-  if (size <= 16) return TEXT_SCALE;
-  return 1 + (TEXT_SCALE - 1) * Math.max(0.55, 16 / size);
+  if (size <= 0) return 1;
+  return Math.max(11, size * TEXT_SCALE) / size;
 }
 
 const TEXT_SIZE = /^(fontSize|lineHeight|letterSpacing)$/;
@@ -173,6 +166,11 @@ export function createStyles<
   for (const [name, style] of Object.entries(styles)) {
     const next: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(style)) next[key] = scaled(key, value);
+    if ('fontSize' in style && typeof style.fontSize === 'number') {
+      const factor = textFactor(style.fontSize);
+      if ('lineHeight' in style && typeof style.lineHeight === 'number') next.lineHeight = Math.round(style.lineHeight * factor * 10) / 10;
+      if ('letterSpacing' in style) next.letterSpacing = style.letterSpacing;
+    }
     out[name] = next as ViewStyle;
   }
   return StyleSheet.create(out) as T;

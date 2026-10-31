@@ -35,7 +35,7 @@ export function ConnectionScreen() {
     try {
       await connect(url, code);
       setCode('');
-      setNotice(t("配对成功，已加载 Hermes 主机上的机器人。"));
+      setNotice(t("配对成功，已加载 Hermes 主机上的智能体。"));
     } catch (failure) {
       setError(
         failure instanceof BridgeError

@@ -7,7 +7,7 @@ const MotionContext = createContext(false);
 
 export function AvatarMotionProvider({ children }: { children: ReactNode }) {
   const [reduced, setReduced] = useState(true);
-  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const [foreground, setForeground] = useState(AppState.currentState == null || AppState.currentState === 'active');
 
   useEffect(() => {
     let mounted = true;

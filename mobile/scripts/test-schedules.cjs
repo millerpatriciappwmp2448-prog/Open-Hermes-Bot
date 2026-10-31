@@ -85,7 +85,7 @@ assert.equal(s.draftProblem(draft), '');
 assert.match(s.draftProblem({...draft, name: '  '}), /name/i);
 assert.match(s.draftProblem({...draft, name: 'x'.repeat(201)}), /200/);
 assert.match(s.draftProblem({...draft, when: ''}), /cron/i);
-assert.match(s.draftProblem({...draft, prompt: ''}), /bot/i);
+assert.match(s.draftProblem({...draft, prompt: ''}), /agent/i);
 assert.match(s.draftProblem({...draft, prompt: 'x'.repeat(5001)}), /5000/);
 for (const repeat of ['0', '10001', '1.5', '-1', 'abc']) {
   assert.match(s.draftProblem({...draft, repeat}), /10000/, `repeat ${repeat} is rejected`);

@@ -20,13 +20,13 @@ export function FirstRunBody({
   return (
     <View style={styles.body}>
       <Bloub shape="cercle" color="#8b5cf6" size={86} />
-      <Text style={styles.title}>{t("暂无机器人")}</Text>
+      <Text style={styles.title}>{t("暂无智能体")}</Text>
       <Text style={styles.copy}>
-        {t("已连接服务器。创建第一个机器人后，Hermes 会保存它的记忆、外观和会话。")}
+        {t("已连接服务器。创建第一个智能体后，Hermes 会保存它的记忆、外观和会话。")}
       </Text>
       <Pressable style={styles.primary} onPress={onCreate}>
         <PlusIcon size={15} color={INK.onPaper} />
-        <Text style={styles.primaryText}>{t("创建机器人")}</Text>
+        <Text style={styles.primaryText}>{t("创建智能体")}</Text>
       </Pressable>
       <Pressable onPress={onSetup} accessibilityRole="button" disabled={!onSetup}>
         <Text style={[styles.link, !onSetup && styles.linkOff]}>{t("重新运行初始设置")}</Text>

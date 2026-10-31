@@ -74,14 +74,14 @@ export function SetupScreen() {
 
       {step === 1 ? (
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <Text style={styles.eyebrow}>{t("第一个机器人 · 第 2 步，共 3 步")}</Text>
+          <Text style={styles.eyebrow}>{t("第一个智能体 · 第 2 步，共 3 步")}</Text>
           <Text style={styles.title}>{t("给它起个名字")}</Text>
-          <Text style={styles.lead}>{t("设置你希望使用的机器人名称。")}</Text>
+          <Text style={styles.lead}>{t("设置你希望使用的智能体名称。")}</Text>
 
           <View style={styles.preview}>
             <Bloub shape={shape} color={color} size={64} />
             <View style={styles.nameField}>
-              <Field label={t("机器人名称")} value={name} onChange={setName} placeholder="Atlas" />
+              <Field label={t("智能体名称")} value={name} onChange={setName} placeholder="Atlas" />
             </View>
           </View>
 
@@ -113,7 +113,7 @@ export function SetupScreen() {
 
           <View style={styles.buttons}>
             <PrimaryButton
-              label={ready ? t("创建机器人") : t("请先填写名称")}
+              label={ready ? t("创建智能体") : t("请先填写名称")}
               onPress={() => {
                 if (!ready) return;
                 addBot({ name, shape, color, model: prefs.defaultModel });
@@ -131,7 +131,7 @@ export function SetupScreen() {
           <Bloub shape={shape} color={color} size={86} />
           <Text style={styles.doneTitle}>{t("设置完成")}</Text>
           <Text style={styles.doneCopy}>
-            {name || t("你的机器人")} {t("已创建于")} {prefs.host}{t("。Hermes 会保存它的记忆、外观和会话。")}
+            {name || t("你的智能体")} {t("已创建于")} {prefs.host}{t("。Hermes 会保存它的记忆、外观和会话。")}
           </Text>
           <View style={styles.buttons}>
             <PrimaryButton label={t("开始使用")} onPress={() => navigation.navigate('Chats')} />

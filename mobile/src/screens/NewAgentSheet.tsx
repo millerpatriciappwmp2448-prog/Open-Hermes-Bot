@@ -64,10 +64,10 @@ export function NewAgentSheet({
           <Text style={styles.title}>{pickingModel ? t("模型") : t("新建智能体")}</Text>
           <Text style={styles.sub}>
             {pickingModel
-              ? t("仅用于当前会话，机器人的记忆保持不变。")
+              ? t("仅用于当前会话，智能体的记忆保持不变。")
               : tab === 'bot'
-                ? t("创建机器人，或将多个机器人组成群组。")
-                : t("让多个机器人加入同一会话。")}
+                ? t("创建智能体，或将多个智能体组成群组。")
+                : t("让多个智能体加入同一会话。")}
           </Text>
         </View>
         <Pressable
@@ -100,7 +100,7 @@ export function NewAgentSheet({
                   onPress={() => setTab(entry)}
                 >
                   <Text style={[styles.segmentText, tab === entry && styles.segmentTextActive]}>
-                    {entry === 'bot' ? t("机器人") : t("群组")}
+                    {entry === 'bot' ? t("智能体") : t("群组")}
                   </Text>
                 </Pressable>
               ))}
@@ -109,7 +109,7 @@ export function NewAgentSheet({
             <View style={styles.preview}>
               <Bloub shape={shape} color={color} size={56} />
               <View style={styles.nameField}>
-                <Text style={styles.fieldLabel}>{tab === 'bot' ? t("机器人名称") : t("群组名称")}</Text>
+                <Text style={styles.fieldLabel}>{tab === 'bot' ? t("智能体名称") : t("群组名称")}</Text>
                 <TextInput keyboardAppearance={scheme}
                   value={name}
                   onChangeText={setName}
@@ -123,7 +123,7 @@ export function NewAgentSheet({
             </View>
             <Text style={styles.hint}>
               {tab === 'bot'
-                ? online ? t("将在 {0} 上创建“{1}”的 Hermes 配置。", {"0": prefs.host, "1": name.trim() || t("机器人")}) : t('当前未连接服务器，仅创建演示机器人。')
+                ? online ? t("将在 {0} 上创建“{1}”的 Hermes 配置。", {"0": prefs.host, "1": name.trim() || t("智能体")}) : t('当前未连接服务器，仅创建演示智能体。')
                 : t("每个成员独立回复，也可通过 @ 提及其他成员并交接任务。")}
             </Text>
 
@@ -202,7 +202,7 @@ export function NewAgentSheet({
                 <Pressable style={styles.row} disabled={online} onPress={() => setPickingModel(true)}>
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowName}>{online ? t('继承服务器配置') : model}</Text>
-                    <Text style={styles.rowMeta}>{online ? t('创建后可在机器人详情中选择模型。') : t('演示模型')}</Text>
+                    <Text style={styles.rowMeta}>{online ? t('创建后可在智能体详情中选择模型。') : t('演示模型')}</Text>
                   </View>
                   {!online ? <ChevronIcon /> : null}
                 </Pressable>
@@ -210,7 +210,7 @@ export function NewAgentSheet({
             </View>
 
             <Text style={styles.hint}>
-              {t("每个机器人都有独立的记忆、会话和你选择的外观。")}
+              {t("每个智能体都有独立的记忆、会话和你选择的外观。")}
             </Text>
           </ScrollView>
 
@@ -220,7 +220,7 @@ export function NewAgentSheet({
               onPress={create}
               disabled={!ready}
             >
-              <Text style={styles.primaryText}>{tab === 'bot' ? t("创建机器人") : t("创建群组")}</Text>
+              <Text style={styles.primaryText}>{tab === 'bot' ? t("创建智能体") : t("创建群组")}</Text>
             </Pressable>
           </View>
         </>

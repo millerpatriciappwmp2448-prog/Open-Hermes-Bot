@@ -63,6 +63,7 @@ export function ChatScreen({ route, navigation }: Props) {
     bots,
     botById,
     prefs,
+    chatPreferences,
     send,
     markRead,
     threadById,
@@ -98,6 +99,7 @@ export function ChatScreen({ route, navigation }: Props) {
   }
 
   const bot = botById(thread.botId);
+  const tapbacks = chatPreferences[thread.botId]?.tapbacks !== false;
   const members = (thread.members ?? [])
     .map((id) => botById(id))
     .filter(Boolean) as Bot[];
@@ -141,7 +143,7 @@ export function ChatScreen({ route, navigation }: Props) {
               isGroup && styles.bubbleGroup,
               failed && styles.bubbleFailed,
             ]}
-            accessibilityHint={t("长按可添加表情回应、复制或删除")}
+            accessibilityHint={tapbacks ? t("长按可添加表情回应、复制或删除") : t('长按可复制或删除')}
           >
             {failed ? <Text style={styles.failedLabel}>{t("回复失败")}</Text> : null}
             {message.kind === 'attachment' && message.attachment ? (
@@ -173,7 +175,7 @@ export function ChatScreen({ route, navigation }: Props) {
             )}
           </Pressable>
 
-          {message.reaction ? (
+          {message.reaction && tapbacks ? (
             <Pressable
               style={styles.tapback}
               onPress={() => setActive(message)}
@@ -244,7 +246,7 @@ export function ChatScreen({ route, navigation }: Props) {
 
           {turns.length === 0 ? (
             <Text style={styles.empty}>
-              {t("还没有消息，发送第一条消息开始聊天。机器人的记忆保存在服务器上。")}
+              {t("还没有消息，发送第一条消息开始聊天。智能体的记忆保存在服务器上。")}
             </Text>
           ) : null}
 
@@ -308,7 +310,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     borderBottomColor: C.divider,
     backgroundColor: C.bg,
   },
-  navIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
+  navIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   chatId: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   chatTitles: { flex: 1, gap: 1 },
   chatName: { color: C.text, fontSize: 14.5, fontWeight: '600', letterSpacing: -0.23 },

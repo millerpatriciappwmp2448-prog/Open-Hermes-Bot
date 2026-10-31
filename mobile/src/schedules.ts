@@ -169,7 +169,7 @@ export function draftProblem(draft: ScheduleDraft): string {
   if (name.length > 200) return t("任务名称不能超过 200 个字符。");
   if (!word(draft.when)) return t("请填写运行时间：cron 表达式、间隔或日期。");
   const prompt = word(draft.prompt);
-  if (!prompt) return t("请填写要机器人做什么。");
+  if (!prompt) return t("请填写要智能体做什么。");
   if (prompt.length > 5000) return t("任务内容不能超过 5000 个字符。");
   const repeat = word(draft.repeat);
   if (repeat && (!/^\d+$/.test(repeat) || Number(repeat) < 1 || Number(repeat) > 10000)) {
@@ -239,7 +239,7 @@ export function deliverText(deliver: string): string {
   if (!where || where === 'local') return t("保留在服务器");
   if (where.startsWith('bot-chat:')) {
     const bot = word(deliver).slice('bot-chat:'.length).trim();
-    return t("交给 {0} 的聊天", { "0": bot || t("机器人") });
+    return t("交给 {0} 的聊天", { "0": bot || t("智能体") });
   }
   return t("投递到 {0}", { "0": word(deliver) });
 }

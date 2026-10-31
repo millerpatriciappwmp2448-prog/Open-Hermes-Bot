@@ -53,7 +53,7 @@ const useStyles = themedStyles(({ C }) => ({
     borderBottomWidth: 1,
     borderBottomColor: C.divider,
   },
-  navIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
+  navIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   title: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.17 },
-  right: { width: 30, alignItems: 'flex-end' },
+  right: { width: 40, alignItems: 'flex-end' },
 }));
