@@ -294,8 +294,8 @@ export function readSchedules(payload: unknown): Schedule[] {
 }
 
 /**
- * A job that was due and did not run means the gateway answers but its
- * scheduler is not running. Two minutes of slack covers a tick in flight.
+ * A stale next-run time warrants checking the scheduler, but does not prove
+ * it stopped. Two minutes of slack covers a tick in flight.
  */
 export function schedulerStanding(rows: Schedule[], now: number): { late: number; text: string } {
   const late = rows.filter(
@@ -306,8 +306,8 @@ export function schedulerStanding(rows: Schedule[], now: number): { late: number
     late,
     text:
       late === 1
-        ? t("有 1 个任务到点却没有运行：服务器网关在线，但调度器没有工作。调度器停止期间，所有定时任务都不会执行。")
-        : t("有 {0} 个任务到点却没有运行：服务器网关在线，但调度器没有工作。调度器停止期间，所有定时任务都不会执行。", { "0": late }),
+        ? t("有 1 个任务的下次运行时间已过，请刷新或检查服务器调度器。")
+        : t("有 {0} 个任务的下次运行时间已过，请刷新或检查服务器调度器。", { "0": late }),
   };
 }
 

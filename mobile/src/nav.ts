@@ -12,6 +12,7 @@ export type RootStackParamList = {
   Updates: undefined;
   Appearance: undefined;
   Chat: { threadId: string };
+  ChatSettings: { threadId: string };
 };
 
 export type AppNavigation = NativeStackNavigationProp<RootStackParamList>;

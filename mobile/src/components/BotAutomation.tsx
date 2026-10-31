@@ -5,8 +5,6 @@ import { t, useTranslation } from '../i18n';
 import {
   deliverText,
   distance,
-  draftBody,
-  draftProblem,
   emptyText,
   lastRunText,
   nextRunText,
@@ -46,7 +44,7 @@ function BotIdentity({ botId, caption }: { botId: string; caption: string }) {
 }
 
 /** The bot's role, kept in the app's block of its SOUL.md. */
-export function DescriptionEditor({ botId, onSaved }: { botId: string; onSaved?: () => void }) {
+export function DescriptionEditor({ botId, onSaved, embedded = false }: { botId: string; onSaved?: () => void; embedded?: boolean }) {
   const { styles, C, scheme } = useStyles();
   useTranslation();
   const { botById, saveDescription } = useStore();
@@ -75,26 +73,29 @@ export function DescriptionEditor({ botId, onSaved }: { botId: string; onSaved?:
     }
   }
 
-  return (
-    <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled"
-      automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
-      <BotIdentity botId={botId} caption={t('描述')} />
-      <Text style={styles.caption}>{t('说明这个机器人负责什么。从下一次新会话生效，保存在服务器 SOUL.md 中由本应用管理的段落。')}</Text>
+  const content = (
+    <>
+      {embedded ? null : <BotIdentity botId={botId} caption={t('描述')} />}
+      {embedded ? null : <Text style={styles.caption}>{t('说明这个机器人负责什么。从下一次新会话生效，保存在服务器 SOUL.md 中由本应用管理的段落。')}</Text>}
       <View style={styles.field}>
         <TextInput keyboardAppearance={scheme} accessibilityLabel={t('描述')} value={text}
           onChangeText={(value) => { setText(value); setSaved(false); setError(''); }}
-          placeholder={t('例如：负责每天的科技新闻简报')} placeholderTextColor={C.text2}
+          placeholder={t('这个机器人的用途')} placeholderTextColor={C.text2}
           style={[styles.input, styles.multiline]} multiline maxLength={LIMIT} editable={!busy}
           textAlignVertical="top" />
         <Text style={styles.counter}>{text.length}/{LIMIT}</Text>
       </View>
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled, busy }} disabled={disabled}
+      {(!embedded || changed || busy) ? <Pressable accessibilityRole="button" accessibilityState={{ disabled, busy }} disabled={disabled}
         onPress={() => void save()} style={({ pressed }) => [styles.apply, disabled && styles.disabled, pressed && styles.pressed]}>
         <Text style={styles.applyText}>{busy ? t('正在保存…') : t('保存')}</Text>
-      </Pressable>
+      </Pressable> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {saved && !busy ? <Text accessibilityLiveRegion="polite" style={styles.success}>{t('已保存到服务器。')}</Text> : null}
-    </ScrollView>
+    </>
+  );
+  return embedded ? <View style={styles.embedded}>{content}</View> : (
+    <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">{content}</ScrollView>
   );
 }
 
@@ -120,12 +121,12 @@ function StateBadge({ state }: { state: ScheduleState }) {
 type RunRef = { id: string; title: string };
 
 /** The bot's jobs on the server, where each stands, and its latest runs. */
-export function JobsPage({ botId, onNew, onOpenRun, onCount, reloadKey = 0 }: {
+export function JobsPage({ botId, onOpenRun, onCount, reloadKey = 0, embedded = false }: {
   botId: string;
-  onNew: () => void;
   onOpenRun: (run: RunRef) => void;
   onCount?: (count: number) => void;
   reloadKey?: number;
+  embedded?: boolean;
 }) {
   const { styles, C } = useStyles();
   useTranslation();
@@ -134,24 +135,30 @@ export function JobsPage({ botId, onNew, onOpenRun, onCount, reloadKey = 0 }: {
   const [runs, setRuns] = useState<Record<string, ScheduleRun[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [runsError, setRunsError] = useState(false);
   const [acting, setActing] = useState('');
   const [notice, setNotice] = useState<{ id: string; text: string; bad: boolean } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const pending = useRef(false);
   const latest = useRef(0);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   async function reload() {
     const ticket = ++latest.current;
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setRunsError(false);
     try {
-      const [list, sessions] = await Promise.all([loadJobs(botId), loadRuns(botId).catch(() => [])]);
+      const [list, sessions] = await Promise.allSettled([loadJobs(botId), loadRuns(botId)]);
       if (!alive.current || ticket !== latest.current) return;
-      setJobs(list);
-      setRuns(runsByJob(sessions));
+      if (list.status === 'fulfilled') {
+        setJobs(list.value);
+        onCount?.(list.value.length);
+      } else {
+        setError(failure(list.reason, t('无法读取定时任务。')));
+      }
+      if (sessions.status === 'fulfilled') setRuns(runsByJob(sessions.value));
+      else setRunsError(true);
       setNow(Date.now());
-      onCount?.(list.length);
     } catch (e) {
       if (!alive.current || ticket !== latest.current) return;
       setError(failure(e, t('无法读取定时任务。')));
@@ -196,8 +203,8 @@ export function JobsPage({ botId, onNew, onOpenRun, onCount, reloadKey = 0 }: {
     );
   }
 
-  return (
-    <ScrollView contentContainerStyle={styles.body}>
+  const content = (
+    <>
       <View style={styles.between}>
         <Text style={styles.section}>
           {jobs ? t('{0} 个任务', { 0: jobs.length }) : t('定时任务')}
@@ -210,9 +217,10 @@ export function JobsPage({ botId, onNew, onOpenRun, onCount, reloadKey = 0 }: {
 
       {standing.text ? <View style={styles.warningBox}><Text style={styles.warning}>{standing.text}</Text></View> : null}
 
-      {error ? (
+      {error || runsError ? (
         <View style={styles.errorBox}>
-          <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {runsError ? <Text accessibilityRole="alert" style={styles.error}>{t('无法读取运行记录，请刷新重试。')}</Text> : null}
           <Pressable accessibilityRole="button" onPress={() => void reload()} disabled={loading}
             style={({ pressed }) => [styles.retry, pressed && styles.pressed]}>
             <Text style={styles.refreshText}>{t('重试')}</Text>
@@ -277,13 +285,9 @@ export function JobsPage({ botId, onNew, onOpenRun, onCount, reloadKey = 0 }: {
         );
       })}
 
-      <Pressable accessibilityRole="button" onPress={onNew}
-        style={({ pressed }) => [styles.apply, pressed && styles.pressed]}>
-        <Text style={styles.applyText}>{t('新建定时任务')}</Text>
-      </Pressable>
-      <Text style={styles.footnote}>{t('服务器启用 cron 后，也可以直接在聊天里说“每天 9 点……”，机器人会自己创建任务。')}</Text>
-    </ScrollView>
+    </>
   );
+  return embedded ? <View style={styles.embedded}>{content}</View> : <ScrollView contentContainerStyle={styles.body}>{content}</ScrollView>;
 }
 
 function Fact({ label, value, bad }: { label: string; value: string; bad?: boolean }) {
@@ -293,87 +297,6 @@ function Fact({ label, value, bad }: { label: string; value: string; bad?: boole
       <Text style={styles.factLabel}>{label}</Text>
       <Text style={[styles.factValue, bad && styles.factBad]} numberOfLines={3}>{value}</Text>
     </View>
-  );
-}
-
-type Preset = 'daily' | 'every2h' | 'custom';
-const PRESETS: { id: Preset; label: string; when: string }[] = [
-  { id: 'daily', label: '每天 9:00', when: '0 9 * * *' },
-  { id: 'every2h', label: '每 2 小时', when: 'every 2h' },
-  { id: 'custom', label: '自定义', when: '' },
-];
-
-/** A new job: a name, when it runs (in the server's timezone), and what to do. */
-export function NewJobForm({ botId, onCreated }: { botId: string; onCreated: () => void }) {
-  const { styles, C, scheme } = useStyles();
-  useTranslation();
-  const { createJob } = useStore();
-  const [name, setName] = useState('');
-  const [preset, setPreset] = useState<Preset>('daily');
-  const [custom, setCustom] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const pending = useRef(false);
-  const when = preset === 'custom' ? custom : PRESETS.find((p) => p.id === preset)!.when;
-
-  async function create() {
-    if (pending.current) return;
-    const draft = { name, when, prompt, deliver: 'local', repeat: '' };
-    const problem = draftProblem(draft);
-    if (problem) { setError(problem); return; }
-    pending.current = true;
-    setBusy(true); setError('');
-    try {
-      await createJob(botId, draftBody(draft));
-      onCreated();
-    } catch (e) {
-      setError(failure(e, t('操作失败，请重试。')));
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled"
-      automaticallyAdjustKeyboardInsets keyboardDismissMode="interactive">
-      <BotIdentity botId={botId} caption={t('新建定时任务')} />
-      <Text style={styles.label}>{t('任务名称')}</Text>
-      <TextInput keyboardAppearance={scheme} accessibilityLabel={t('任务名称')} value={name} onChangeText={setName}
-        placeholder={t('例如：早间新闻')} placeholderTextColor={C.text2} style={styles.input} maxLength={200} editable={!busy} />
-
-      <Text style={styles.label}>{t('运行时间')}</Text>
-      <View style={styles.chips}>
-        {PRESETS.map((item) => {
-          const on = preset === item.id;
-          return (
-            <Pressable key={item.id} accessibilityRole="radio" aria-checked={on} accessibilityState={{ checked: on }}
-              disabled={busy} onPress={() => setPreset(item.id)} style={[styles.chip, on && styles.chipOn]}>
-              <Text style={[styles.chipText, on && styles.chipTextOn]}>{t(item.label)}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      {preset === 'custom' ? (
-        <TextInput keyboardAppearance={scheme} accessibilityLabel={t('运行时间')} value={custom} onChangeText={setCustom}
-          placeholder="0 9 * * MON-FRI / every 30m / in 2h" placeholderTextColor={C.text2} style={styles.input}
-          autoCapitalize="none" autoCorrect={false} editable={!busy} />
-      ) : null}
-      <Text style={styles.caption}>{when ? `${when} · ${t('按服务器时区')}` : t('按服务器时区')}</Text>
-
-      <Text style={styles.label}>{t('要做什么')}</Text>
-      <TextInput keyboardAppearance={scheme} accessibilityLabel={t('要做什么')} value={prompt} onChangeText={setPrompt}
-        placeholder={t('例如：每天整理科技新闻，用中文写成 5 条要点。')} placeholderTextColor={C.text2}
-        style={[styles.input, styles.multiline]} multiline maxLength={5000} editable={!busy} textAlignVertical="top" />
-      <Text style={styles.caption}>{`${t('投递')} · ${deliverText('local')}`}</Text>
-
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy}
-        onPress={() => void create()} style={({ pressed }) => [styles.apply, busy && styles.disabled, pressed && styles.pressed]}>
-        <Text style={styles.applyText}>{busy ? t('正在保存…') : t('创建')}</Text>
-      </Pressable>
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    </ScrollView>
   );
 }
 
@@ -430,6 +353,7 @@ export function RunTranscript({ botId, runId }: { botId: string; runId: string }
 // Native point sizes, like the model picker.
 const useStyles = themedStyles(({ C }) => ({
   body: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32, gap: 12 },
+  embedded: { gap: 12 },
   flex: { flex: 1, minWidth: 0 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   identity: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -440,7 +364,7 @@ const useStyles = themedStyles(({ C }) => ({
   section: { color: C.text2, fontSize: 12, fontWeight: '500', flexShrink: 1 },
   name: { color: C.text, fontSize: 15, lineHeight: 21, fontWeight: '500' },
   meta: { color: C.text2, fontSize: 12, lineHeight: 18 },
-  field: { backgroundColor: C.field, borderRadius: 12 },
+  field: { backgroundColor: C.field, borderRadius: 16 },
   input: { minHeight: 46, backgroundColor: C.field, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, lineHeight: 20, color: C.text },
   multiline: { minHeight: 120 },
   counter: { color: C.text2, fontSize: 11, textAlign: 'right', paddingHorizontal: 12, paddingBottom: 8 },

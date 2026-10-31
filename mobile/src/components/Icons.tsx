@@ -236,3 +236,12 @@ export function CopyIcon({ size = 16, color: customColor }: IconProps) {
     </Svg>
   );
 }
+
+export function ExportIcon({ size = 16, color: customColor }: IconProps) {
+  const { C } = useTheme();
+  return (
+    <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" {...stroke(customColor ?? C.text2, 1.7)}>
+      <Path d="M12 15V3m-4 4 4-4 4 4M5 11v9h14v-9" />
+    </Svg>
+  );
+}

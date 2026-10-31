@@ -96,7 +96,7 @@ assert.deepEqual(s.draftBody({...draft, repeat: ' 3 ', deliver: 'bot-chat:worker
 assert.equal(s.draftBody({...draft, deliver: 'bot-chat:worker'}).deliver, 'bot-chat:worker');
 assert.equal(s.deliverText(''), 'Kept on the server');
 
-// A due job that never ran means the gateway answers but its scheduler is off.
+// An overdue timestamp warrants a scheduler check, not a definite diagnosis.
 const late = s.readSchedules({jobs: [
   {id: 'a', name: 'A', schedule: '0 9 * * *', state: 'scheduled', next_run_at: (NOW - 10 * 60_000) / 1000},
   {id: 'b', name: 'B', schedule: '0 9 * * *', state: 'scheduled', next_run_at: (NOW - 60_000) / 1000},

@@ -16,7 +16,6 @@ import { BackIcon, FileIcon, MicIcon, MoreIcon, PhotoIcon } from '../components/
 import { Composer, type Outgoing } from '../components/Composer';
 import { TypingDots } from '../components/TypingDots';
 import { BotSheet } from './BotSheet';
-import { ConversationSheet } from './ConversationSheet';
 import { GroupDetailsSheet } from './GroupDetailsSheet';
 import { MessageSheet } from './MessageSheet';
 import { CHAT_EVENTS, type Bot, type Message } from '../data';
@@ -69,7 +68,6 @@ export function ChatScreen({ route, navigation }: Props) {
     threadById,
   } = useStore();
 
-  const [modelsOpen, setModelsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [botOpen, setBotOpen] = useState(false);
   const [active, setActive] = useState<Message | null>(null);
@@ -224,7 +222,7 @@ export function ChatScreen({ route, navigation }: Props) {
 
           <Pressable
             style={styles.navIcon}
-            onPress={() => (isGroup ? setDetailsOpen(true) : setModelsOpen(true))}
+            onPress={() => (isGroup ? setDetailsOpen(true) : navigation.navigate('ChatSettings', { threadId: thread.id }))}
             accessibilityLabel={isGroup ? t("群组详情") : t("会话详情")}
           >
             <MoreIcon />
@@ -280,13 +278,6 @@ export function ChatScreen({ route, navigation }: Props) {
         }}
       />
 
-      {/* One-to-one details, and the model it runs on. */}
-      <ConversationSheet
-        visible={modelsOpen}
-        onClose={() => setModelsOpen(false)}
-        threadId={thread.id}
-        onDeleted={() => navigation.goBack()}
-      />
       <GroupDetailsSheet
         visible={detailsOpen}
         onClose={() => setDetailsOpen(false)}

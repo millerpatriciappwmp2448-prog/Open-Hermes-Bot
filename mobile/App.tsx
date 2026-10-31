@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StoreProvider } from './src/store';
 import { ChatScreen } from './src/screens/ChatScreen';
+import { ChatSettingsScreen } from './src/screens/ChatSettingsScreen';
 import { ConversationsScreen } from './src/screens/ConversationsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SetupScreen } from './src/screens/SetupScreen';
@@ -54,6 +55,7 @@ export default function App() {
             >
               <Stack.Screen name="Chats" component={ConversationsScreen} />
               <Stack.Screen name="Chat" component={ChatScreen} />
+              <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
               <Stack.Screen name="Setup" component={SetupScreen} />
               <Stack.Screen name="Connection" component={ConnectionScreen} />

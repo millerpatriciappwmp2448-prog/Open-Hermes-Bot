@@ -93,7 +93,19 @@ python3 -m hermes_bridge pair
 
 ## 当前原项目的功能限制
 
-文字会话和每个机器人的模型选择已接入桥接服务。群组、语音、附件和应用内更新仍有演示或未接入部分。手机更新通过 TrollStore 导入新版 IPA。
+文字会话、每个机器人的模型选择、机器人描述、定时任务列表与运行记录已接入桥接服务。群组、语音、附件和应用内更新仍有演示或未接入部分。手机更新通过 TrollStore 导入新版 IPA。
+
+## 聊天设置、描述与定时任务
+
+进入机器人聊天，点右上角 **… → 聊天设置**：
+
+- **机器人描述**：说明它的职责，修改后点保存。内容写入服务器该机器人 `SOUL.md` 中由本应用管理的段落，从下一次新会话生效。保存失败会保留输入供重试。
+- **定时任务 → 任务与运行记录**：读取该机器人在服务器上的任务，显示状态、计划、下次和上次运行时间、投递位置。支持暂停、恢复、立即运行和刷新。
+- 每个任务下显示最近 3 次运行对应的 **session**，点开可查看消息。例如每日新闻任务可能每天产生一个 session。这些记录来自服务器；读取失败会明确提示，刷新失败会保留此前已读取的记录。
+
+创建任务主要通过聊天，例如：“每天早上 9 点整理科技新闻，用中文写成 5 条要点”。由 Hermes 智能体调用服务器的定时任务工具创建，成功后可在聊天设置中刷新查看。服务器必须支持并启用相应工具，网关调度器也需要持续运行；手机界面本身不执行定时任务。时间和投递渠道应在聊天中明确，并检查任务实际返回的配置。
+
+此版提供任务与运行结果查看，**不等于已实现 iOS 锁屏或后台推送**。任务是否投递到 Telegram 等渠道取决于服务器上的配置。所有 session 的独立浏览、用量统计和服务器 CPU 监控尚未接入手机端。
 
 ## 验证命令
 
@@ -103,6 +115,8 @@ npx tsc --noEmit
 node scripts/test-localization.cjs
 node scripts/test-server-models.cjs
 node scripts/test-appearance.cjs
+node scripts/test-bot-names.cjs
+node scripts/test-schedules.cjs
 python scripts/verify-ios-ipa.py artifacts/Hermes-Bot-iOS17-ZH-EN-TrollStore.ipa
 ```
 
