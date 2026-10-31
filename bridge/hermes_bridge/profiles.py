@@ -32,6 +32,15 @@ COLOR_RE = re.compile(
 )
 SHAPE_RE = re.compile(r"^[a-z-]{1,24}$")
 
+# The part of SOUL.md this app owns. Everything outside the markers is the
+# persona a person wrote by hand, and it is never rewritten from the phone.
+ROLE_START = "<!-- hermes-bot:role:start -->"
+ROLE_END = "<!-- hermes-bot:role:end -->"
+ROLE_BLOCK = re.compile(
+    re.escape(ROLE_START) + r".*?" + re.escape(ROLE_END) + r"\n?",
+    re.DOTALL,
+)
+
 # The face of a bot, when nobody has painted one. Deterministic, so the same
 # bot looks the same on every device.
 COLORS = ("#8b5cf6", "#4f9d8f", "#e152b0", "#3f6fd1", "#e09248", "#2fbfa0")
@@ -80,6 +89,72 @@ def profile_of(bot_id: str) -> str:
 
 def _meta_path(config: Config, profile: str) -> Path:
     return config.profile_dir(profile) / "profile.yaml"
+
+
+def soul_path(config: Config, profile: str) -> Path:
+    return config.profile_dir(profile) / "SOUL.md"
+
+
+def read_role(config: Config, profile: str) -> str:
+    """The role the app last wrote into SOUL.md, without its markers."""
+
+    try:
+        text = soul_path(config, profile).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    match = ROLE_BLOCK.search(text)
+    if not match:
+        return ""
+    body = match.group(0)[len(ROLE_START) :]
+    body = body[: body.rfind(ROLE_END)].strip()
+    lines = body.splitlines()
+    if lines and lines[0].startswith("## "):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _clean_role(role: str) -> str:
+    return (role or "").replace(ROLE_START, "").replace(ROLE_END, "").strip()[:600]
+
+
+def _with_role(text: str, role: str) -> str:
+    rest = ROLE_BLOCK.sub("", text).rstrip()
+    if not role:
+        return f"{rest}\n" if rest else ""
+    block = f"{ROLE_START}\n## Role\n\n{role}\n{ROLE_END}\n"
+    return f"{rest}\n\n{block}" if rest else block
+
+
+def write_role(config: Config, profile: str, role: str) -> None:
+    """Replace only the app's block in SOUL.md; an empty role removes it.
+
+    Hermes reads SOUL.md at the start of a session, so this is what changes
+    what the bot does. profile.yaml's description is only the label.
+    """
+
+    path = soul_path(config, profile)
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        mode = path.stat().st_mode & 0o777
+    except OSError:
+        text = ""
+        mode = 0o644
+
+    role = _clean_role(role)
+    if not role and not ROLE_BLOCK.search(text):
+        return
+    updated = _with_role(text, role)
+    if updated == text:
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".bridge-tmp")
+    tmp.write_text(updated, encoding="utf-8")
+    try:
+        tmp.chmod(mode)
+    except OSError:
+        pass
+    os.replace(tmp, path)
 
 
 def read_meta(config: Config, profile: str) -> dict:
@@ -150,6 +225,7 @@ def list_bots(config: Config) -> list[dict]:
             "name": primary["title"] or "Hermes",
             "title": primary["title"],
             "description": primary["description"],
+            "role": read_role(config, PRIMARY),
             "color": primary["color"] or color,
             "shape": primary["shape"] or shape,
             "primary": True,
@@ -177,6 +253,7 @@ def list_bots(config: Config) -> list[dict]:
                 "name": meta["title"] or name.replace("-", " ").title(),
                 "title": meta["title"],
                 "description": meta["description"],
+                "role": read_role(config, name),
                 "color": meta["color"] or color,
                 "shape": meta["shape"] or shape,
                 "primary": False,
@@ -222,6 +299,7 @@ def create_bot(
     color: str = "",
     shape: str = "",
     description: str = "",
+    soul_role: bool = False,
 ) -> dict:
     """Lay a new profile out, publish it in one rename, and ask the gateway.
 
@@ -350,6 +428,15 @@ def create_bot(
             yaml.safe_dump(meta, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
+        # The copied soul may carry the primary bot's role block; a new bot
+        # starts with its own role, or none.
+        role = _clean_role(description) if soul_role else ""
+        soul = staging / "SOUL.md"
+        if soul.is_file() or role:
+            existing = soul.read_text(encoding="utf-8", errors="replace") if soul.is_file() else ""
+            updated = _with_role(existing, role)
+            if updated != existing:
+                soul.write_text(updated, encoding="utf-8")
 
         os.replace(staging, final)
     finally:
@@ -377,6 +464,8 @@ def update_bot(config: Config, bot_id: str, fields: dict) -> dict:
         if not shape:
             raise BotError(400, "bad_shape", "That is not a shape this app can draw.")
         cleaned["shape"] = shape
+    if fields.get("soul") is True and "description" in cleaned:
+        write_role(config, profile, cleaned["description"])
     if not cleaned:
         return get_bot(config, bot_id)
     write_meta(config, profile, cleaned)

@@ -87,20 +87,6 @@ export function SettingsScreen() {
           />
         </View>
 
-        <Text style={styles.groupLabel}>{t("会话")}</Text>
-        <View style={styles.group}>
-          <View style={styles.row}>
-            <Text style={styles.rowName}>{t("表情回应")}</Text>
-            <View style={styles.spacer} />
-            <Toggle on={toggles.tapbacks} onChange={() => toggle('tapbacks')} label={t("表情回应")} />
-          </View>
-          <View style={[styles.row, styles.line]}>
-            <Text style={styles.rowName}>{t("声音")}</Text>
-            <View style={styles.spacer} />
-            <Toggle on={toggles.sounds} onChange={() => toggle('sounds')} label={t("声音")} />
-          </View>
-        </View>
-
         <Text style={styles.groupLabel}>语言 / Language</Text>
         <View style={[styles.group, { padding: 10 }]}>
           <Segmented

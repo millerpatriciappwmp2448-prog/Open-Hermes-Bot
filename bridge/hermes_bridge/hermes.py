@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import socket
 import time
 import urllib.error
@@ -20,6 +21,9 @@ from pathlib import Path
 from .config import Config
 
 PRIMARY = "default"
+
+# The id Hermes gives the session of one scheduled run.
+CRON_SESSION_RE = re.compile(r"^cron_.+_\d{8}_\d{6}$")
 
 
 class HermesError(Exception):
@@ -176,6 +180,19 @@ class Hermes:
     def sessions(self, profile: str, limit: int = 100, pages: int = 5) -> list[dict]:
         """The conversations a bot holds, newest first, without duplicates."""
 
+        return self._session_rows(profile, "&source=api_server", limit, pages)
+
+    def runs(self, profile: str, limit: int = 100, pages: int = 3) -> list[dict]:
+        """The sessions the scheduler opened, newest first.
+
+        Hermes names every agent run of a job `cron_<job>_<YYYYMMDD>_<HHMMSS>`,
+        so a run is found by its id whatever source the host stamped on it.
+        """
+
+        rows = self._session_rows(profile, "", limit, pages)
+        return [row for row in rows if CRON_SESSION_RE.match(row["id"])]
+
+    def _session_rows(self, profile: str, extra: str, limit: int, pages: int) -> list[dict]:
         rows: list[dict] = []
         seen: set[str] = set()
         offset = 0
@@ -183,7 +200,7 @@ class Hermes:
             payload = self._call(
                 profile,
                 "GET",
-                f"/api/sessions?limit={limit}&offset={offset}&order=recent&source=api_server",
+                f"/api/sessions?limit={limit}&offset={offset}&order=recent{extra}",
             )
             batch = payload.get("data") or payload.get("sessions") or []
             if not isinstance(batch, list) or not batch:
@@ -332,6 +349,32 @@ class Hermes:
             "currentProvider": provider if provider != "auto" else "",
             "providers": providers,
         }
+
+    # The schedules live in the host's cron/jobs.json and the gateway serves
+    # them under the same profile prefix as the sessions.
+
+    def jobs(self, profile: str) -> list[dict]:
+        payload = self._call(profile, "GET", "/api/jobs?include_disabled=true", timeout=15)
+        rows = payload.get("jobs")
+        if rows is None:
+            rows = payload.get("data")
+        return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+    def create_job(self, profile: str, body: dict) -> dict:
+        payload = self._call(profile, "POST", "/api/jobs", body, timeout=30)
+        job = payload.get("job")
+        return job if isinstance(job, dict) else {}
+
+    def job_action(self, profile: str, job_id: str, action: str) -> dict:
+        payload = self._call(
+            profile,
+            "POST",
+            f"/api/jobs/{urllib.parse.quote(job_id, safe='')}/{action}",
+            {},
+            timeout=30,
+        )
+        job = payload.get("job")
+        return job if isinstance(job, dict) else {}
 
     # ------------------------------------------------------------- a turn
 

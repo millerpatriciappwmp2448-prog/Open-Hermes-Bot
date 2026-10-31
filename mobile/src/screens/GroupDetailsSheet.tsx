@@ -6,7 +6,6 @@ import { Bloub, BloubGroup } from '../components/Bloub';
 import { ChevronIcon, CloseIcon } from '../components/Icons';
 import { ModelList } from '../components/ModelList';
 import { ConfirmBlock } from '../components/UI';
-import { Toggle } from '../components/Toggle';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
 
@@ -27,7 +26,7 @@ export function GroupDetailsSheet({
 }) {
   const { styles, INK } = useStyles();
   useTranslation();
-  const { threadById, botById, setModel, toggles, toggle, updateGroup, leaveGroup } = useStore();
+  const { threadById, botById, setModel, updateGroup, leaveGroup } = useStore();
   const [picking, setPicking] = useState(false);
   const [pending, setPending] = useState<
     { kind: 'leave' } | { kind: 'remove'; id: string; name: string } | null
@@ -135,26 +134,6 @@ export function GroupDetailsSheet({
                   <Text style={styles.rowName}>{t("会话数")}</Text>
                 </View>
                 <Text style={styles.value}>{members.length} {t("个独立会话")}</Text>
-              </View>
-              <View style={[styles.row, styles.line]}>
-                <View style={styles.copy}>
-                  <Text style={styles.rowName}>{t("表情回应")}</Text>
-                </View>
-                <Toggle
-                  on={toggles.tapbacks}
-                  onChange={() => toggle('tapbacks')}
-                  label={t("表情回应")}
-                />
-              </View>
-              <View style={[styles.row, styles.line]}>
-                <View style={styles.copy}>
-                  <Text style={styles.rowName}>{t("通知")}</Text>
-                </View>
-                <Toggle
-                  on={toggles.notifications}
-                  onChange={() => toggle('notifications')}
-                  label={t("通知")}
-                />
               </View>
             </View>
 

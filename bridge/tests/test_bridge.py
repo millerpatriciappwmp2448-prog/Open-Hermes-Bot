@@ -387,6 +387,115 @@ class BridgeTest(unittest.TestCase):
         status, body = self.call("GET", "/v1/bots")
         self.assertEqual(status, 401)
 
+    # ----------------------------------------------------------------------- schedules and runs
+
+    def test_the_jobs_of_a_bot_are_listed(self):
+        status, body = self.call("GET", "/v1/jobs?bot=nova")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["bot"], "nova")
+        self.assertEqual([job["id"] for job in body["jobs"]], ["news01"])
+        self.assertEqual(body["jobs"][0]["schedule_display"], "0 9 * * *")
+
+    def test_a_job_is_created_and_a_bad_one_is_explained(self):
+        status, body = self.call(
+            "POST",
+            "/v1/jobs",
+            {"bot": "nova", "name": "Weekly", "schedule": "0 8 * * 1", "prompt": "Plan the week"},
+        )
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["job"]["name"], "Weekly")
+        self.assertEqual(body["job"]["deliver"], "local")
+        self.assertEqual(len(self.fake.jobs["nova"]), 2)
+
+        status, body = self.call(
+            "POST",
+            "/v1/jobs",
+            {"bot": "nova", "name": "Odd", "schedule": "whenever", "prompt": "x"},
+        )
+        self.assertEqual(status, 400, body)
+        self.assertEqual(body["error"]["code"], "bad_schedule")
+        self.assertIn("whenever", body["error"]["message"])
+
+        for missing in ({"schedule": "0 9 * * *", "prompt": "x"}, {"name": "n", "schedule": "0 9 * * *"}):
+            status, body = self.call("POST", "/v1/jobs", {"bot": "nova", **missing})
+            self.assertEqual(status, 400, body)
+            self.assertEqual(body["error"]["code"], "bad_schedule")
+        self.assertEqual(len(self.fake.jobs["nova"]), 2)
+
+    def test_a_job_is_paused_resumed_and_run(self):
+        status, body = self.call("POST", "/v1/jobs/nova/news01/pause")
+        self.assertEqual(status, 200, body)
+        self.assertFalse(body["job"]["enabled"])
+        status, body = self.call("POST", "/v1/jobs/nova/news01/resume")
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["job"]["enabled"])
+        status, body = self.call("POST", "/v1/jobs/nova/news01/run")
+        self.assertEqual(status, 200, body)
+        status, body = self.call("POST", "/v1/jobs/nova/gone/run")
+        self.assertEqual(status, 404, body)
+        self.assertEqual(body["error"]["code"], "no_job")
+
+    def test_a_gateway_without_cron_says_so(self):
+        self.fake.cron = False
+        status, body = self.call("GET", "/v1/jobs?bot=nova")
+        self.assertEqual(status, 501, body)
+        self.assertEqual(body["error"]["code"], "no_cron")
+        status, body = self.call(
+            "POST",
+            "/v1/jobs",
+            {"bot": "nova", "name": "n", "schedule": "0 9 * * *", "prompt": "x"},
+        )
+        self.assertEqual(status, 501, body)
+        self.assertEqual(body["error"]["code"], "no_cron")
+
+    def test_scheduled_runs_stay_out_of_the_chat_list(self):
+        status, body = self.call("GET", "/v1/runs?bot=nova")
+        self.assertEqual(status, 200, body)
+        self.assertEqual([row["id"] for row in body["runs"]], ["cron_news01_20261030_090000"])
+        self.assertEqual(body["runs"][0]["lastActive"], 1500)
+
+        status, body = self.call("GET", "/v1/sessions")
+        self.assertEqual(status, 200, body)
+        ids = {row["id"] for row in body["sessions"]}
+        self.assertNotIn("cron_news01_20261030_090000", ids)
+        self.assertNotIn("s-nova-telegram", ids)
+        self.assertIn("s-nova-1", ids)
+
+    def test_a_description_writes_only_the_app_block_of_the_soul(self):
+        soul = self.home / "profiles" / "nova" / "SOUL.md"
+        soul.write_text("You are Nova, written by hand.\n", encoding="utf-8")
+
+        status, body = self.call(
+            "PATCH", "/v1/bots/nova", {"description": "每天整理新闻", "soul": True}
+        )
+        self.assertEqual(status, 200, body)
+        text = soul.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("You are Nova, written by hand.\n"))
+        self.assertIn("## Role\n\n每天整理新闻\n", text)
+
+        status, body = self.call("GET", "/v1/bots")
+        nova = {bot["id"]: bot for bot in body["bots"]}["nova"]
+        self.assertEqual(nova["role"], "每天整理新闻")
+        self.assertEqual(nova["description"], "每天整理新闻")
+
+        status, body = self.call("PATCH", "/v1/bots/nova", {"description": "写周报", "soul": True})
+        self.assertEqual(status, 200, body)
+        text = soul.read_text(encoding="utf-8")
+        self.assertEqual(text.count("hermes-bot:role:start"), 1)
+        self.assertIn("写周报", text)
+        self.assertNotIn("每天整理新闻", text)
+
+        status, body = self.call("PATCH", "/v1/bots/nova", {"description": "", "soul": True})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(soul.read_text(encoding="utf-8"), "You are Nova, written by hand.\n")
+
+    def test_a_label_change_alone_leaves_the_soul_alone(self):
+        soul = self.home / "profiles" / "nova" / "SOUL.md"
+        soul.write_text("Hand written.\n", encoding="utf-8")
+        status, body = self.call("PATCH", "/v1/bots/nova", {"description": "just a label"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(soul.read_text(encoding="utf-8"), "Hand written.\n")
+
 
 if __name__ == "__main__":
     unittest.main()

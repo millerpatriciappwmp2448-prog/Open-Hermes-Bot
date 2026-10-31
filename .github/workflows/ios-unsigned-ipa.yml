@@ -55,6 +55,12 @@ jobs:
       - name: Check appearance preferences
         run: node scripts/test-appearance.cjs
 
+      - name: Check new bot profile names
+        run: node scripts/test-bot-names.cjs
+
+      - name: Check scheduled tasks
+        run: node scripts/test-schedules.cjs
+
       - name: Check Xcode
         run: xcodebuild -version
 

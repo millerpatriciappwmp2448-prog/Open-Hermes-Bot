@@ -66,6 +66,15 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("PATCH", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_update", False),
     ("DELETE", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_delete", False),
     ("GET", re.compile(r"^/v1/models$"), "_models", False),
+    ("GET", re.compile(r"^/v1/jobs$"), "_jobs", False),
+    ("POST", re.compile(r"^/v1/jobs$"), "_job_create", False),
+    (
+        "POST",
+        re.compile(r"^/v1/jobs/(?P<bot>[^/]+)/(?P<job>[^/]+)/(?P<action>pause|resume|run)$"),
+        "_job_action",
+        False,
+    ),
+    ("GET", re.compile(r"^/v1/runs$"), "_runs", False),
     ("GET", re.compile(r"^/v1/sessions$"), "_sessions", False),
     ("POST", re.compile(r"^/v1/sessions$"), "_session_create", False),
     (
@@ -421,6 +430,7 @@ class Handler(BaseHTTPRequestHandler):
             color=str(body.get("color") or ""),
             shape=str(body.get("shape") or ""),
             description=str(body.get("description") or ""),
+            soul_role=body.get("soul") is True,
         )
         return self._json(201, {"bot": bot})
 
@@ -440,6 +450,81 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(
             200, {"bot": bot_id, "models": self.bridge.hermes.models(profiles.profile_of(bot_id))}
         )
+
+    # ------------------------------------------------------------- schedules
+
+    @staticmethod
+    def _cron_missing(exc: HermesError) -> ApiError | None:
+        if exc.status in (404, 405, 501):
+            return ApiError(
+                501,
+                "no_cron",
+                "This Hermes gateway does not serve scheduled jobs. Update Hermes and "
+                "keep the gateway running with cron enabled.",
+            )
+        return None
+
+    def _jobs(self, match, query) -> int:
+        bot_id = (query.get("bot") or [profiles.PRIMARY])[0]
+        profiles.get_bot(self.config, bot_id)
+        try:
+            jobs = self.bridge.hermes.jobs(profiles.profile_of(bot_id))
+        except HermesError as exc:
+            raise self._cron_missing(exc) or exc
+        return self._json(200, {"bot": bot_id, "jobs": jobs})
+
+    def _job_create(self, match, query) -> int:
+        body = self._json_body()
+        bot_id = str(body.get("bot") or profiles.PRIMARY)
+        profiles.get_bot(self.config, bot_id)
+        name = str(body.get("name") or "").strip()
+        schedule = str(body.get("schedule") or "").strip()
+        prompt = str(body.get("prompt") or "").strip()
+        deliver = str(body.get("deliver") or "local").strip() or "local"
+        if not name or len(name) > 200:
+            raise ApiError(400, "bad_schedule", "A schedule needs a name of up to 200 characters.")
+        if not schedule or len(schedule) > 200:
+            raise ApiError(400, "bad_schedule", "A schedule needs a time: a cron expression, an interval or a date.")
+        if not prompt or len(prompt) > 5000:
+            raise ApiError(400, "bad_schedule", "Say what the bot should do, in up to 5000 characters.")
+        if len(deliver) > 200 or any(ch in deliver for ch in "\r\n"):
+            raise ApiError(400, "bad_schedule", "That delivery target is not valid.")
+        job = {"name": name, "schedule": schedule, "prompt": prompt, "deliver": deliver}
+        repeat = body.get("repeat")
+        if repeat is not None:
+            if isinstance(repeat, bool) or not isinstance(repeat, int) or not 1 <= repeat <= 10000:
+                raise ApiError(400, "bad_schedule", "Repeat is a whole number of runs, 1 or more.")
+            job["repeat"] = repeat
+        try:
+            created = self.bridge.hermes.create_job(profiles.profile_of(bot_id), job)
+        except HermesError as exc:
+            if exc.status == 400:
+                raise ApiError(400, "bad_schedule", exc.message) from exc
+            raise self._cron_missing(exc) or exc
+        return self._json(201, {"bot": bot_id, "job": created})
+
+    def _job_action(self, match, query) -> int:
+        bot_id = param(match, "bot")
+        profiles.get_bot(self.config, bot_id)
+        job_id = param(match, "job").strip()
+        if not job_id or len(job_id) > 200:
+            raise ApiError(400, "no_job", "A schedule needs an id.")
+        try:
+            job = self.bridge.hermes.job_action(
+                profiles.profile_of(bot_id), job_id, match.group("action")
+            )
+        except HermesError as exc:
+            if exc.status == 404:
+                raise ApiError(404, "no_job", "That schedule is gone from the host.") from exc
+            raise self._cron_missing(exc) or exc
+        return self._json(200, {"bot": bot_id, "job": job})
+
+    def _runs(self, match, query) -> int:
+        bot_id = (query.get("bot") or [profiles.PRIMARY])[0]
+        profiles.get_bot(self.config, bot_id)
+        rows = self.bridge.hermes.runs(profiles.profile_of(bot_id))
+        rows.sort(key=lambda row: row["lastActive"], reverse=True)
+        return self._json(200, {"bot": bot_id, "runs": rows[:100]})
 
     # ----------------------------------------------------------- sessions
 

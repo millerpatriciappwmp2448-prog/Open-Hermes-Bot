@@ -34,8 +34,43 @@ class FakeHermes:
                     "message_count": 1,
                     "last_active": 1000,
                     "archived": False,
-                }
+                },
+                {
+                    # A run of the scheduler: its own source, and the id Hermes gives it.
+                    "id": "cron_news01_20261030_090000",
+                    "title": "Morning news · 09:00",
+                    "message_count": 2,
+                    "last_active": 1500,
+                    "archived": False,
+                    "source": "cron",
+                },
+                {
+                    "id": "s-nova-telegram",
+                    "title": "From Telegram",
+                    "message_count": 4,
+                    "last_active": 900,
+                    "archived": False,
+                    "source": "telegram",
+                },
             ],
+        }
+        self.cron = True
+        self.jobs: dict[str, list[dict]] = {
+            "nova": [
+                {
+                    "id": "news01",
+                    "name": "Morning news",
+                    "prompt": "Summarise the news",
+                    "schedule": {"kind": "cron", "expr": "0 9 * * *", "display": "0 9 * * *"},
+                    "schedule_display": "0 9 * * *",
+                    "enabled": True,
+                    "state": "scheduled",
+                    "next_run_at": "2026-10-31T09:00:00+08:00",
+                    "last_run_at": "2026-10-30T09:00:00+08:00",
+                    "last_status": "ok",
+                    "deliver": "local",
+                }
+            ]
         }
         self.messages = {
             "s-primary-1": [
@@ -107,11 +142,21 @@ class _Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             limit = int((query.get("limit") or ["100"])[0])
             offset = int((query.get("offset") or ["0"])[0])
-            rows = self.fake.sessions.get(profile, [])
+            source = (query.get("source") or [""])[0]
+            rows = [
+                row
+                for row in self.fake.sessions.get(profile, [])
+                if not source or row.get("source", "api_server") == source
+            ]
             page = rows[offset : offset + limit]
             return self._json(
                 200, {"data": page, "has_more": offset + len(page) < len(rows)}
             )
+
+        if rest == "/api/jobs":
+            if not self.fake.cron:
+                return self._json(404, {"error": {"message": "no route"}})
+            return self._json(200, {"jobs": self.fake.jobs.get(profile, [])})
 
         match = re.match(r"^/api/sessions/([^/]+)/messages$", rest)
         if match:
@@ -167,6 +212,46 @@ class _Handler(BaseHTTPRequestHandler):
                     }
                 )
             return self._json(201, {"session": {"id": session_id}})
+
+        if rest == "/api/jobs":
+            if not self.fake.cron:
+                return self._json(404, {"error": {"message": "no route"}})
+            body = self._body()
+            schedule = str(body.get("schedule") or "")
+            if schedule == "whenever":
+                return self._json(400, {"error": "Invalid schedule 'whenever'"})
+            with self.fake._lock:
+                rows = self.fake.jobs.setdefault(profile, [])
+                job = {
+                    "id": f"job{len(rows) + 1}",
+                    "name": body.get("name"),
+                    "prompt": body.get("prompt"),
+                    "schedule": {"kind": "cron", "expr": schedule, "display": schedule},
+                    "schedule_display": schedule,
+                    "enabled": True,
+                    "state": "scheduled",
+                    "deliver": body.get("deliver"),
+                    "repeat": {"times": body.get("repeat"), "completed": 0},
+                }
+                rows.append(job)
+            return self._json(200, {"job": job})
+
+        match = re.match(r"^/api/jobs/([^/]+)/(pause|resume|run)$", rest)
+        if match:
+            if not self.fake.cron:
+                return self._json(404, {"error": {"message": "no route"}})
+            for job in self.fake.jobs.get(profile, []):
+                if job["id"] != match.group(1):
+                    continue
+                action = match.group(2)
+                if action == "pause":
+                    job.update(enabled=False, state="paused")
+                else:
+                    job.update(enabled=True, state="scheduled")
+                if action == "run":
+                    job["next_run_at"] = "2026-10-31T08:00:00+08:00"
+                return self._json(200, {"job": job})
+            return self._json(404, {"error": "Job not found"})
 
         match = re.match(r"^/api/sessions/([^/]+)/chat/stream$", rest)
         if match:

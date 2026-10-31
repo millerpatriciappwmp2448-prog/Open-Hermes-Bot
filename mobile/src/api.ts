@@ -19,6 +19,8 @@ export type BridgeBot = {
   shape: string;
   primary: boolean;
   hasKey: boolean;
+  /** The app's block in the bot's SOUL.md: what the bot is for. */
+  role?: string;
 };
 
 export type BridgeSession = {
@@ -93,6 +95,8 @@ const BRIDGE_ERRORS: Readonly<Record<string, string>> = {
   primary: '主机器人是 Hermes 本身，无法删除。',
   timeout: 'Hermes 回复超时，请稍后重试。',
   silent: 'Hermes 长时间没有返回数据，请检查服务器状态。',
+  no_cron: '服务器 Hermes 未启用定时任务，请更新 Hermes 并保持网关与 cron 运行。',
+  no_job: '该定时任务已不存在，请刷新。',
 };
 
 function bridgeErrorMessage(code: string, fallback: string): string {
@@ -100,6 +104,7 @@ function bridgeErrorMessage(code: string, fallback: string): string {
   if (code === 'hermes_error' || code === 'turn_failed') {
     return t("Hermes 执行失败：{0}", {"0": fallback});
   }
+  if (code === 'bad_schedule') return t("定时任务无效：{0}", {"0": fallback});
   return fallback;
 }
 
@@ -186,6 +191,16 @@ export type TurnHandlers = {
 
 export type BridgeClient = ReturnType<typeof createBridgeClient>;
 
+export type JobInput = {
+  name: string;
+  schedule: string;
+  prompt: string;
+  deliver: string;
+  repeat?: number;
+};
+
+export type JobAction = 'pause' | 'resume' | 'run';
+
 export function createBridgeClient(rawBase: string, token: string) {
   const root = normalizeUrl(rawBase);
   const auth = { Authorization: `Bearer ${token}` };
@@ -260,6 +275,7 @@ export function createBridgeClient(rawBase: string, token: string) {
       color: string;
       shape: string;
       description?: string;
+      soul?: boolean;
     }): Promise<BridgeBot> =>
       (
         await request<{ bot: BridgeBot }>('/v1/bots', {
@@ -271,7 +287,7 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     updateBot: async (
       botId: string,
-      patch: Partial<Pick<BridgeBot, 'title' | 'color' | 'shape' | 'description'>>,
+      patch: Partial<Pick<BridgeBot, 'title' | 'color' | 'shape' | 'description'>> & { soul?: boolean },
     ): Promise<BridgeBot> =>
       (
         await request<{ bot: BridgeBot }>(`/v1/bots/${bot(botId)}`, {
@@ -283,6 +299,35 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     deleteBot: (botId: string) =>
       request<{ ok: boolean }>(`/v1/bots/${bot(botId)}`, { method: 'DELETE' }, 45000),
+
+    /** The raw `{ jobs }` answer; `readSchedules` reads it defensively. */
+    jobs: (botId: string): Promise<unknown> => request<unknown>(`/v1/jobs?bot=${bot(botId)}`),
+
+    createJob: async (botId: string, input: JobInput): Promise<unknown> =>
+      (
+        await request<{ job: unknown }>('/v1/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bot: botId, ...input }),
+        })
+      ).job,
+
+    jobAction: async (botId: string, jobId: string, action: JobAction): Promise<unknown> =>
+      (
+        await request<{ job: unknown }>(
+          `/v1/jobs/${bot(botId)}/${encodeURIComponent(jobId)}/${action}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          },
+          action === 'run' ? 60000 : 30000,
+        )
+      ).job,
+
+    /** Sessions written by scheduled runs, newest first. */
+    runs: async (botId: string): Promise<BridgeSession[]> =>
+      (await request<{ runs: BridgeSession[] }>(`/v1/runs?bot=${bot(botId)}`)).runs ?? [],
 
     devices: async (): Promise<BridgeDevice[]> =>
       (await request<{ devices: BridgeDevice[] }>('/v1/devices')).devices,
@@ -317,6 +362,8 @@ export function createBridgeClient(rawBase: string, token: string) {
       let finished = false;
 
       const close = () => {
+        // Stopping is a decision made on the phone: no handler fires after it.
+        finished = true;
         try {
           xhr.abort();
         } catch {
@@ -325,6 +372,7 @@ export function createBridgeClient(rawBase: string, token: string) {
       };
 
       const emit = (frame: string) => {
+        if (finished) return;
         let event = 'message';
         const data: string[] = [];
         for (const line of frame.split('\n')) {
@@ -358,11 +406,14 @@ export function createBridgeClient(rawBase: string, token: string) {
       xhr.setRequestHeader('Accept', 'text/event-stream');
       xhr.timeout = 5 * 60 * 1000;
 
-      xhr.onprogress = () => {
+      // Read every complete frame received so far; `flush` also takes a final frame
+      // that arrived without its blank-line terminator.
+      const pump = (flush = false) => {
         const text = xhr.responseText ?? '';
-        if (text.length <= seen) return;
-        buffer += text.slice(seen);
-        seen = text.length;
+        if (text.length > seen) {
+          buffer = (buffer + text.slice(seen)).replace(/\r\n/g, '\n');
+          seen = text.length;
+        }
         let split = buffer.indexOf('\n\n');
         while (split !== -1) {
           const frame = buffer.slice(0, split);
@@ -370,7 +421,14 @@ export function createBridgeClient(rawBase: string, token: string) {
           split = buffer.indexOf('\n\n');
           if (frame.trim()) emit(frame);
         }
+        if (flush && buffer.trim()) {
+          const frame = buffer;
+          buffer = '';
+          emit(frame);
+        }
       };
+
+      xhr.onprogress = () => pump();
 
       xhr.onerror = () => {
         if (finished) return;
@@ -401,6 +459,8 @@ export function createBridgeClient(rawBase: string, token: string) {
           return;
         }
         // A stream that ended without `done` is still an answer that stopped.
+        pump(true);
+        if (finished) return;
         finished = true;
         handlers.onError?.(t("回复尚未完成，桥接服务就关闭了连接。"), 'incomplete');
       };

@@ -18,7 +18,7 @@ import { themedStyles } from '../theme';
 export function ConnectionScreen() {
   const { styles, C } = useStyles();
   useTranslation();
-  const { connection, connect, disconnect, devices, revokeDevice, refresh, prefs } = useStore();
+  const { connection, connect, disconnect, devices, revokeDevice, refresh, retry, prefs } = useStore();
   const [url, setUrl] = useState(connection.url);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -158,6 +158,12 @@ export function ConnectionScreen() {
                 label={working ? t("正在配对…") : t("配对本机")}
                 onPress={() => void pair()}
               />
+              {connection.status === 'error' && connection.device ? (
+                <>
+                  <View style={styles.gap} />
+                  <PrimaryButton label={t("重试连接")} tone="quiet" onPress={() => void retry()} />
+                </>
+              ) : null}
             </View>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}

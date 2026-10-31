@@ -125,6 +125,16 @@ export function ArrowUpIcon({ size = 18, color: customColor }: IconProps) {
   );
 }
 
+export function StopIcon({ size = 14, color: customColor }: IconProps) {
+  const { INK } = useTheme();
+  const color = customColor ?? INK.onPaper;
+  return (
+    <Svg width={box(size)} height={box(size)} viewBox="0 0 24 24" fill={color}>
+      <Rect x="6" y="6" width="12" height="12" rx="2.6" />
+    </Svg>
+  );
+}
+
 export function ChatsIcon({ size = 19, color: customColor }: IconProps) {
   const { C } = useTheme();
   const color = customColor ?? C.paper;

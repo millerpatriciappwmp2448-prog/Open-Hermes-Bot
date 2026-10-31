@@ -117,7 +117,8 @@ export function ChatScreen({ route, navigation }: Props) {
   function renderMessage(message: Message) {
     const mine = message.from === 'user';
     const author = mine ? null : botById(message.from);
-    const ink = mine ? styles.bubbleUserText : styles.bubbleBotText;
+    const failed = !mine && message.failed;
+    const ink = mine ? styles.bubbleUserText : failed ? styles.bubbleFailedText : styles.bubbleBotText;
 
     return (
       <View
@@ -140,9 +141,11 @@ export function ChatScreen({ route, navigation }: Props) {
               styles.bubble,
               mine ? styles.bubbleUser : styles.bubbleBot,
               isGroup && styles.bubbleGroup,
+              failed && styles.bubbleFailed,
             ]}
             accessibilityHint={t("长按可添加表情回应、复制或删除")}
           >
+            {failed ? <Text style={styles.failedLabel}>{t("回复失败")}</Text> : null}
             {message.kind === 'attachment' && message.attachment ? (
               <View style={styles.attachment}>
                 {message.attachment.name.endsWith('.HEIC') || message.attachment.name.endsWith('.jpg') ? (
@@ -252,7 +255,11 @@ export function ChatScreen({ route, navigation }: Props) {
           {meta?.typing || thread.typing ? (
             <View style={styles.typing}>
               <Bloub shape={bot?.shape ?? 'capsule'} color={bot?.color ?? '#4f9d8f'} size={18} animated active />
-              <Text style={styles.typingLabel}>{thread.name} {t("正在思考")}</Text>
+              <Text style={styles.typingLabel} numberOfLines={1}>
+                {thread.tool
+                  ? t("正在使用工具：{0}", {"0": thread.tool})
+                  : `${thread.name} ${t("正在思考")}`}
+              </Text>
               <TypingDots />
             </View>
           ) : null}
@@ -336,6 +343,9 @@ const useStyles = themedStyles(({ C, INK }) => ({
   bubbleGroup: { maxWidth: '100%' },
   bubbleBotText: { color: C.text, fontSize: 13, lineHeight: 19.4 },
   bubbleUserText: { color: INK.onPaper, fontSize: 13, lineHeight: 19.4 },
+  bubbleFailed: { borderWidth: 1, borderColor: C.border, backgroundColor: C.recording },
+  bubbleFailedText: { color: C.recordingInk, fontSize: 13, lineHeight: 19.4 },
+  failedLabel: { marginBottom: 2, color: C.recordingInk, fontSize: 11, fontWeight: '600' },
   mention: { backgroundColor: C.mention, borderRadius: 4, fontWeight: '500' },
 
   attachment: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 150 },
@@ -362,5 +372,5 @@ const useStyles = themedStyles(({ C, INK }) => ({
   tapbackCount: { color: INK.quiet, fontSize: 9 },
 
   typing: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
-  typingLabel: { color: INK.quiet, fontSize: 10 },
+  typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 10 },
 }));

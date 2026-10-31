@@ -5,7 +5,7 @@ import type { Attachment, Bot, MessageKind, Thread } from '../data';
 import { ATTACHMENTS } from '../data';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
-import { ArrowUpIcon, AttachIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon } from './Icons';
+import { ArrowUpIcon, AttachIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon, StopIcon } from './Icons';
 import { Sheet } from './Sheet';
 import { Bloub } from './Bloub';
 import { Row, SheetHeader } from './UI';
@@ -40,7 +40,7 @@ type ComposerProps = {
 export function Composer({ thread, bots, onSend }: ComposerProps) {
   const { styles, C, INK, scheme } = useStyles();
   useTranslation();
-  const { prefs } = useStore();
+  const { prefs, stop } = useStore();
   const [draft, setDraft] = useState('');
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -72,7 +72,8 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
   }
 
   function send() {
-    if (!draft.trim()) return;
+    // A reply is still being written: keep the draft for the next turn.
+    if (!draft.trim() || thread.typing) return;
     onSend({ text: draft });
     setDraft('');
   }
@@ -156,7 +157,16 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
             onSubmitEditing={send}
             blurOnSubmit={false}
           />
-          {draft.trim() ? (
+          {thread.typing ? (
+            <Pressable
+              style={[styles.button, styles.cream]}
+              onPress={() => stop(thread.id)}
+              accessibilityRole="button"
+              accessibilityLabel={t("停止")}
+            >
+              <StopIcon />
+            </Pressable>
+          ) : draft.trim() ? (
             <Pressable
               style={[styles.button, styles.cream]}
               onPress={send}

@@ -12,6 +12,8 @@ export type Bot = {
   color: string;
   role: string;
   session: string;
+  /** What the bot is for, as written in its SOUL.md on the server. */
+  description?: string;
 };
 
 export type Reaction = { emoji: string; count: number };
@@ -30,6 +32,8 @@ export type Message = {
   /** A voice note carries how long it ran. */
   duration?: string;
   reaction?: Reaction;
+  /** The turn failed; the text is the reason, drawn as a notice. */
+  failed?: boolean;
 };
 
 export type Thread = {
@@ -46,6 +50,8 @@ export type Thread = {
   pinned?: boolean;
   /** Set while a turn is being written. */
   typing?: boolean;
+  /** The tool Hermes is running for the current turn, when it says so. */
+  tool?: string;
   /** The Hermes session behind this thread, once there is one. */
   sessionId?: string;
   /** Group only: the bots in the round, in speaking order. */

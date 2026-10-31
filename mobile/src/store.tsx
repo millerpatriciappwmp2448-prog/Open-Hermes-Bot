@@ -1,6 +1,8 @@
 import { t, useTranslation, localeTag } from './i18n';
 import { localizeDemo } from './i18n/demo';
 import { modelForTurn, readModelPick, withModelPick, type ModelRef } from './modelSelection';
+import { profileNameFor } from './botNames';
+import { readSchedules, type Schedule } from './schedules';
 import {
   createContext,
   useCallback,
@@ -11,7 +13,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import {
   BOTS,
   MESSAGES,
@@ -38,6 +40,8 @@ import {
   type BridgeHealth,
   type BridgeModels,
   type BridgeSession,
+  type JobAction,
+  type JobInput,
 } from './api';
 
 /**
@@ -51,10 +55,7 @@ import {
  */
 
 export type Toggles = {
-  tapbacks: boolean;
-  sounds: boolean;
   haptics: boolean;
-  notifications: boolean;
 };
 
 export type ConnectionStatus = 'offline' | 'connecting' | 'connected' | 'error';
@@ -93,6 +94,8 @@ type Store = {
   connect: (url: string, code: string) => Promise<void>;
   disconnect: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** Try the saved pairing again after the bridge or Tailscale was away. */
+  retry: () => Promise<void>;
   devices: BridgeDevice[];
   revokeDevice: (id: string) => Promise<void>;
   modelOptions: Record<string, BridgeModels>;
@@ -106,6 +109,14 @@ type Store = {
   addBot: (input: NewBot) => string;
   updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color'>>) => void;
   removeBot: (id: string) => void;
+  /** Write what the bot is for into its SOUL.md; it applies from its next session. */
+  saveDescription: (botId: string, text: string) => Promise<void>;
+  loadJobs: (botId: string) => Promise<Schedule[]>;
+  createJob: (botId: string, input: JobInput) => Promise<void>;
+  jobAction: (botId: string, jobId: string, action: JobAction) => Promise<void>;
+  /** Sessions written by scheduled runs, newest first. */
+  loadRuns: (botId: string) => Promise<BridgeSession[]>;
+  loadRunMessages: (botId: string, sessionId: string) => Promise<Message[]>;
 
   addGroup: (input: NewGroup) => string;
   updateGroup: (id: string, patch: Partial<Pick<Thread, 'name' | 'members'>>) => void;
@@ -119,6 +130,8 @@ type Store = {
   clearThread: (threadId: string) => void;
 
   send: (threadId: string, payload: Outgoing) => void;
+  /** Stop the reply being written; the part already received stays. */
+  stop: (threadId: string) => void;
   react: (threadId: string, messageId: string, emoji: string) => void;
   removeMessage: (threadId: string, messageId: string) => void;
 };
@@ -211,6 +224,7 @@ function toBot(raw: BridgeBot): Bot {
     color: raw.color || '#8b5cf6',
     role: raw.primary ? t("默认") : 'Hermes',
     session: raw.profile === 'default' ? '' : raw.profile.slice(0, 4),
+    description: raw.role || '',
   };
 }
 
@@ -247,10 +261,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Record<string, Message[]>>(demo.current.messages);
   const [prefs, setPrefs] = useState<Prefs>(PREFS);
   const [toggles, setToggles] = useState<Toggles>({
-    tapbacks: true,
-    sounds: true,
     haptics: true,
-    notifications: true,
   });
   const [connection, setConnection] = useState<Connection>({
     status: 'offline',
@@ -268,6 +279,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const modelWrites = useRef<Promise<unknown>>(Promise.resolve());
 
   const client = useRef<BridgeClient | null>(null);
+  const savedRef = useRef<Saved | null>(null);
+  const turnsRef = useRef<Record<string, () => void>>({});
   const threadsRef = useRef<Thread[]>(threads);
   const connectionRef = useRef(connection);
   useEffect(() => {
@@ -432,6 +445,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const message =
         error instanceof BridgeError ? error.message : t("无法从桥接服务读取数据。");
       setConnection((state) => ({ ...state, status: 'error', error: message }));
+      if (error instanceof BridgeError && error.code === 'unauthorized') {
+        savedRef.current = null;
+        await writeSaved(null);
+      }
+      throw error;
+    }
+  }, [adopt]);
+
+  const retry = useCallback(async () => {
+    const saved = savedRef.current;
+    if (!saved) return;
+    setConnection((state) => ({ ...state, status: 'connecting', error: undefined }));
+    try {
+      await adopt(saved.url, saved.token, saved.device);
+    } catch (error) {
+      const unauthorized = error instanceof BridgeError && error.code === 'unauthorized';
+      if (unauthorized) {
+        savedRef.current = null;
+        await writeSaved(null);
+      }
+      setConnection((state) => ({
+        ...state,
+        status: 'error',
+        // A rejected token was deleted above, so this phone is no longer paired.
+        device: unauthorized ? '' : state.device,
+        error:
+          error instanceof BridgeError
+            ? error.message
+            : t("桥接服务未响应，请检查 Tailscale 是否已连接。"),
+      }));
     }
   }, [adopt]);
 
@@ -452,9 +495,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           Platform.OS === 'ios' ? 'iPhone' : Platform.OS === 'android' ? 'Android' : t("当前浏览器");
         const paired = await bridgePair(url, code, deviceName);
 
-        client.current = createBridgeClient(url, paired.token);
         await adopt(url, paired.token, paired.device.name);
-        await writeSaved({ url, token: paired.token, device: paired.device.name });
+        const saved = { url, token: paired.token, device: paired.device.name };
+        savedRef.current = saved;
+        await writeSaved(saved);
       } catch (error) {
         const message =
           error instanceof BridgeError
@@ -468,7 +512,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const disconnect = useCallback(async () => {
+    Object.values(turnsRef.current).forEach((close) => close());
+    turnsRef.current = {};
     client.current = null;
+    savedRef.current = null;
     await writeSaved(null);
     setConnection({ status: 'offline', url: '', device: '', model: '', provider: '' });
     setDevices([]);
@@ -496,15 +543,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (async () => {
       const saved = await readSaved();
       if (!saved || cancelled) return;
+      savedRef.current = saved;
       setConnection((state) => ({ ...state, status: 'connecting', url: saved.url, device: saved.device }));
       try {
         await adopt(saved.url, saved.token, saved.device);
       } catch (error) {
         if (cancelled) return;
+        const unauthorized = error instanceof BridgeError && error.code === 'unauthorized';
+        if (unauthorized) {
+          savedRef.current = null;
+          await writeSaved(null);
+        }
         setConnection({
           status: 'error',
           url: saved.url,
-          device: saved.device,
+          device: unauthorized ? '' : saved.device,
           model: '',
           provider: '',
           error:
@@ -519,6 +572,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, [adopt]);
 
+  // Coming back from Tailscale or another app is the usual moment the bridge is
+  // reachable again.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && connectionRef.current.status === 'error' && savedRef.current) {
+        void retry();
+      }
+    });
+    return () => subscription.remove();
+  }, [retry]);
+
   /* ----------------------------------------------------------- the bots */
 
   const addBot = useCallback<Store['addBot']>(
@@ -526,9 +590,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const label = name.trim() || t("新机器人");
       const online = connectionRef.current.status === 'connected';
       const taken = bots.map((bot) => bot.id);
-      const id = uniqueId(slug(label), taken);
+      // A Hermes profile name is ASCII; the display name travels as the title.
+      const profile = profileNameFor(label, taken);
+      const id = online ? profile : uniqueId(slug(label), taken);
       const bot: Bot = {
-        id: online ? slug(label) : id,
+        id,
         name: label,
         shape,
         color,
@@ -536,7 +602,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         session: Math.random().toString(16).slice(2, 6),
       };
       setBots((current) => [...current, bot]);
-      const threadId = online ? `bot:${bot.id}` : `${id}-thread`;
+      const threadId = online
+        ? `bot:${id}`
+        : uniqueId(`${id}-thread`, threadsRef.current.map((thread) => thread.id));
       setThreads((current) => [
         {
           id: threadId,
@@ -554,7 +622,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (online && client.current) {
         const active = client.current;
         void active
-          .createBot({ name: slug(label), title: label, color, shape })
+          .createBot({ name: profile, title: label, color, shape })
           .then(async (created) => {
             if (client.current !== active) return;
             profilesRef.current[created.id] = created.profile || 'default';
@@ -565,22 +633,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               setModelOptions(optionsRef.current);
             }
             setBots((current) =>
-              current.map((entry) => (entry.id === bot.id ? toBot(created) : entry)),
+              current.map((entry) => (entry.id === id ? { ...toBot(created), name: label } : entry)),
             );
             setThreads((current) =>
               current.map((entry) =>
-                entry.id === threadId ? { ...entry, preview: t("暂无会话"), threadModel: options?.current || '' } : entry,
+                entry.id === threadId
+                  ? {
+                      ...entry,
+                      botId: created.id,
+                      preview: t("暂无会话"),
+                      time: '',
+                      threadModel: options?.current || '',
+                    }
+                  : entry,
               ),
             );
           })
           .catch((error: unknown) => {
             const message =
               error instanceof BridgeError ? error.message : t("无法创建机器人。");
-            setThreads((current) =>
-              current.map((entry) =>
-                entry.id === threadId ? { ...entry, preview: `⚠︎ ${message}` } : entry,
-              ),
-            );
+            // Nothing exists on the server, so the placeholder goes away.
+            setBots((current) => current.filter((entry) => entry.id !== id));
+            setThreads((current) => current.filter((entry) => entry.id !== threadId));
+            setConnection((state) => ({ ...state, error: t("无法创建机器人：{0}", { "0": message }) }));
           });
       }
       return threadId;
@@ -605,11 +680,62 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...(patch.color ? { color: patch.color } : {}),
             ...(patch.shape ? { shape: patch.shape } : {}),
           })
-          .catch(() => undefined);
+          .catch((error: unknown) => {
+            const message = error instanceof BridgeError ? error.message : t("无法保存机器人。");
+            setThreads((current) =>
+              current.map((thread) =>
+                thread.kind === 'bot' && thread.botId === id
+                  ? { ...thread, preview: `⚠︎ ${message}` }
+                  : thread,
+              ),
+            );
+          });
       }
     },
     [],
   );
+
+  /* ------------------------------------------- what a bot is and runs */
+
+  const saveDescription = useCallback<Store['saveDescription']>(async (botId, text) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    const wanted = text.trim();
+    const saved = await active.updateBot(botId, { description: wanted, soul: true });
+    if (client.current !== active) return;
+    const description = typeof saved?.role === 'string' ? saved.role : wanted;
+    setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, description } : bot)));
+  }, []);
+
+  const loadJobs = useCallback<Store['loadJobs']>(async (botId) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    return readSchedules(await active.jobs(botId));
+  }, []);
+
+  const createJob = useCallback<Store['createJob']>(async (botId, input) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    await active.createJob(botId, input);
+  }, []);
+
+  const jobAction = useCallback<Store['jobAction']>(async (botId, jobId, action) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    await active.jobAction(botId, jobId, action);
+  }, []);
+
+  const loadRuns = useCallback<Store['loadRuns']>(async (botId) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    return active.runs(botId);
+  }, []);
+
+  const loadRunMessages = useCallback<Store['loadRunMessages']>(async (botId, sessionId) => {
+    const active = client.current;
+    if (!active) throw new BridgeError(t('请先连接服务器。'));
+    return toMessages(`run:${sessionId}`, botId, await active.messages(botId, sessionId));
+  }, []);
 
   const removeBot = useCallback<Store['removeBot']>(
     (id) => {
@@ -633,10 +759,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return next;
       });
       if (connectionRef.current.status === 'connected' && client.current) {
-        void client.current.deleteBot(id).catch(() => undefined);
+        const active = client.current;
+        void active.deleteBot(id).catch(async (error: unknown) => {
+          const message = error instanceof BridgeError ? error.message : t("无法删除机器人。");
+          // Show the server's real list again.
+          if (client.current === active) {
+            const saved = savedRef.current;
+            const current = connectionRef.current;
+            await adopt(saved?.url ?? current.url, active.token, saved?.device ?? current.device).catch(() => undefined);
+          }
+          setConnection((state) => ({ ...state, error: t("服务器未删除机器人：{0}", { "0": message }) }));
+        });
       }
     },
-    [],
+    [adopt],
   );
 
   /* ----------------------------------------------------------- the groups */
@@ -731,24 +867,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const removeThread = useCallback<Store['removeThread']>((threadId) => {
     const thread = threadsRef.current.find((entry) => entry.id === threadId);
-    setThreads((current) => current.filter((entry) => entry.id !== threadId));
-    setMessages((current) => {
-      const next = { ...current };
-      delete next[threadId];
-      return next;
-    });
-    if (
-      thread?.sessionId &&
-      connectionRef.current.status === 'connected' &&
-      client.current
-    ) {
-      void client.current.deleteSession(thread.botId, thread.sessionId).catch(() => undefined);
+    const online = connectionRef.current.status === 'connected' && client.current !== null;
+    turnsRef.current[threadId]?.();
+    delete turnsRef.current[threadId];
+    if (online && thread?.kind === 'bot') {
+      // A bot's row is the bot itself: deleting the conversation keeps the bot and
+      // drops only its server session.
+      setThreads((current) =>
+        current.map((entry) =>
+          entry.id === threadId
+            ? {
+                ...entry,
+                sessionId: undefined,
+                typing: false,
+                tool: undefined,
+                preview: t("暂无会话"),
+                time: '',
+                unread: false,
+              }
+            : entry,
+        ),
+      );
+      setMessages((current) => ({ ...current, [threadId]: [] }));
+    } else {
+      setThreads((current) => current.filter((entry) => entry.id !== threadId));
+      setMessages((current) => {
+        const next = { ...current };
+        delete next[threadId];
+        return next;
+      });
+    }
+    if (thread?.sessionId && online && client.current) {
+      void client.current.deleteSession(thread.botId, thread.sessionId).catch((error: unknown) => {
+        const message = error instanceof BridgeError ? error.message : t("无法删除服务器会话。");
+        setConnection((state) => ({ ...state, error: message }));
+      });
     }
   }, []);
 
   const clearThread = useCallback<Store['clearThread']>((threadId) => {
+    turnsRef.current[threadId]?.();
+    delete turnsRef.current[threadId];
     setMessages((current) => ({ ...current, [threadId]: [] }));
-  }, []);
+    patchThread(threadId, {
+      sessionId: undefined,
+      typing: false,
+      tool: undefined,
+      preview: t("暂无会话"),
+      time: '',
+    });
+  }, [patchThread]);
 
   /* ------------------------------------------------------- the messages */
 
@@ -757,6 +925,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const body = payload.text.trim();
       if (!body) return;
       const thread = threadsRef.current.find((entry) => entry.id === threadId);
+      // One turn at a time per conversation: Hermes keeps one session thread.
+      if (thread?.typing) return;
       const online =
         connectionRef.current.status === 'connected' && client.current !== null;
       const userMessage: Message = {
@@ -792,38 +962,69 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       let answer = '';
       let settled = false;
 
+      // Write the assistant message only once there is something to show in it.
+      const upsert = (text: string, failed = false) => {
+        setMessages((current) => {
+          const rows = current[threadId] ?? [];
+          const next: Message = { id: assistantId, from: botId, text, failed: failed || undefined };
+          return {
+            ...current,
+            [threadId]: rows.some((message) => message.id === assistantId)
+              ? rows.map((message) => (message.id === assistantId ? next : message))
+              : [...rows, next],
+          };
+        });
+      };
+
       const settle = (text: string, failed: boolean) => {
         if (settled) return;
         settled = true;
-        setMessages((current) => ({
-          ...current,
-          [threadId]: (current[threadId] ?? []).map((message) =>
-            message.id === assistantId
-              ? { ...message, text: failed ? `⚠︎ ${text}` : text }
-              : message,
-          ),
-        }));
+        delete turnsRef.current[threadId];
+        if (failed && answer.trim()) {
+          // Keep what arrived, then say why it stopped.
+          upsert(answer);
+          setMessages((current) => ({
+            ...current,
+            [threadId]: [
+              ...(current[threadId] ?? []),
+              { id: `${assistantId}-error`, from: botId, text, failed: true },
+            ],
+          }));
+        } else if (text.trim()) {
+          upsert(text, failed);
+        }
         patchThread(threadId, {
           typing: false,
-          preview: failed ? text : text.replace(/\s+/g, ' ').slice(0, 90),
+          tool: undefined,
+          preview: failed ? `⚠︎ ${text}` : text.replace(/\s+/g, ' ').trim().slice(0, 90),
           time: t("刚刚"),
         });
       };
 
-      patchThread(threadId, { typing: true });
-      setMessages((current) => ({
-        ...current,
-        [threadId]: [
-          ...(current[threadId] ?? []),
-          { id: assistantId, from: botId, text: '' },
-        ],
-      }));
+      let close: (() => void) | undefined;
+      // Stopping keeps what arrived. It works before the stream opens, too.
+      const halt = () => {
+        if (settled) return;
+        settled = true;
+        delete turnsRef.current[threadId];
+        close?.();
+        patchThread(threadId, {
+          typing: false,
+          tool: undefined,
+          preview: answer.trim() ? answer.replace(/\s+/g, ' ').trim().slice(0, 90) : t("已停止"),
+          time: t("刚刚"),
+        });
+      };
+
+      patchThread(threadId, { typing: true, tool: undefined });
+      turnsRef.current[threadId] = halt;
 
       void (async () => {
         try {
           let sessionId = thread.sessionId;
           if (!sessionId) {
             const created = await active.createSession(botId, thread.name);
+            if (settled) return;
             sessionId = created.id;
             patchThread(threadId, { sessionId });
           }
@@ -832,7 +1033,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!picksRef.current[botId]) {
             try {
               const options = await active.models(botId);
-              if (client.current !== active) return;
+              if (client.current !== active) {
+                settle(t("连接已改变，请重新发送。"), true);
+                return;
+              }
               optionsRef.current = { ...optionsRef.current, [botId]: options };
               setModelOptions(optionsRef.current);
               patchThread(threadId, { threadModel: optionsRef.current[botId].current });
@@ -844,7 +1048,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               patchThread(threadId, { threadModel: '' });
             }
           }
-          active.turn(
+          if (settled) return;
+          close = active.turn(
             {
               bot: botId,
               session: sessionId,
@@ -853,18 +1058,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             },
             {
               onDelta: (delta) => {
+                if (settled) return;
                 answer += delta;
-                setMessages((current) => ({
-                  ...current,
-                  [threadId]: (current[threadId] ?? []).map((message) =>
-                    message.id === assistantId ? { ...message, text: answer } : message,
-                  ),
-                }));
+                upsert(answer);
+              },
+              onTool: (tool) => {
+                if (settled) return;
+                patchThread(threadId, { tool: tool || undefined });
               },
               onDone: (text) => settle(text || answer, false),
               onError: (message) => settle(message, true),
             },
           );
+          if (settled) close();
         } catch (error) {
           settle(
             error instanceof BridgeError ? error.message : t("无法连接机器人。"),
@@ -875,6 +1081,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [patchThread],
   );
+
+  const stop = useCallback<Store['stop']>((threadId) => {
+    turnsRef.current[threadId]?.();
+  }, []);
 
   const react = useCallback<Store['react']>((threadId, messageId, emoji) => {
     setMessages((current) => ({
@@ -907,6 +1117,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       connect,
       disconnect,
       refresh,
+      retry,
       devices,
       revokeDevice,
       modelOptions,
@@ -918,6 +1129,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addBot,
       updateBot,
       removeBot,
+      saveDescription,
+      loadJobs,
+      createJob,
+      jobAction,
+      loadRuns,
+      loadRunMessages,
       addGroup,
       updateGroup,
       leaveGroup,
@@ -928,6 +1145,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeThread,
       clearThread,
       send,
+      stop,
       react,
       removeMessage,
     }),
@@ -949,10 +1167,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       prefs,
       react,
       refresh,
+      retry,
       removeBot,
       removeMessage,
       removeThread,
       send,
+      stop,
       setModel,
       setPref,
       threadById,
@@ -967,6 +1187,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       modelPicks,
       refreshModels,
       selectModel,
+      saveDescription,
+      loadJobs,
+      createJob,
+      jobAction,
+      loadRuns,
+      loadRunMessages,
     ],
   );
 
