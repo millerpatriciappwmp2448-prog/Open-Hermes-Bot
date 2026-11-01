@@ -1,13 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
-import { DescriptionEditor, JobsPage, RunTranscript } from '../components/BotAutomation';
-import { ConversationHistory } from '../components/ConversationHistory';
+import { DescriptionEditor, JobsPage } from '../components/BotAutomation';
 import { BackIcon, ChevronIcon, ExportIcon } from '../components/Icons';
 import { Sheet } from '../components/Sheet';
-import { ConfirmBlock, SheetHeader } from '../components/UI';
+import { ConfirmBlock } from '../components/UI';
 import { t, useTranslation } from '../i18n';
 import type { RootStackParamList } from '../nav';
 import { useStore } from '../store';
@@ -21,21 +20,18 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { threadById, botById, messages, togglePin, clearThread, removeBot, connection } = useStore();
   const { chatPreferences, saveChatPreferences } = useStore();
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [session, setSession] = useState<{ id: string; title: string } | null>(null);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [preferencesError, setPreferencesError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [jobsOpen, setJobsOpen] = useState(false);
-  const [run, setRun] = useState<{ id: string; title: string } | null>(null);
   const [confirming, setConfirming] = useState<'clear' | 'delete' | null>(null);
+  const afterDismiss = useRef<'back' | 'home' | null>(null);
   const [exportError, setExportError] = useState('');
   const thread = threadById(route.params.threadId);
   const bot = thread ? botById(thread.botId) : undefined;
   const serverBot = Boolean(thread?.id.startsWith('bot:'));
   const online = connection.status === 'connected';
-  const closeRun = () => setRun(null);
   const closeConfirm = () => { if (!deleting) { setConfirming(null); setDeleteError(''); } };
   const tapbacks = thread ? chatPreferences[thread.botId]?.tapbacks !== false : true;
 
@@ -108,14 +104,15 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
                     <View style={jobsOpen ? styles.expanded : undefined}><ChevronIcon size={11} color={C.text2} /></View>
                   </Pressable>
                 </View>
-                {jobsOpen && online ? <JobsPage key={thread.botId} botId={thread.botId} onOpenRun={setRun} embedded /> : null}
+                {jobsOpen && online ? <JobsPage key={thread.botId} botId={thread.botId}
+                  onOpenRun={run => navigation.navigate('SessionTranscript', { botId: thread.botId, sessionId: run.id, title: run.title })} embedded /> : null}
               </View>
             </> : null}
 
             <View style={styles.section}>
               <Text style={styles.label}>{t('会话')}</Text>
               {serverBot ? <Pressable accessibilityRole="button" accessibilityLabel={t('会话记录')}
-                disabled={!online} onPress={() => setHistoryOpen(true)}
+                disabled={!online} onPress={() => navigation.navigate('SessionHistory', { botId: thread.botId })}
                 style={({ pressed }) => [styles.card, styles.row, pressed && styles.pressed]}>
                 <Text style={[styles.rowText, styles.flex]}>{t('会话记录')}</Text>
                 <ChevronIcon size={11} color={C.text2} />
@@ -163,36 +160,28 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
           </ScrollView>
         )}
       </View>
-      {thread ? <>
-        <Sheet visible={historyOpen} onClose={() => { setHistoryOpen(false); setSession(null); }}>
-          <SheetHeader title={session?.title || t('会话记录')}
-            onClose={() => { setHistoryOpen(false); setSession(null); }}
-            back={session ? () => setSession(null) : undefined} />
-          {session ? <RunTranscript key={session.id} botId={thread.botId} runId={session.id} kind="session" /> :
-            historyOpen ? <ConversationHistory botId={thread.botId} onOpen={setSession} /> : null}
-        </Sheet>
-        <Sheet visible={run !== null} onClose={closeRun}>
-          <SheetHeader title={run?.title ?? t('运行记录')} sub={t('运行记录')} onClose={closeRun} />
-          {run ? <RunTranscript key={run.id} botId={thread.botId} runId={run.id} /> : null}
-        </Sheet>
-        <Sheet visible={confirming !== null} onClose={closeConfirm}>
-          <ConfirmBlock title={confirming === 'clear' ? t('清空此会话？') : t('删除此智能体？')}
+        <Sheet visible={confirming !== null} onClose={closeConfirm} onDismiss={() => {
+          const destination = afterDismiss.current;
+          afterDismiss.current = null;
+          if (destination === 'back') navigation.goBack();
+          if (destination === 'home') navigation.popToTop();
+        }}>
+          {thread ? <ConfirmBlock title={confirming === 'clear' ? t('清空此会话？') : t('删除此智能体？')}
             message={confirming === 'clear'
-              ? online ? t('将清空本机显示的消息，下一条消息会开启新的服务器会话；智能体的记忆仍保留在服务器上。') : t('将清空当前显示的消息。')
+              ? t('将删除该会话，智能体及其记忆仍会保留。')
               : serverBot ? t('将移除该智能体及其会话，服务器会保留配置备份。其他智能体不受影响。') : t('将移除该演示智能体及其会话。')}
             confirmLabel={confirming === 'clear' ? t('清空') : t('删除')} onCancel={closeConfirm}
             busy={deleting} error={deleteError}
             onConfirm={() => {
-              if (confirming === 'clear') { clearThread(thread.id); closeConfirm(); navigation.goBack(); }
-              else if (!deleting) {
-                setDeleting(true); setDeleteError('');
-                void removeBot(thread.botId).then(() => { setConfirming(null); navigation.popToTop(); })
-                  .catch(error => setDeleteError(error instanceof Error ? error.message : t('无法删除智能体。')))
-                  .finally(() => setDeleting(false));
-              }
-            }} />
+              if (deleting) return;
+              setDeleting(true); setDeleteError('');
+              const clearing = confirming === 'clear';
+              void (clearing ? clearThread(thread.id) : removeBot(thread.botId))
+                .then(() => { afterDismiss.current = clearing ? 'back' : 'home'; setConfirming(null); })
+                .catch(error => setDeleteError(error instanceof Error ? error.message : t('操作失败，请重试。')))
+                .finally(() => setDeleting(false));
+            }} /> : null}
         </Sheet>
-      </> : null}
     </KeyboardAvoidingView>
   );
 }

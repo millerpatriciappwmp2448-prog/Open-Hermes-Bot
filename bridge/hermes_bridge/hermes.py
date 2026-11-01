@@ -18,6 +18,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from . import todos
 from .config import Config
 
 PRIMARY = "default"
@@ -175,12 +176,48 @@ class Hermes:
             "primaryKey": self.has_key(PRIMARY),
         }
 
+    def detailed_health(self) -> dict:
+        return self._call(PRIMARY, "GET", "/health/detailed", timeout=5)
+
     # --------------------------------------------------------- the sessions
 
     def sessions(self, profile: str, limit: int = 100, pages: int = 5) -> list[dict]:
         """The conversations a bot holds, newest first, without duplicates."""
 
         return self._session_rows(profile, "&source=api_server", limit, pages)
+
+    @staticmethod
+    def _session_row(profile: str, row: dict) -> dict:
+        return {
+            "bot": profile,
+            "id": str(row.get("id") or "").strip(),
+            "title": str(row.get("title") or ""),
+            "messageCount": int(row.get("message_count") or 0),
+            "lastActive": int(row.get("last_active") or row.get("started_at") or 0),
+            "archived": bool(row.get("archived")),
+            "source": str(row.get("source") or ""),
+        }
+
+    def history(self, profile: str, limit: int = 50, offset: int = 0) -> dict:
+        """One unfiltered page; no app source restriction and no hidden row cap.
+
+        Hermes can back-fill pinned rows beyond the requested limit. Advance by
+        the requested window, not by that enlarged response length.
+        """
+        payload = self._call(profile, "GET", f"/api/sessions?limit={limit}&offset={offset}&order=recent")
+        batch = payload.get("data") or payload.get("sessions") or []
+        batch = batch if isinstance(batch, list) else []
+        seen: set[str] = set()
+        rows = []
+        for raw in batch:
+            if not isinstance(raw, dict) or not raw.get("id"):
+                continue
+            row = self._session_row(profile, raw)
+            if row["id"] not in seen:
+                rows.append(row)
+                seen.add(row["id"])
+        more = payload.get("has_more", len(batch) >= limit)
+        return {"sessions": rows, "nextOffset": offset + limit if more and batch else None}
 
     def runs(self, profile: str, limit: int = 100, pages: int = 3) -> list[dict]:
         """The sessions the scheduler opened, newest first.
@@ -212,31 +249,26 @@ class Hermes:
                 if not session_id or session_id in seen:
                     continue
                 seen.add(session_id)
-                rows.append(
-                    {
-                        "bot": profile,
-                        "id": session_id,
-                        "title": str(row.get("title") or ""),
-                        "messageCount": int(row.get("message_count") or 0),
-                        "lastActive": int(row.get("last_active") or 0),
-                        "archived": bool(row.get("archived")),
-                    }
-                )
+                rows.append(self._session_row(profile, row))
             if payload.get("has_more") is False or len(batch) < limit:
                 break
-            offset += len(batch)
+            offset += limit
         return rows
 
     def messages(self, profile: str, session_id: str, limit: int = 200) -> list[dict]:
+        return self.message_page(profile, session_id, limit)["messages"]
+
+    def message_page(self, profile: str, session_id: str, limit: int = 100, offset: int = 0) -> dict:
         payload = self._call(
             profile,
             "GET",
             f"/api/sessions/{urllib.parse.quote(session_id, safe='')}"
-            f"/messages?limit={limit}&order=oldest&inline_images=false",
+            f"/messages?limit={limit}&offset={offset}&order=oldest&inline_images=false",
         )
         rows = payload.get("data") or payload.get("messages") or []
+        rows = rows if isinstance(rows, list) else []
         out = []
-        for row in rows if isinstance(rows, list) else []:
+        for index, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
             content = row.get("content")
@@ -249,12 +281,30 @@ class Hermes:
                 )
             out.append(
                 {
+                    "id": str(row.get("id") if row.get("id") is not None else f"{session_id}:{offset + index}"),
                     "role": str(row.get("role") or ""),
                     "content": content if isinstance(content, str) else "",
                     "timestamp": int(row.get("timestamp") or 0),
                 }
             )
-        return out
+        return {"messages": out, "nextOffset": offset + len(rows) if len(rows) >= limit else None}
+
+    def latest_todos(self, profile: str, session_id: str, limit: int = 200) -> dict | None:
+        """The session's task list: the newest valid todo result in its transcript.
+
+        Hermes has no endpoint for the list, so it is read back from the last
+        page of messages (chronological, with the compression ancestors), the
+        same rows a resume would restore it from.
+        """
+
+        payload = self._call(
+            profile,
+            "GET",
+            f"/api/sessions/{urllib.parse.quote(session_id, safe='')}"
+            f"/messages?limit={limit}&order=latest&inline_images=false",
+        )
+        rows = payload.get("data") or payload.get("messages") or []
+        return todos.latest(rows if isinstance(rows, list) else [])
 
     def create_session(self, profile: str, title: str) -> dict:
         """Open a conversation. A taken title gets a suffix, not a failure."""

@@ -11,8 +11,11 @@ import { StoreProvider } from './src/store';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { ChatSettingsScreen } from './src/screens/ChatSettingsScreen';
 import { ChatModelScreen } from './src/screens/ChatModelScreen';
+import { SessionHistoryScreen } from './src/screens/SessionHistoryScreen';
+import { SessionTranscriptScreen } from './src/screens/SessionTranscriptScreen';
 import { ConversationsScreen } from './src/screens/ConversationsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { ServerStatusScreen } from './src/screens/ServerStatusScreen';
 import { SetupScreen } from './src/screens/SetupScreen';
 import { ConnectionScreen } from './src/screens/ConnectionScreen';
 import { ModelsScreen } from './src/screens/ModelsScreen';
@@ -58,7 +61,10 @@ export default function App() {
               <Stack.Screen name="Chat" component={ChatScreen} />
               <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
               <Stack.Screen name="ChatModel" component={ChatModelScreen} />
+              <Stack.Screen name="SessionHistory" component={SessionHistoryScreen} />
+              <Stack.Screen name="SessionTranscript" component={SessionTranscriptScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="ServerStatus" component={ServerStatusScreen} />
               <Stack.Screen name="Setup" component={SetupScreen} />
               <Stack.Screen name="Connection" component={ConnectionScreen} />
               <Stack.Screen name="Models" component={ModelsScreen} />

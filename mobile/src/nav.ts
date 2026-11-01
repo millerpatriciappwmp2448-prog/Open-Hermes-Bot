@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 export type RootStackParamList = {
   Chats: undefined;
   Settings: undefined;
+  ServerStatus: undefined;
   Setup: undefined;
   Connection: undefined;
   Models: undefined;
@@ -14,6 +15,8 @@ export type RootStackParamList = {
   Chat: { threadId: string };
   ChatSettings: { threadId: string };
   ChatModel: { threadId: string };
+  SessionHistory: { botId?: string } | undefined;
+  SessionTranscript: { botId: string; sessionId: string; title: string };
 };
 
 export type AppNavigation = NativeStackNavigationProp<RootStackParamList>;

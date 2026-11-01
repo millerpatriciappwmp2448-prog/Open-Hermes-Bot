@@ -212,6 +212,7 @@ export function Field({
   placeholder,
   keyboard,
   secure,
+  editable = true,
 }: {
   label: string;
   value: string;
@@ -219,12 +220,15 @@ export function Field({
   placeholder?: string;
   keyboard?: KeyboardTypeOptions;
   secure?: boolean;
+  editable?: boolean;
 }) {
   const { styles, INK, scheme } = useStyles();
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput keyboardAppearance={scheme}
+        accessibilityLabel={label}
+        editable={editable}
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
@@ -249,7 +253,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     paddingHorizontal: 16,
   },
   headCopy: { flex: 1 },
-  headTitle: { color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.48 },
+  headTitle: { color: C.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   headSub: { marginTop: 3, color: INK.quiet, fontSize: 11, lineHeight: 15 },
   close: {
     width: 40,

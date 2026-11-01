@@ -4,6 +4,7 @@ import {
   Animated,
   Easing,
   Modal,
+  Platform,
   Pressable,
   View,
   type DimensionValue,
@@ -31,12 +32,14 @@ const DIM_OUT = Math.round(FADE_OUT / 2.5);
 type SheetProps = {
   visible: boolean;
   onClose: () => void;
+  /** Runs after the native modal releases the screen, safe for navigation. */
+  onDismiss?: () => void;
   children: ReactNode;
   /** The most of the window a sheet may take: it fits its content below that. */
   height?: DimensionValue;
 };
 
-export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps) {
+export function Sheet({ visible, onClose, onDismiss, children, height = '90%' }: SheetProps) {
   const { styles } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
@@ -46,11 +49,21 @@ export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps
   // does what it holds: the caller lets go of its content at once.
   const [mounted, setMounted] = useState(visible);
   const [content, setContent] = useState<ReactNode>(children);
+  const wasShown = useRef(visible);
+  const latest = useRef({ visible, onDismiss });
+  latest.current = { visible, onDismiss };
+
+  function dismissed() {
+    if (!wasShown.current || latest.current.visible) return;
+    wasShown.current = false;
+    latest.current.onDismiss?.();
+  }
 
   useEffect(() => {
     if (visible) {
+      wasShown.current = true;
       setMounted(true);
-      Animated.parallel([
+      const animation = Animated.parallel([
         Animated.timing(dim, {
           toValue: 1,
           duration: DIM_IN,
@@ -63,11 +76,12 @@ export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
-      ]).start();
-      return;
+      ]);
+      animation.start();
+      return () => animation.stop();
     }
 
-    Animated.parallel([
+    const animation = Animated.parallel([
       Animated.timing(dim, {
         toValue: 0,
         duration: DIM_OUT,
@@ -80,23 +94,30 @@ export function Sheet({ visible, onClose, children, height = '90%' }: SheetProps
         easing: Easing.in(Easing.quad),
         useNativeDriver: true,
       }),
-    ]).start(({ finished }) => {
+    ]);
+    animation.start(({ finished }) => {
       if (finished) setMounted(false);
     });
+    return () => animation.stop();
   }, [dim, fade, visible]);
 
   useEffect(() => {
     if (visible) setContent(children);
   }, [children, visible]);
 
-  if (!mounted) return null;
+  // iOS/web deliver onDismiss. Android removes its native dialog when visible
+  // becomes false; notify after that committed render instead of a timer.
+  useEffect(() => {
+    if (!mounted && Platform.OS === 'android') dismissed();
+  }, [mounted]);
 
   return (
     <Modal
-      visible
+      visible={mounted}
       transparent
       animationType="none"
       onRequestClose={onClose}
+      onDismiss={dismissed}
       statusBarTranslucent
     >
       <View style={styles.root}>

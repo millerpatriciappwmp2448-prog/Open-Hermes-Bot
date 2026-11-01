@@ -36,33 +36,43 @@ export function BotSheet({
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const busy = saving || deleting;
 
   // A different bot is a different face: the sheet is reused, the fields are not.
   useEffect(() => {
-    if (!bot) return;
+    if (!bot || !visible) return;
     setName(bot.name);
     setShape(bot.shape);
     setColor(bot.color);
     // A question asked about another bot is not asked about this one.
     setConfirming(false);
     setDeleteError('');
-  }, [bot?.id]);
+    setSaveError('');
+  }, [bot?.id, visible]);
 
   if (!bot) return null;
 
   const thread = threads.find((entry) => entry.kind === 'bot' && entry.botId === bot.id);
 
-  function save() {
-    updateBot(bot!.id, { name: name.trim() || bot!.name, shape, color });
-    onClose();
+  async function save() {
+    if (busy) return;
+    setSaving(true); setSaveError('');
+    try {
+      await updateBot(bot!.id, { name: name.trim() || bot!.name, shape, color });
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('无法保存智能体。'));
+    } finally { setSaving(false); }
   }
 
   return (
-    <Sheet visible={visible} onClose={() => { if (!deleting) onClose(); }}>
+    <Sheet visible={visible} onClose={() => { if (!busy) onClose(); }}>
       <SheetHeader
         title={bot.name}
         sub={t("{0} · 会话 {1}", {"0": bot.role, "1": bot.session})}
-        onClose={() => { if (!deleting) onClose(); }}
+        onClose={() => { if (!busy) onClose(); }}
       />
 
       {confirming ? (
@@ -86,13 +96,14 @@ export function BotSheet({
           <Bloub shape={shape} color={color} size={72} />
         </View>
 
-        <Field label={t("名称")} value={name} onChange={setName} placeholder={t("智能体名称")} />
+        <Field label={t("名称")} value={name} onChange={setName} placeholder={t("智能体名称")} editable={!busy} />
 
         <SectionLabel>{t("形状")}</SectionLabel>
         <View style={styles.shapeGrid}>
           {SHAPES.map((option) => (
             <Pressable
               key={option.id}
+              disabled={busy}
               style={[styles.shapeOption, shape === option.id && styles.shapeOn]}
               onPress={() => setShape(option.id)}
               accessibilityLabel={t(option.label)}
@@ -107,6 +118,7 @@ export function BotSheet({
           {COLORS.map((dot) => (
             <Pressable
               key={dot}
+              disabled={busy}
               onPress={() => setColor(dot)}
               style={[styles.dot, { backgroundColor: dot }, color === dot && styles.dotOn]}
               accessibilityLabel={t("颜色 {0}", {"0": dot})}
@@ -115,18 +127,20 @@ export function BotSheet({
         </View>
 
         <View style={styles.buttons}>
-          <PrimaryButton label={t("保存更改")} onPress={save} />
+          {saveError ? <Text accessibilityRole="alert" style={styles.error}>{saveError}</Text> : null}
+          <PrimaryButton label={saving ? t('正在保存…') : t("保存更改")} disabled={busy} onPress={() => void save()} />
           <View style={styles.gap} />
           <PrimaryButton
             label={t("打开会话")}
             tone="quiet"
+            disabled={busy}
             onPress={() => {
               onClose();
               if (thread) onOpen(thread.id);
             }}
           />
           <View style={styles.gap} />
-          <PrimaryButton label={bot.primary ? t("主智能体不能删除。") : t("删除此智能体")} disabled={Boolean(bot.primary)} tone="danger" onPress={() => setConfirming(true)} />
+          <PrimaryButton label={bot.primary ? t("主智能体不能删除。") : t("删除此智能体")} disabled={busy || Boolean(bot.primary)} tone="danger" onPress={() => setConfirming(true)} />
         </View>
         <Text style={styles.note}>
           {t("记忆保存在服务器上，此处仅修改智能体的名称和外观。")}
@@ -155,6 +169,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
   dot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: C.border },
   dotOn: { borderWidth: 2, borderColor: C.paper },
   buttons: { marginTop: 16 },
+  error: { color: C.red, fontSize: 11, lineHeight: 16, marginBottom: 8 },
   gap: { height: 8 },
   note: { marginTop: 12, color: INK.quiet, fontSize: 10, lineHeight: 14 },
 }));

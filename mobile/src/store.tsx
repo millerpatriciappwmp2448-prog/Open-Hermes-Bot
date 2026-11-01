@@ -4,6 +4,7 @@ import { modelForTurn, readModelPick, withModelPick, type ModelRef } from './mod
 import { profileNameFor } from './botNames';
 import { readChatPreferences, withChatPreferences, sessionsForBot, type ChatPreferences } from './chatPreferences';
 import { readSchedules, type Schedule } from './schedules';
+import { sameTodos, type TodoItem } from './taskDock';
 import {
   createContext,
   useCallback,
@@ -43,6 +44,9 @@ import {
   type BridgeSession,
   type JobAction,
   type JobInput,
+  type HistoryPage,
+  type TranscriptPage,
+  type ServerMonitor,
 } from './api';
 
 /**
@@ -106,12 +110,17 @@ type Store = {
   chatPreferences: Record<string, ChatPreferences>;
   saveChatPreferences: (botId: string, value: ChatPreferences) => Promise<void>;
   loadSessions: (botId: string) => Promise<BridgeSession[]>;
+  loadHistory: (botId: string, offset: number) => Promise<HistoryPage>;
+  loadTranscript: (botId: string, sessionId: string, offset: number) => Promise<TranscriptPage>;
+  loadMonitor: () => Promise<ServerMonitor>;
+  /** Read the agent's task list for a chat's session from Hermes. */
+  loadTodos: (threadId: string) => Promise<void>;
 
   botById: (id: string) => Bot | undefined;
   threadById: (id: string) => Thread | undefined;
 
   addBot: (input: NewBot) => string;
-  updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color'>>) => void;
+  updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color'>>) => Promise<void>;
   removeBot: (id: string) => Promise<void>;
   /** Write what the bot is for into its SOUL.md; it applies from its next session. */
   saveDescription: (botId: string, text: string) => Promise<void>;
@@ -130,8 +139,8 @@ type Store = {
   togglePin: (threadId: string) => void;
   markRead: (threadId: string) => void;
   markUnread: (threadId: string) => void;
-  removeThread: (threadId: string) => void;
-  clearThread: (threadId: string) => void;
+  removeThread: (threadId: string) => Promise<void>;
+  clearThread: (threadId: string) => Promise<void>;
 
   send: (threadId: string, payload: Outgoing) => void;
   /** Stop the reply being written; the part already received stays. */
@@ -342,6 +351,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const nextThreads: Thread[] = loaded.map((entry) => {
       const threadId = `bot:${entry.raw.id}`;
       const rows = toMessages(threadId, entry.raw.id, entry.rows);
+      // A refresh keeps the task list it already read for the same session.
+      const previous = threadsRef.current.find((thread) => thread.id === threadId);
+      const todos = previous && previous.sessionId === entry.latest?.id ? previous.todos : undefined;
       return {
         id: threadId,
         kind: 'bot',
@@ -354,6 +366,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         time: entry.latest ? relativeTime(entry.latest.lastActive) : '',
         threadModel: entry.pick?.model || entry.options?.current || '',
         sessionId: entry.latest?.id,
+        todos,
         unread: false,
       };
     });
@@ -489,6 +502,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const rows = await active.sessions(botId);
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     return sessionsForBot(rows, botId);
+  }, []);
+
+  const loadHistory = useCallback<Store['loadHistory']>(async (botId, offset) => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const page = await active.history(botId, offset);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    return { ...page, sessions: page.sessions.filter(row => row.bot === botId) };
+  }, []);
+
+  const loadMonitor = useCallback<Store['loadMonitor']>(async () => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const snapshot = await active.monitor();
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    return snapshot;
+  }, []);
+
+  const loadTranscript = useCallback<Store['loadTranscript']>(async (botId, sessionId, offset) => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const page = await active.transcript(botId, sessionId, offset);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    return page;
+  }, []);
+
+  const loadTodos = useCallback<Store['loadTodos']>(async (threadId) => {
+    const active = client.current;
+    const thread = threadsRef.current.find((entry) => entry.id === threadId);
+    if (!active || connectionRef.current.status !== 'connected') return;
+    if (!thread || thread.kind !== 'bot' || !thread.sessionId || thread.typing) return;
+    const { botId, sessionId } = thread;
+    let todos: TodoItem[];
+    try {
+      todos = await active.todos(botId, sessionId);
+    } catch {
+      // An older bridge or a busy host: the chat simply shows no task list.
+      return;
+    }
+    if (client.current !== active) return;
+    setThreads((current) =>
+      current.map((entry) =>
+        // A turn that started meanwhile streams its own, newer list.
+        entry.id === threadId && entry.sessionId === sessionId && !entry.typing && !sameTodos(entry.todos, todos)
+          ? { ...entry, todos }
+          : entry,
+      ),
+    );
   }, []);
 
   const retry = useCallback(async () => {
@@ -703,7 +764,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const updateBot = useCallback<Store['updateBot']>(
-    (id, patch) => {
+    async (id, patch) => {
+      const active = client.current;
+      const serverBot = threadsRef.current.some(thread => thread.botId === id && thread.id.startsWith('bot:'));
+      if (serverBot || active || savedRef.current) {
+        if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+        await active.updateBot(id, {
+          ...(patch.name ? { title: patch.name } : {}),
+          ...(patch.color ? { color: patch.color } : {}),
+          ...(patch.shape ? { shape: patch.shape } : {}),
+        });
+        if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      }
       setBots((current) => current.map((bot) => (bot.id === id ? { ...bot, ...patch } : bot)));
       if (patch.name) {
         setThreads((current) =>
@@ -711,24 +783,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             thread.kind === 'bot' && thread.botId === id ? { ...thread, name: patch.name! } : thread,
           ),
         );
-      }
-      if (connectionRef.current.status === 'connected' && client.current) {
-        void client.current
-          .updateBot(id, {
-            ...(patch.name ? { title: patch.name } : {}),
-            ...(patch.color ? { color: patch.color } : {}),
-            ...(patch.shape ? { shape: patch.shape } : {}),
-          })
-          .catch((error: unknown) => {
-            const message = error instanceof BridgeError ? error.message : t("无法保存智能体。");
-            setThreads((current) =>
-              current.map((thread) =>
-                thread.kind === 'bot' && thread.botId === id
-                  ? { ...thread, preview: `⚠︎ ${message}` }
-                  : thread,
-              ),
-            );
-          });
       }
     },
     [],
@@ -897,12 +951,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [patchThread],
   );
 
-  const removeThread = useCallback<Store['removeThread']>((threadId) => {
+  const removeThread = useCallback<Store['removeThread']>(async (threadId) => {
     const thread = threadsRef.current.find((entry) => entry.id === threadId);
-    const online = connectionRef.current.status === 'connected' && client.current !== null;
+    if (!thread) return;
+    const active = client.current;
+    if (thread.kind === 'bot' && (thread.id.startsWith('bot:') || active || savedRef.current)) {
+      if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+      if (thread.sessionId) await active.deleteSession(thread.botId, thread.sessionId);
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    }
     turnsRef.current[threadId]?.();
     delete turnsRef.current[threadId];
-    if (online && thread?.kind === 'bot') {
+    if (thread.kind === 'bot') {
       // A bot's row is the bot itself: deleting the conversation keeps the bot and
       // drops only its server session.
       setThreads((current) =>
@@ -913,6 +973,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 sessionId: undefined,
                 typing: false,
                 tool: undefined,
+                todos: undefined,
                 preview: t("暂无会话"),
                 time: '',
                 unread: false,
@@ -929,26 +990,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return next;
       });
     }
-    if (thread?.sessionId && online && client.current) {
-      void client.current.deleteSession(thread.botId, thread.sessionId).catch((error: unknown) => {
-        const message = error instanceof BridgeError ? error.message : t("无法删除服务器会话。");
-        setConnection((state) => ({ ...state, error: message }));
-      });
-    }
   }, []);
 
-  const clearThread = useCallback<Store['clearThread']>((threadId) => {
-    turnsRef.current[threadId]?.();
-    delete turnsRef.current[threadId];
-    setMessages((current) => ({ ...current, [threadId]: [] }));
-    patchThread(threadId, {
-      sessionId: undefined,
-      typing: false,
-      tool: undefined,
-      preview: t("暂无会话"),
-      time: '',
-    });
-  }, [patchThread]);
+  const clearThread = removeThread;
 
   /* ------------------------------------------------------- the messages */
 
@@ -1098,6 +1142,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 if (settled) return;
                 patchThread(threadId, { tool: tool || undefined });
               },
+              onTodos: (todos) => {
+                if (settled) return;
+                patchThread(threadId, { todos });
+              },
               onDone: (text) => settle(text || answer, false),
               onError: (message) => settle(message, true),
             },
@@ -1159,6 +1207,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       chatPreferences,
       saveChatPreferences,
       loadSessions,
+      loadHistory,
+      loadTranscript,
+      loadMonitor,
+      loadTodos,
       botById,
       threadById,
       addBot,
@@ -1225,6 +1277,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       chatPreferences,
       saveChatPreferences,
       loadSessions,
+      loadHistory,
+      loadTranscript,
+      loadMonitor,
+      loadTodos,
       saveDescription,
       loadJobs,
       createJob,

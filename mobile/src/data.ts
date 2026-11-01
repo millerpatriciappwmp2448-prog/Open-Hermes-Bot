@@ -4,6 +4,7 @@
  */
 
 import type { BloubShape } from './bloubFrames';
+import type { TodoItem } from './taskDock';
 
 export type Bot = {
   id: string;
@@ -53,6 +54,8 @@ export type Thread = {
   typing?: boolean;
   /** The tool Hermes is running for the current turn, when it says so. */
   tool?: string;
+  /** The agent's task list in this session, as Hermes keeps it. */
+  todos?: TodoItem[];
   /** The Hermes session behind this thread, once there is one. */
   sessionId?: string;
   /** Group only: the bots in the round, in speaking order. */

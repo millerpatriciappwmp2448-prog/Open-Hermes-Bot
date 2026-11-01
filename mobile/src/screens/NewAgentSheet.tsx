@@ -232,7 +232,7 @@ export function NewAgentSheet({
 const useStyles = themedStyles(({ C, INK }) => ({
   head: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, paddingTop: 12, paddingHorizontal: 16 },
   headCopy: { flex: 1 },
-  title: { color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.48 },
+  title: { color: C.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   sub: { marginTop: 3, color: INK.quiet, fontSize: 11, lineHeight: 15 },
   close: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: C.field2 },
 

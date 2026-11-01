@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hermesbot.mobile",
-      "buildNumber": "8",
+      "buildNumber": "9",
       "deploymentTarget": "17.0",
       "infoPlist": {
         "CFBundleDevelopmentRegion": "en",

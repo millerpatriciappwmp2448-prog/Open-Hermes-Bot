@@ -133,7 +133,8 @@ export const FONT = {
 } as const;
 
 /** Legacy mockup sizes are normalized to compact, readable native points.
- * Tiny labels keep an 11pt floor; regular body copy lands near 15-16pt.
+ * Tiny labels keep an 11pt floor; regular body copy stops at 16pt. Titles
+ * already use native point sizes and must not get enlarged a second time.
  * The OS remains free to apply Dynamic Type on top of these defaults.
  */
 const TEXT_SCALE = 1.18;
@@ -141,7 +142,8 @@ const BOX_SCALE = 1.1;
 
 function textFactor(size: number): number {
   if (size <= 0) return 1;
-  return Math.max(11, size * TEXT_SCALE) / size;
+  if (size > 16) return 1;
+  return Math.min(16, Math.max(11, size * TEXT_SCALE)) / size;
 }
 
 const TEXT_SIZE = /^(fontSize|lineHeight|letterSpacing)$/;

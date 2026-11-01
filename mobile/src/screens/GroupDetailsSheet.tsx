@@ -1,10 +1,9 @@
 import { t, useTranslation } from "../i18n";
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Sheet } from '../components/Sheet';
 import { Bloub, BloubGroup } from '../components/Bloub';
 import { ChevronIcon, CloseIcon } from '../components/Icons';
-import { ModelList } from '../components/ModelList';
 import { ConfirmBlock } from '../components/UI';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
@@ -18,16 +17,18 @@ export function GroupDetailsSheet({
   onClose,
   threadId,
   onLeave,
+  onModel,
 }: {
   visible: boolean;
   onClose: () => void;
   threadId: string;
   onLeave: () => void;
+  onModel: () => void;
 }) {
-  const { styles, INK } = useStyles();
+  const { styles } = useStyles();
   useTranslation();
-  const { threadById, botById, setModel, updateGroup, leaveGroup } = useStore();
-  const [picking, setPicking] = useState(false);
+  const { threadById, botById, updateGroup, leaveGroup } = useStore();
+  const afterClose = useRef<'model' | 'leave' | null>(null);
   const [pending, setPending] = useState<
     { kind: 'leave' } | { kind: 'remove'; id: string; name: string } | null
   >(null);
@@ -39,24 +40,13 @@ export function GroupDetailsSheet({
   const faces = members.map((bot) => ({ shape: bot!.shape, color: bot!.color }));
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
-      {picking && thread ? (
-        <>
-          <View style={styles.pickHead}>
-            <Pressable style={styles.back} onPress={() => setPicking(false)}>
-              <ChevronIcon size={14} color={INK.quiet} />
-            </Pressable>
-            <Text style={styles.pickTitle}>{t("模型")}</Text>
-          </View>
-          <ModelList
-            selected={thread.threadModel}
-            onPick={(picked) => {
-              setModel(thread.id, picked);
-              setPicking(false);
-            }}
-          />
-        </>
-      ) : (
+    <Sheet visible={visible} onClose={onClose} onDismiss={() => {
+      const action = afterClose.current;
+      afterClose.current = null;
+      setPending(null);
+      if (action === 'model') onModel();
+      if (action === 'leave') { leaveGroup(threadId); onLeave(); }
+    }}>
         <>
           <View style={styles.top}>
             <Pressable style={styles.close} onPress={onClose} accessibilityLabel={t("关闭")}>
@@ -81,10 +71,8 @@ export function GroupDetailsSheet({
               onCancel={() => setPending(null)}
               onConfirm={() => {
                 if (pending.kind === 'leave') {
-                  leaveGroup(threadId);
-                  setPending(null);
+                  afterClose.current = 'leave';
                   onClose();
-                  onLeave();
                 } else {
                   updateGroup(threadId, {
                     members: memberIds.filter((id) => id !== pending.id),
@@ -122,7 +110,8 @@ export function GroupDetailsSheet({
 
             <Text style={styles.label}>{t("会话")}</Text>
             <View style={styles.card}>
-              <Pressable style={styles.row} onPress={() => setPicking(true)}>
+              <Pressable accessibilityRole="button" accessibilityLabel={t('选择模型')} style={styles.row}
+                onPress={() => { afterClose.current = 'model'; onClose(); }}>
                 <View style={styles.copy}>
                   <Text style={styles.rowName}>{t("模型")}</Text>
                 </View>
@@ -143,7 +132,6 @@ export function GroupDetailsSheet({
           </ScrollView>
           )}
         </>
-      )}
     </Sheet>
   );
 }
@@ -161,7 +149,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     borderRadius: 13,
     backgroundColor: C.field2,
   },
-  name: { marginTop: 8, color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.46 },
+  name: { marginTop: 8, color: C.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   sub: { marginTop: 3, color: INK.quiet, fontSize: 10 },
 
   body: { flexShrink: 1 },
@@ -194,7 +182,4 @@ const useStyles = themedStyles(({ C, INK }) => ({
   },
   dangerText: { color: C.red, fontSize: 12, fontWeight: '500' },
 
-  pickHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12, paddingHorizontal: 16 },
-  back: { transform: [{ rotate: '180deg' }] },
-  pickTitle: { color: C.text, fontSize: 19, fontWeight: '600', letterSpacing: -0.48 },
 }));

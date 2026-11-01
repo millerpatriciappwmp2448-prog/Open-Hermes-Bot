@@ -30,6 +30,13 @@ export function ConversationsScreen() {
   const [creating, setCreating] = useState(false);
   const [menu, setMenu] = useState<Thread | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Thread | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  function closeMenu() {
+    if (deleting) return;
+    setMenu(null); setConfirmDelete(null); setDeleteError('');
+  }
 
   const needle = query.trim().toLowerCase();
 
@@ -225,21 +232,21 @@ export function ConversationsScreen() {
 
       <Sheet
         visible={menu !== null}
-        onClose={() => {
-          setMenu(null);
-          setConfirmDelete(null);
-        }}
+        onClose={closeMenu}
       >
         {menu && confirmDelete ? (
           <ConfirmBlock
-            title={t("删除 {0}？", {"0": menu.name})}
+            title={menu.kind === 'bot' ? t('清空此会话？') : t("删除 {0}？", {"0": menu.name})}
             message={t("将删除该会话，智能体及其记忆仍会保留。")}
-            confirmLabel={t("删除")}
-            onCancel={() => setConfirmDelete(null)}
+            confirmLabel={menu.kind === 'bot' ? t('清空') : t("删除")}
+            busy={deleting} error={deleteError}
+            onCancel={() => { if (!deleting) { setConfirmDelete(null); setDeleteError(''); } }}
             onConfirm={() => {
-              removeThread(menu.id);
-              setConfirmDelete(null);
-              setMenu(null);
+              if (deleting) return;
+              setDeleting(true); setDeleteError('');
+              void removeThread(menu.id).then(() => { setConfirmDelete(null); setMenu(null); })
+                .catch(error => setDeleteError(error instanceof Error ? error.message : t('无法删除服务器会话。')))
+                .finally(() => setDeleting(false));
             }}
           />
         ) : menu ? (
@@ -280,7 +287,8 @@ export function ConversationsScreen() {
                   }}
                 />
                 <View style={styles.menuLine} />
-                <Row name={t("删除")} chevron={false} onPress={() => setConfirmDelete(menu)} />
+                <Row name={menu.kind === 'bot' ? t('清除对话') : t("删除")} chevron={false}
+                  onPress={() => { setDeleteError(''); setConfirmDelete(menu); }} />
               </View>
             </View>
           </>
@@ -302,10 +310,10 @@ const useStyles = themedStyles(({ C, INK }) => ({
   title: {
     flexShrink: 1,
     color: C.text,
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '600',
     letterSpacing: -0.3,
-    lineHeight: 26,
+    lineHeight: 23,
   },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   hostLine: { marginTop: 3, color: INK.faint, fontSize: 10 },

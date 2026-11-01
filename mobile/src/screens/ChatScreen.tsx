@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub, BloubGroup } from '../components/Bloub';
 import { BackIcon, FileIcon, MicIcon, MoreIcon, PhotoIcon } from '../components/Icons';
 import { Composer, type Outgoing } from '../components/Composer';
+import { TaskDock } from '../components/TaskDock';
 import { TypingDots } from '../components/TypingDots';
 import { BotSheet } from './BotSheet';
 import { GroupDetailsSheet } from './GroupDetailsSheet';
@@ -67,6 +68,8 @@ export function ChatScreen({ route, navigation }: Props) {
     send,
     markRead,
     threadById,
+    loadTodos,
+    connection,
   } = useStore();
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -81,6 +84,12 @@ export function ChatScreen({ route, navigation }: Props) {
   useEffect(() => {
     markRead(threadId);
   }, [markRead, threadId]);
+
+  // The agent's own task list for this session, read from Hermes.
+  const sessionId = thread?.sessionId;
+  useEffect(() => {
+    void loadTodos(threadId);
+  }, [loadTodos, threadId, sessionId, connection.status]);
 
   if (!thread) {
     return (
@@ -108,6 +117,18 @@ export function ChatScreen({ route, navigation }: Props) {
   const turns = messages[thread.id] ?? [];
   const meta = CHAT_EVENTS[thread.id];
   const isGroup = thread.kind === 'group';
+  // In a group, each agent's newest message keeps a live face; older ones stay
+  // still so a long history does not redraw dozens of faces every frame.
+  const liveFaces = new Set<string>();
+  if (isGroup) {
+    const seen = new Set<string>();
+    for (let index = turns.length - 1; index >= 0; index--) {
+      const turn = turns[index];
+      if (turn.from === 'user' || seen.has(turn.from)) continue;
+      seen.add(turn.from);
+      liveFaces.add(turn.id);
+    }
+  }
 
   function delivery(payload: Outgoing) {
     send(threadId, payload);
@@ -127,7 +148,7 @@ export function ChatScreen({ route, navigation }: Props) {
       >
         {isGroup && !mine && author ? (
           <View style={styles.msgAvatar}>
-            <Bloub shape={author.shape} color={author.color} size={24} />
+            <Bloub shape={author.shape} color={author.color} size={24} animated={liveFaces.has(message.id)} />
           </View>
         ) : null}
 
@@ -265,6 +286,7 @@ export function ChatScreen({ route, navigation }: Props) {
           ) : null}
         </ScrollView>
 
+        {!isGroup ? <TaskDock todos={thread.todos} running={!!thread.typing} /> : null}
         <Composer thread={thread} bots={bots} onSend={delivery} />
       </View>
 
@@ -285,6 +307,7 @@ export function ChatScreen({ route, navigation }: Props) {
         onClose={() => setDetailsOpen(false)}
         threadId={thread.id}
         onLeave={() => navigation.goBack()}
+        onModel={() => navigation.navigate('ChatModel', { threadId: thread.id })}
       />
       <MessageSheet
         visible={active !== null}

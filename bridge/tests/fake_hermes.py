@@ -76,7 +76,59 @@ class FakeHermes:
             "s-primary-1": [
                 {"role": "user", "content": "hello", "timestamp": 1},
                 {"role": "assistant", "content": "hi there", "timestamp": 2},
-            ]
+            ],
+            # A session whose agent kept a task list: the newest valid
+            # todo result counts, the tool error after it does not.
+            "s-todo-1": [
+                {"role": "user", "content": "ship it", "timestamp": 1},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "function": {
+                                "name": "todo_list",
+                                "arguments": json.dumps(
+                                    {"todos": [{"id": "1", "content": "Build", "status": "in_progress"}]}
+                                ),
+                            },
+                        }
+                    ],
+                    "timestamp": 2,
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "c1",
+                    "tool_name": "todo_list",
+                    "content": json.dumps(
+                        {
+                            "todos": [
+                                {"id": "1", "content": "Build", "status": "completed"},
+                                {"id": "2", "content": "Test", "status": "in_progress"},
+                                {"id": "3", "content": "Release", "status": "pending"},
+                            ],
+                            "revision": 2,
+                        }
+                    ),
+                    "timestamp": 3,
+                },
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {"id": "c2", "function": {"name": "todo_list", "arguments": "{}"}}
+                    ],
+                    "timestamp": 4,
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "c2",
+                    "tool_name": "todo_list",
+                    "content": json.dumps({"error": "todo store unavailable"}),
+                    "timestamp": 5,
+                },
+            ],
         }
         self.last_turn: dict = {}
         self.calls: list[tuple[str, str, str]] = []
@@ -160,7 +212,16 @@ class _Handler(BaseHTTPRequestHandler):
 
         match = re.match(r"^/api/sessions/([^/]+)/messages$", rest)
         if match:
-            return self._json(200, {"data": self.fake.messages.get(match.group(1), [])})
+            query = parse_qs(parsed.query)
+            limit = int((query.get("limit") or ["200"])[0])
+            offset = int((query.get("offset") or ["0"])[0])
+            rows = self.fake.messages.get(match.group(1), [])
+            if (query.get("order") or [""])[0] == "latest":
+                # The newest `limit` rows, still oldest first, as Hermes does.
+                rows = rows[-limit:] if limit > 0 else []
+            else:
+                rows = rows[offset:offset + limit]
+            return self._json(200, {"data": rows, "pagination": {"returned": len(rows)}})
 
         if rest == "/api/model/options":
             return self._json(
@@ -265,18 +326,77 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Connection", "close")
             self.end_headers()
-            for frame in (
+            frames = (
                 "event: assistant.delta\ndata: {\"delta\": \"Deploy \"}\n\n",
                 ": keepalive\n\n",
                 "event: tool.started\ndata: {\"tool_name\": \"shell\"}\n\n",
                 "event: assistant.delta\ndata: {\"delta\": \"412 is green.\"}\n\n",
                 "event: done\ndata: {\"ok\": true}\n\n",
-            ):
+            )
+            if match.group(1) == "s-todo-1":
+                frames = self._todo_frames()
+            for frame in frames:
                 self.wfile.write(frame.encode("utf-8"))
                 self.wfile.flush()
             self.close_connection = True
             return
         return self._json(404, {"error": {"message": "no route"}})
+
+    @staticmethod
+    def _todo_frames() -> tuple[str, ...]:
+        """A turn that rewrites the task list, merges into it, then ends."""
+
+        def frame(event: str, data: dict) -> str:
+            return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+        kept = [
+            {"id": "1", "content": "Build", "status": "completed"},
+            {"id": "2", "content": "Test", "status": "completed"},
+            {"id": "3", "content": "Release", "status": "in_progress"},
+        ]
+        return (
+            frame("run.started", {"run_id": "r1"}),
+            frame(
+                "tool.started",
+                {
+                    "tool_name": "todo_list",
+                    "args": {
+                        "todos": [
+                            {"id": "1", "content": "Build", "status": "completed"},
+                            {"id": "2", "content": "Test", "status": "pending"},
+                            {"id": "3", "content": "Release", "status": "pending"},
+                        ]
+                    },
+                },
+            ),
+            frame(
+                "tool.started",
+                {
+                    "tool_name": "todo_list",
+                    "args": {"todos": [{"id": "2", "status": "in_progress"}], "merge": True},
+                },
+            ),
+            frame("assistant.delta", {"delta": "Releasing."}),
+            frame(
+                "run.completed",
+                {
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{"id": "c9", "function": {"name": "todo_list", "arguments": "{}"}}],
+                        },
+                        {
+                            "role": "tool",
+                            "tool_call_id": "c9",
+                            "tool_name": "todo_list",
+                            "content": json.dumps({"todos": kept, "revision": 5}),
+                        },
+                    ]
+                },
+            ),
+            frame("done", {"ok": True}),
+        )
 
     def do_PATCH(self) -> None:  # noqa: N802
         profile, rest = self._split()

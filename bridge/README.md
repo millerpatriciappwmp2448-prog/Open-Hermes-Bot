@@ -30,6 +30,7 @@ turn is `text/event-stream`.
 | `PATCH /v1/bots/<bot>` | Rename, recolour, reshape, describe. Writes the desktop app's metadata. |
 | `DELETE /v1/bots/<bot>` | Take a bot out of service: the gateway stops serving it, a tombstone stays, the bytes go to trash. |
 | `GET /v1/models?bot=` | The models that bot's authenticated providers offer. |
+| `GET /v1/monitor` | Paired devices only. Host CPU, memory, disk and whitelisted gateway daily API metrics. Missing readings are null, not zero. |
 | `GET /v1/sessions?bot=` | Conversations, newest first. Without `bot`, from every bot. |
 | `POST /v1/sessions` | Open a conversation `{bot, title}`. A taken title gets a suffix. |
 | `GET /v1/sessions/<bot>/<id>/messages` | The transcript, oldest first. |

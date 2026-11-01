@@ -11,6 +11,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 from dataclasses import replace
@@ -21,6 +22,7 @@ import yaml
 from hermes_bridge.config import Config, ensure_state
 from hermes_bridge.devices import Pairing
 from hermes_bridge.server import BridgeServer
+from hermes_bridge.hermes import HermesError
 
 from fake_hermes import start as start_fake
 
@@ -143,6 +145,24 @@ class BridgeTest(unittest.TestCase):
         self.assertIn("Hermes is answering.", body)
         self.assertIn("A pairing code is waiting", body)
         self.assertNotIn("key-primary", body)
+
+    def test_monitor_requires_pairing_and_keeps_resources_when_gateway_is_unavailable(self):
+        self.assertEqual(self.call("GET", "/v1/monitor", token=False)[0], 401)
+        resources = {"sampledAt": 10, "cpuPercent": 25, "memory": None, "disk": None}
+        with patch("hermes_bridge.monitor.Monitor.snapshot", return_value=resources):
+            status, body = self.call("GET", "/v1/monitor")
+            self.assertEqual(status, 200)
+            self.assertEqual(body["resources"]["cpuPercent"], 25)
+            self.assertTrue(body["gateway"]["available"])
+            self.assertIsNone(body["gateway"]["usage"]["tokens"])
+            for error, code in [(404, "unsupported"), (401, "unavailable"), (502, "unavailable")]:
+                with patch("hermes_bridge.hermes.Hermes.detailed_health", side_effect=HermesError(error, "error", "secret-key")):
+                    status, body = self.call("GET", "/v1/monitor")
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body["resources"], resources)
+                    self.assertFalse(body["gateway"]["available"])
+                    self.assertEqual(body["gateway"]["error"], code)
+                    self.assertNotIn("secret-key", str(body))
 
     def test_a_browser_gets_a_preflight(self):
         request = urllib.request.Request(self.base + "/v1/bots", method="OPTIONS")
@@ -275,6 +295,45 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual([row["role"] for row in body["messages"]], ["user", "assistant"])
         self.assertEqual(body["messages"][1]["content"], "hi there")
 
+    def test_the_task_list_is_the_newest_valid_todo_result(self):
+        status, body = self.call("GET", "/v1/sessions/default/s-todo-1/todos")
+        self.assertEqual(status, 200, body)
+        # The tool error after the list is skipped; the list before it stands.
+        self.assertEqual(body["revision"], 2)
+        self.assertEqual(
+            [(item["id"], item["status"]) for item in body["todos"]],
+            [("1", "completed"), ("2", "in_progress"), ("3", "pending")],
+        )
+        self.assertIn(("GET", "default", "/api/sessions/s-todo-1/messages"), self.fake.calls)
+
+    def test_a_session_without_todos_has_an_empty_list(self):
+        status, body = self.call("GET", "/v1/sessions/default/s-primary-1/todos")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body, {"todos": [], "revision": 0})
+
+    def test_the_task_list_of_an_unknown_bot_is_not_found(self):
+        status, _ = self.call("GET", "/v1/sessions/ghost/s-todo-1/todos")
+        self.assertEqual(status, 404)
+
+    def test_a_turn_streams_the_task_list_as_it_changes(self):
+        events = self.events(self.stream("default", "s-todo-1", {"message": "go"}))
+        lists = [data for name, data in events if name == "todos"]
+        # Predicted from the replacing write, then from the merge onto it,
+        # then what Hermes kept at the end of the run, with its revision.
+        self.assertEqual(len(lists), 3, lists)
+        self.assertEqual(
+            [item["status"] for item in lists[0]["todos"]], ["completed", "pending", "pending"]
+        )
+        self.assertNotIn("revision", lists[0])
+        self.assertEqual(
+            [item["status"] for item in lists[1]["todos"]], ["completed", "in_progress", "pending"]
+        )
+        self.assertEqual(lists[2]["revision"], 5)
+        self.assertEqual(
+            [item["status"] for item in lists[2]["todos"]], ["completed", "completed", "in_progress"]
+        )
+        self.assertEqual(events[-1][0], "done")
+
     def test_renaming_and_deleting_a_conversation(self):
         status, _ = self.call(
             "PATCH", "/v1/sessions/default/s-primary-1", {"title": "Renamed"}
@@ -378,6 +437,17 @@ class BridgeTest(unittest.TestCase):
         status, body = self.call("GET", "/v1/prefs")
         self.assertEqual(body["prefs"], {"defaultModel": "Sonnet 4.5"})
 
+    def test_sections_file_is_read_only_and_behind_pairing(self):
+        status, body = self.call("GET", "/v1/sections", token=False)
+        self.assertEqual(status, 401, body)
+        status, body = self.call("GET", "/v1/sections")
+        self.assertEqual((status, body["sections"], body["digest"]), (200, [], ""))
+        path = self.home / "bot-sections.json"
+        path.write_text(json.dumps({"assign": {"@Nova": "Work"}}), encoding="utf-8")
+        status, body = self.call("GET", "/v1/sections")
+        self.assertEqual((body["sections"], body["assign"]), (["Work"], {"nova": "Work"}))
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"assign": {"@Nova": "Work"}})
+
     def test_a_revoked_device_is_locked_out(self):
         status, body = self.call("GET", "/v1/devices")
         self.assertEqual(status, 200)
@@ -460,6 +530,32 @@ class BridgeTest(unittest.TestCase):
         self.assertNotIn("cron_news01_20261030_090000", ids)
         self.assertNotIn("s-nova-telegram", ids)
         self.assertIn("s-nova-1", ids)
+
+    def test_history_reads_all_sources_with_authentication_and_profile_isolation(self):
+        status, body = self.call("GET", "/v1/history?bot=nova&limit=2")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["nextOffset"], 2)
+        self.assertEqual({r["id"] for r in body["sessions"]}, {"s-nova-1", "cron_news01_20261030_090000"})
+        status, body = self.call("GET", "/v1/history?bot=nova&limit=2&offset=2")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["sessions"][0]["source"], "telegram")
+        self.assertIsNone(body["nextOffset"])
+        status, _ = self.call("GET", "/v1/history?bot=nova", token=False)
+        self.assertEqual(status, 401)
+        for query in ("limit=0", "limit=101", "offset=-1", "offset=invalid"):
+            status, _ = self.call("GET", f"/v1/history?bot=nova&{query}")
+            self.assertEqual(status, 400)
+        status, _ = self.call("GET", "/v1/history?bot=missing")
+        self.assertEqual(status, 404)
+
+    def test_transcript_can_be_read_beyond_first_page(self):
+        status, body = self.call("GET", "/v1/sessions/default/s-primary-1/messages?limit=1&offset=1")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["messages"][0]["content"], "hi there")
+        self.assertEqual(body["nextOffset"], 2)
+        status, body = self.call("GET", "/v1/sessions/default/s-primary-1/messages?limit=1&offset=2")
+        self.assertIsNone(body["nextOffset"])
+        self.assertEqual(body["messages"], [])
 
     def test_a_description_writes_only_the_app_block_of_the_soul(self):
         soul = self.home / "profiles" / "nova" / "SOUL.md"

@@ -18,11 +18,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import __version__, media, prefs, profiles
+from . import __version__, media, prefs, profiles, sections, todos
 from .config import Config
 from .devices import Devices, Pairing
 from .hermes import Hermes, HermesError
 from .profiles import BotError
+from .monitor import Monitor, gateway_stats
 
 log = logging.getLogger("hermes_bridge")
 
@@ -53,6 +54,7 @@ class Bridge:
         self.devices = Devices(config)
         self.pairing = Pairing(config)
         self.hermes = Hermes(config)
+        self.monitor = Monitor(config.hermes_home)
 
 
 ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
@@ -66,6 +68,7 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("PATCH", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_update", False),
     ("DELETE", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_delete", False),
     ("GET", re.compile(r"^/v1/models$"), "_models", False),
+    ("GET", re.compile(r"^/v1/monitor$"), "_monitor", False),
     ("GET", re.compile(r"^/v1/jobs$"), "_jobs", False),
     ("POST", re.compile(r"^/v1/jobs$"), "_job_create", False),
     (
@@ -76,11 +79,18 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ),
     ("GET", re.compile(r"^/v1/runs$"), "_runs", False),
     ("GET", re.compile(r"^/v1/sessions$"), "_sessions", False),
+    ("GET", re.compile(r"^/v1/history$"), "_history", False),
     ("POST", re.compile(r"^/v1/sessions$"), "_session_create", False),
     (
         "GET",
         re.compile(r"^/v1/sessions/(?P<bot>[^/]+)/(?P<session>[^/]+)/messages$"),
         "_messages",
+        False,
+    ),
+    (
+        "GET",
+        re.compile(r"^/v1/sessions/(?P<bot>[^/]+)/(?P<session>[^/]+)/todos$"),
+        "_todos",
         False,
     ),
     (
@@ -105,6 +115,7 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("POST", re.compile(r"^/v1/voice$"), "_voice", False),
     ("GET", re.compile(r"^/v1/prefs$"), "_prefs_read", False),
     ("PUT", re.compile(r"^/v1/prefs$"), "_prefs_write", False),
+    ("GET", re.compile(r"^/v1/sections$"), "_sections_read", False),
     ("GET", re.compile(r"^/v1/devices$"), "_devices", False),
     ("DELETE", re.compile(r"^/v1/devices/(?P<device>[^/]+)$"), "_device_delete", False),
 ]
@@ -451,6 +462,16 @@ class Handler(BaseHTTPRequestHandler):
             200, {"bot": bot_id, "models": self.bridge.hermes.models(profiles.profile_of(bot_id))}
         )
 
+    def _monitor(self, match, query) -> int:
+        resources = self.bridge.monitor.snapshot()
+        try:
+            gateway = gateway_stats(self.bridge.hermes.detailed_health())
+        except HermesError as exc:
+            # Keep usable host measurements if an older gateway lacks this endpoint.
+            code = "unsupported" if exc.status in (404, 405, 501) else "unavailable"
+            gateway = {"available": False, "error": code}
+        return self._json(200, {"resources": resources, "gateway": gateway})
+
     # ------------------------------------------------------------- schedules
 
     @staticmethod
@@ -528,6 +549,23 @@ class Handler(BaseHTTPRequestHandler):
 
     # ----------------------------------------------------------- sessions
 
+    @staticmethod
+    def _page_number(query, key: str, default: int, minimum: int, maximum: int) -> int:
+        try:
+            value = int((query.get(key) or [str(default)])[0])
+        except ValueError:
+            raise ApiError(400, "bad_pagination", "Invalid pagination.")
+        if not minimum <= value <= maximum:
+            raise ApiError(400, "bad_pagination", "Pagination is out of range.")
+        return value
+
+    def _history(self, match, query) -> int:
+        bot_id = (query.get("bot") or [profiles.PRIMARY])[0]
+        profiles.get_bot(self.config, bot_id)
+        limit = self._page_number(query, "limit", 50, 1, 100)
+        offset = self._page_number(query, "offset", 0, 0, 1000000)
+        return self._json(200, self.bridge.hermes.history(profiles.profile_of(bot_id), limit, offset))
+
     def _sessions(self, match, query) -> int:
         wanted = (query.get("bot") or [""])[0]
         bots = [profiles.get_bot(self.config, wanted)] if wanted else profiles.list_bots(self.config)
@@ -593,10 +631,19 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             limit = 200
         limit = min(max(limit, 1), 500)
-        rows = self.bridge.hermes.messages(
-            profiles.profile_of(bot_id), param(match, "session"), limit
+        offset = self._page_number(query, "offset", 0, 0, 1000000)
+        page = self.bridge.hermes.message_page(
+            profiles.profile_of(bot_id), param(match, "session"), limit, offset
         )
-        return self._json(200, {"messages": rows})
+        return self._json(200, page)
+
+    def _todos(self, match, query) -> int:
+        bot_id = param(match, "bot")
+        profiles.get_bot(self.config, bot_id)
+        found = self.bridge.hermes.latest_todos(
+            profiles.profile_of(bot_id), param(match, "session")
+        )
+        return self._json(200, found or {"todos": [], "revision": 0})
 
     # -------------------------------------------------------------- turns
 
@@ -622,6 +669,22 @@ class Handler(BaseHTTPRequestHandler):
         self._sse_start()
         text = ""
         failure = ""
+        # The task list the phone shows above the composer. A todo call's
+        # arguments say what it is about to write; the result at the end of
+        # the run is what Hermes kept, and wins.
+        todos_known: list | None = None
+        todos_sent: list | None = None
+
+        def send_todos(items: list | None, revision: int | None = None) -> None:
+            nonlocal todos_sent
+            if items is None or items == todos_sent:
+                return
+            todos_sent = items
+            payload: dict = {"todos": items}
+            if revision is not None:
+                payload["revision"] = revision
+            self._sse("todos", payload)
+
         stream = self.bridge.hermes.stream_turn(profile, session_id, message, model, provider)
         try:
             for event, data in stream:
@@ -630,19 +693,39 @@ class Handler(BaseHTTPRequestHandler):
                     self._sse("delta", {"text": str(data["delta"])})
                 elif event == "tool.started" and data.get("tool_name"):
                     self._sse("tool", {"tool": str(data["tool_name"])})
+                    args = todos.call_arguments(data.get("tool_name"), data.get("args"))
+                    if args is not None and isinstance(args.get("todos"), list):
+                        if args.get("merge") and todos_known is None:
+                            try:
+                                found = self.bridge.hermes.latest_todos(profile, session_id)
+                            except HermesError:
+                                found = None
+                            todos_known = found["todos"] if found else []
+                        predicted = todos.expected(todos_known, args)
+                        if predicted is not None:
+                            todos_known = predicted
+                            send_todos(predicted)
                 elif event == "keepalive":
                     self._write_sse(": keepalive\n\n")
                 elif event == "assistant.completed":
                     final = data.get("text")
+                    if not isinstance(final, str):
+                        final = data.get("content")
                     content = data.get("message")
                     if not isinstance(final, str) and isinstance(content, dict):
                         final = content.get("content")
                     if isinstance(final, str) and final and not text:
                         text = final
+                elif event in ("run.completed", "run.failed", "run.cancelled"):
+                    rows = data.get("messages")
+                    found = todos.latest(rows) if isinstance(rows, list) else None
+                    if found is not None:
+                        todos_known = found["todos"]
+                        send_todos(found["todos"], found["revision"])
+                    if event == "run.failed":
+                        failure = failure or "The bot could not finish this turn."
                 elif event == "error":
                     failure = str(data.get("message") or "The bot stopped before answering.")
-                elif event == "run.failed":
-                    failure = failure or "The bot could not finish this turn."
                 elif event == "done":
                     break
         except HermesError as exc:
@@ -686,6 +769,9 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "bad_prefs", "Preferences are a JSON object.")
         prefs.write(self.config, value)
         return self._json(200, {"prefs": prefs.read(self.config)})
+
+    def _sections_read(self, match, query) -> int:
+        return self._json(200, sections.read_inbox(self.config))
 
     # ----------------------------------------------------------- devices
 

@@ -64,6 +64,12 @@ jobs:
       - name: Check scheduled tasks
         run: node scripts/test-schedules.cjs
 
+      - name: Check session history
+        run: node scripts/test-session-history.cjs
+
+      - name: Check task dock
+        run: node scripts/test-task-dock.cjs
+
       - name: Check Xcode
         run: xcodebuild -version
 

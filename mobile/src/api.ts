@@ -1,4 +1,7 @@
 import { t } from './i18n';
+import { parseTodos, type TodoItem } from './taskDock';
+
+export type { TodoItem, TodoStatus } from './taskDock';
 
 /** The phone talks to the bridge; Hermes keys and conversations stay on the host. */
 export type BridgeHealth = {
@@ -30,9 +33,34 @@ export type BridgeSession = {
   messageCount: number;
   lastActive: number;
   archived: boolean;
+  source?: string;
 };
 
-export type BridgeMessage = { role: string; content: string; timestamp: number };
+export type BridgeMessage = { id?: string; role: string; content: string; timestamp: number };
+export type HistoryPage = { sessions: BridgeSession[]; nextOffset: number | null };
+export type TranscriptPage = { messages: BridgeMessage[]; nextOffset: number | null };
+
+export type ServerMonitor = {
+  resources: {
+    sampledAt: number;
+    cpuPercent: number | null;
+    memory: { totalBytes: number; usedBytes: number; percent: number } | null;
+    disk: { totalBytes: number; usedBytes: number; percent: number } | null;
+  };
+  gateway: {
+    available: boolean;
+    error?: 'unsupported' | 'unavailable';
+    version?: string | null;
+    activeAgents?: number | null;
+    usage?: {
+      day: string | null;
+      requests: number | null;
+      messages: number | null;
+      tokens: number | null;
+      latencyP95Ms: number | null;
+    };
+  };
+};
 
 export type BridgeDevice = {
   id: string;
@@ -97,6 +125,7 @@ const BRIDGE_ERRORS: Readonly<Record<string, string>> = {
   silent: 'Hermes 长时间没有返回数据，请检查服务器状态。',
   no_cron: '服务器 Hermes 未启用定时任务，请更新 Hermes 并保持网关与 cron 运行。',
   no_job: '该定时任务已不存在，请刷新。',
+  bad_pagination: '无法读取这一页，请刷新重试。',
 };
 
 function bridgeErrorMessage(code: string, fallback: string): string {
@@ -185,6 +214,8 @@ export async function bridgePair(
 export type TurnHandlers = {
   onDelta?: (text: string) => void;
   onTool?: (tool: string) => void;
+  /** The agent's task list changed during the turn. */
+  onTodos?: (todos: TodoItem[]) => void;
   onDone?: (text: string) => void;
   onError?: (message: string, code?: string) => void;
 };
@@ -233,6 +264,8 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     health: () => bridgeHealth(root),
 
+    monitor: (): Promise<ServerMonitor> => request<ServerMonitor>('/v1/monitor', undefined, 12000),
+
     bots: async (): Promise<BridgeBot[]> => (await request<{ bots: BridgeBot[] }>('/v1/bots')).bots,
 
     sessions: async (botId?: string): Promise<BridgeSession[]> => {
@@ -245,12 +278,24 @@ export function createBridgeClient(rawBase: string, token: string) {
       return result.sessions;
     },
 
+    history: (botId: string, offset = 0): Promise<HistoryPage> =>
+      request<HistoryPage>(`/v1/history?bot=${bot(botId)}&limit=50&offset=${offset}`),
+
+    transcript: (botId: string, sessionId: string, offset = 0): Promise<TranscriptPage> =>
+      request<TranscriptPage>(`/v1/sessions/${bot(botId)}/${session(sessionId)}/messages?limit=100&offset=${offset}`),
+
     messages: async (botId: string, sessionId: string, limit = 200): Promise<BridgeMessage[]> =>
       (
         await request<{ messages: BridgeMessage[] }>(
           `/v1/sessions/${bot(botId)}/${session(sessionId)}/messages?limit=${limit}`,
         )
       ).messages,
+
+    /** The task list Hermes keeps for a session, newest valid one. */
+    todos: async (botId: string, sessionId: string): Promise<TodoItem[]> =>
+      parseTodos(
+        (await request<{ todos: unknown }>(`/v1/sessions/${bot(botId)}/${session(sessionId)}/todos`)).todos,
+      ),
 
     createSession: async (botId: string, title: string): Promise<BridgeSession> =>
       (
@@ -395,6 +440,7 @@ export function createBridgeClient(rawBase: string, token: string) {
         }
         if (event === 'delta') handlers.onDelta?.(String(payload.text ?? ''));
         else if (event === 'tool') handlers.onTool?.(String(payload.tool ?? ''));
+        else if (event === 'todos') handlers.onTodos?.(parseTodos(payload.todos));
         else if (event === 'done') {
           finished = true;
           handlers.onDone?.(String(payload.text ?? ''));
