@@ -136,7 +136,7 @@ export function ConversationsScreen() {
                 onLongPress={() => setMenu(thread)}
                 delayLongPress={260}
               >
-                {faceOf(thread, 56)}
+                  {faceOf(thread, 64)}
                 <Text style={styles.pinnedName} numberOfLines={1}>
                   {thread.kind === 'group' ? thread.name : thread.name.split(' ')[0]}
                 </Text>

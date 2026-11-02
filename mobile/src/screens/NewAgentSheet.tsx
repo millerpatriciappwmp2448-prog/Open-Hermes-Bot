@@ -199,12 +199,12 @@ export function NewAgentSheet({
             <View style={styles.section}>
               <Text style={styles.label}>{t("模型")}</Text>
               <View style={styles.card}>
-                <Pressable style={styles.row} disabled={online} onPress={() => setPickingModel(true)}>
+                <Pressable style={styles.row} onPress={() => setPickingModel(true)}>
                   <View style={styles.rowCopy}>
-                    <Text style={styles.rowName}>{online ? t('继承服务器配置') : model}</Text>
-                    <Text style={styles.rowMeta}>{online ? t('创建后可在智能体详情中选择模型。') : t('演示模型')}</Text>
+                    <Text style={styles.rowName}>{model || DEFAULT_MODEL}</Text>
+                    <Text style={styles.rowMeta}>{online ? t('从服务器可用模型中选择') : t('演示模型')}</Text>
                   </View>
-                  {!online ? <ChevronIcon /> : null}
+                  <ChevronIcon />
                 </Pressable>
               </View>
             </View>

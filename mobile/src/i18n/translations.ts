@@ -122,6 +122,7 @@ export const english: Readonly<Record<string, string>> = {
   "添加附件": "Attach",
   "从相册选择": "Choose from Library",
   "从文件中选择": "Choose from Files",
+  "从服务器可用模型中选择": "Choose from available server models",
   "拍摄照片": "Take Photo",
   "正在聆听": "Listening",
   "表情回应": "Tapbacks",
