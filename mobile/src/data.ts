@@ -22,7 +22,7 @@ export type Reaction = { emoji: string; count: number };
 
 export type MessageKind = 'text' | 'voice' | 'attachment';
 
-export type Attachment = { name: string; size: string };
+export type Attachment = { kind: string; name: string; size: string; uri?: string };
 
 export type Message = {
   id: string;

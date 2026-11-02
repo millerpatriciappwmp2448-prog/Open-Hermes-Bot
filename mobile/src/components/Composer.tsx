@@ -1,8 +1,9 @@
 import { t, useTranslation } from "../i18n";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import type { Attachment, Bot, MessageKind, Thread } from '../data';
-import { ATTACHMENTS } from '../data';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
 import { ArrowUpIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon, PlusIcon, StopIcon } from './Icons';
@@ -48,6 +49,61 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
   const [attaching, setAttaching] = useState(false);
   const input = useRef<TextInputInstance>(null);
   const dockStyle = [styles.dock, { paddingBottom: Math.max(12, bottomInset) }];
+
+  async function pickPhoto() {
+    setAttaching(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const name = asset.fileName ?? asset.uri.split('/').pop() ?? 'image.jpg';
+      const size = asset.fileSize ? `${(asset.fileSize / 1024 / 1024).toFixed(1)} MB` : '未知';
+      onSend({
+        text: name,
+        kind: 'attachment',
+        attachment: { kind: '照片', name, size, uri: asset.uri },
+      });
+    }
+  }
+
+  async function pickFile() {
+    setAttaching(false);
+    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: false });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const size = asset.size ? `${(asset.size / 1024).toFixed(1)} KB` : '未知';
+      onSend({
+        text: asset.name,
+        kind: 'attachment',
+        attachment: { kind: '文件', name: asset.name, size, uri: asset.uri },
+      });
+    }
+  }
+
+  async function takePhoto() {
+    setAttaching(false);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: false,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const name = asset.fileName ?? `照片-${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}.jpg`;
+      const size = asset.fileSize ? `${(asset.fileSize / 1024 / 1024).toFixed(1)} MB` : '未知';
+      onSend({
+        text: name,
+        kind: 'attachment',
+        attachment: { kind: '相机', name, size, uri: asset.uri },
+      });
+    }
+  }
 
   useEffect(() => {
     if (!recording) return;
@@ -204,32 +260,34 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
       <Sheet visible={attaching} onClose={() => setAttaching(false)}>
         <SheetHeader
           title={t("添加附件")}
-          sub={t("这里展示的是演示文件，不会读取手机上的真实文件。")}
           onClose={() => setAttaching(false)}
         />
         <View style={styles.attachBody}>
-          {ATTACHMENTS.map((item, index) => (
-            <View key={item.kind} style={index > 0 ? styles.attachLine : undefined}>
-              <Row
-                name={t(item.kind)}
-                meta={`${t(item.name)} · ${item.size}`}
-                chevron={false}
-                onPress={() => {
-                  setAttaching(false);
-                  onSend({ text: item.name, kind: 'attachment', attachment: item });
-                }}
-                right={
-                  item.kind === "照片" ? (
-                    <PhotoIcon />
-                  ) : item.kind === "文件" ? (
-                    <FileIcon />
-                  ) : (
-                    <CameraIcon />
-                  )
-                }
-              />
-            </View>
-          ))}
+          <Row
+            name={t("照片")}
+            meta={t("从相册选择")}
+            chevron={false}
+            onPress={pickPhoto}
+            right={<PhotoIcon />}
+          />
+          <View style={styles.attachLine}>
+            <Row
+              name={t("文件")}
+              meta={t("从文件中选择")}
+              chevron={false}
+              onPress={pickFile}
+              right={<FileIcon />}
+            />
+          </View>
+          <View style={styles.attachLine}>
+            <Row
+              name={t("相机")}
+              meta={t("拍摄照片")}
+              chevron={false}
+              onPress={takePhoto}
+              right={<CameraIcon />}
+            />
+          </View>
         </View>
       </Sheet>
     </View>

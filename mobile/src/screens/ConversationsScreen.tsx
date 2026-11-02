@@ -127,10 +127,6 @@ export function ConversationsScreen() {
 
       {pinned.length > 0 ? (
         <View style={styles.pinned}>
-          <View style={styles.sectionLabel}>
-            
-            <Text style={styles.sectionCount}>{pinned.length}</Text>
-          </View>
           <View style={styles.pinnedGrid}>
             {pinned.map((thread) => (
               <Pressable
