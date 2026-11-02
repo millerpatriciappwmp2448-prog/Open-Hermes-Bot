@@ -67,10 +67,10 @@ export function ConversationsScreen() {
         .map((id) => botById(id))
         .filter(Boolean)
         .map((bot) => ({ shape: bot!.shape, color: bot!.color }));
-      return <BloubGroup members={members} size={38} active={thread.typing} />;
+      return <BloubGroup members={members} size={56} active={thread.typing} />;
     }
     const bot = botById(thread.botId);
-    return <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={38} active={thread.typing} />;
+    return <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={56} active={thread.typing} />;
   }
 
   function open(thread: Thread) {
@@ -82,7 +82,7 @@ export function ConversationsScreen() {
       <View style={styles.head}>
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={1}>
-            {t("会话")}
+            
           </Text>
           <View style={styles.actions}>
             <Pressable
@@ -101,16 +101,6 @@ export function ConversationsScreen() {
             </Pressable>
           </View>
         </View>
-        <Text style={styles.hostLine}>
-          {prefs.host || t('尚未连接服务器')} ·{' '}
-          {connection.status === 'connected'
-            ? t("已连接")
-            : connection.status === 'connecting'
-              ? t("正在连接")
-              : connection.status === 'error'
-                ? t("桥接服务无响应")
-                : t("演示会话")}
-        </Text>
       </View>
 
       {bots.length === 0 ? (
@@ -138,7 +128,7 @@ export function ConversationsScreen() {
       {pinned.length > 0 ? (
         <View style={styles.pinned}>
           <View style={styles.sectionLabel}>
-            <Text style={styles.sectionText}>{t("已置顶")}</Text>
+            
             <Text style={styles.sectionCount}>{pinned.length}</Text>
           </View>
           <View style={styles.pinnedGrid}>
@@ -316,7 +306,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     lineHeight: 23,
   },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  hostLine: { marginTop: 3, color: INK.faint, fontSize: 10 },
+  
   round: {
     width: 40,
     height: 40,

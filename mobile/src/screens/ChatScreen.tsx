@@ -1,5 +1,5 @@
-import { t, useTranslation } from "../i18n";
-import { useEffect, useRef, useState } from 'react';
+import { t, useTranslation } from '../i18n';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -24,6 +24,7 @@ import { CHAT_EVENTS, type Bot, type Message } from '../data';
 import { useStore } from '../store';
 import type { RootStackParamList } from '../nav';
 import { themedStyles } from '../theme';
+import { useFocusEffect } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -90,6 +91,16 @@ export function ChatScreen({ route, navigation }: Props) {
   useEffect(() => {
     markRead(threadId);
   }, [markRead, threadId]);
+
+  // Cancel any active turn when leaving this screen to prevent timeout errors.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        const stopTurn = useStore().stop;
+        stopTurn(threadId);
+      };
+    }, [threadId]),
+  );
 
   // The agent's own task list for this session, read from Hermes.
   const sessionId = thread?.sessionId;
