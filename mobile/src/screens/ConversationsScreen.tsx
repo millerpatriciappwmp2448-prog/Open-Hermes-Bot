@@ -27,6 +27,7 @@ export function ConversationsScreen() {
   const { bots, threads, botById, prefs, connection, togglePin, markRead, markUnread, removeThread } =
     useStore();
   const [query, setQuery] = useState('');
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [menu, setMenu] = useState<Thread | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Thread | null>(null);
@@ -77,20 +78,31 @@ export function ConversationsScreen() {
     navigation.navigate('Chat', { threadId: thread.id });
   }
 
+  function toggleSearch() {
+    if (searchExpanded && query) {
+      setQuery('');
+    }
+    setSearchExpanded(!searchExpanded);
+  }
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.head}>
         <View style={styles.titleRow}>
-          <Text style={styles.title} numberOfLines={1}>
-            
-          </Text>
+          <Pressable
+            style={styles.round}
+            accessibilityLabel={t("设置")}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <SettingsIcon />
+          </Pressable>
           <View style={styles.actions}>
             <Pressable
               style={styles.round}
-              accessibilityLabel={t("设置")}
-              onPress={() => navigation.navigate('Settings')}
+              accessibilityLabel={t("搜索")}
+              onPress={toggleSearch}
             >
-              <SettingsIcon />
+              <SearchIcon />
             </Pressable>
             <Pressable
               style={styles.round}
@@ -101,6 +113,24 @@ export function ConversationsScreen() {
             </Pressable>
           </View>
         </View>
+        {searchExpanded && (
+          <View style={styles.searchBox}>
+            <View style={styles.search}>
+              <SearchIcon />
+              <TextInput
+                keyboardAppearance={scheme}
+                value={query}
+                onChangeText={setQuery}
+                placeholder={t("搜索智能体")}
+                placeholderTextColor={INK.meta}
+                style={styles.searchInput}
+                autoCorrect={false}
+                autoCapitalize="none"
+                autoFocus
+              />
+            </View>
+          </View>
+        )}
       </View>
 
       {bots.length === 0 ? (
@@ -110,21 +140,6 @@ export function ConversationsScreen() {
         />
       ) : (
         <>
-      <View style={styles.searchBox}>
-        <View style={styles.search}>
-          <SearchIcon />
-          <TextInput keyboardAppearance={scheme}
-            value={query}
-            onChangeText={setQuery}
-            placeholder={t("搜索智能体")}
-            placeholderTextColor={INK.meta}
-            style={styles.searchInput}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-        </View>
-      </View>
-
       {pinned.length > 0 ? (
         <View style={styles.pinned}>
           <View style={styles.pinnedGrid}>
@@ -178,14 +193,15 @@ export function ConversationsScreen() {
               </View>
               <View style={styles.threadCopy}>
                 <View style={styles.threadTop}>
-                  <Text style={styles.threadName} numberOfLines={1}>
-                    {thread.name}
+                  <Text numberOfLines={1} style={{ flex: 1 }}>
+                    <Text style={styles.threadName}>{thread.name}</Text>
+                      {thread.description ? <Text style={styles.threadTag}> {thread.description}</Text> : null}
                   </Text>
                   <Text style={styles.threadTime}>{thread.time}</Text>
                 </View>
                 <Text
                   style={[styles.threadPreview, thread.unread && styles.threadPreviewUnread]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
                   {thread.preview}
                 </Text>
@@ -371,6 +387,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
   threadCopy: { flex: 1, gap: 1 },
   threadTop: { flexDirection: 'row', alignItems: 'baseline', gap: 7 },
   threadName: { flex: 1, color: INK.title, fontSize: 13.5, fontWeight: '600', letterSpacing: -0.19 },
+    threadTag: { color: INK.meta, fontSize: 11.5, fontWeight: '400', letterSpacing: -0.1 },
   threadTime: { color: INK.meta, fontSize: 10 },
   threadPreview: { color: INK.quiet, fontSize: 11, lineHeight: 14.5 },
   threadPreviewUnread: { color: INK.quiet },

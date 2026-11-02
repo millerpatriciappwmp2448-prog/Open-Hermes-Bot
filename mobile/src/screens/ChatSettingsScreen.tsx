@@ -109,6 +109,35 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
               </View>
             </> : null}
 
+            {thread.kind === 'bot' ? (
+              <View style={styles.section}>
+                <Text style={styles.label}>{t('权限')}</Text>
+                <View style={styles.card}>
+                  <View style={[styles.row]}>
+                    <Text style={[styles.rowText, styles.flex]}>{t('允许跨空间机器人通信')}</Text>
+                    <Switch
+                      accessibilityLabel={t('允许跨空间机器人通信')}
+                      value={false}
+                      disabled
+                      trackColor={{ false: C.field2, true: C.green }}
+                      ios_backgroundColor={C.field2}
+                    />
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={[styles.row]}>
+                    <Text style={[styles.rowText, styles.flex]}>{t('管理它创建的机器人')}</Text>
+                    <Switch
+                      accessibilityLabel={t('管理它创建的机器人')}
+                      value={false}
+                      disabled
+                      trackColor={{ false: C.field2, true: C.green }}
+                      ios_backgroundColor={C.field2}
+                    />
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
             <View style={styles.section}>
               <Text style={styles.label}>{t('会话')}</Text>
               {serverBot ? <Pressable accessibilityRole="button" accessibilityLabel={t('会话记录')}

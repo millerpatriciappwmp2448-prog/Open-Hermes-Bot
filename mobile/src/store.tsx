@@ -359,6 +359,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         kind: 'bot',
         botId: entry.raw.id,
         name: entry.raw.name,
+        description: entry.raw.description || '',
         preview: previewOf(
           rows,
           entry.latest ? t("{0} 条消息", {"0": entry.latest.messageCount}) : t("暂无会话"),
@@ -711,6 +712,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           kind: 'bot',
           botId: bot.id,
           name: label,
+          description: bot.description,
           preview: online ? t("正在服务器上创建…") : t("已创建演示智能体。"),
           time: t("刚刚"),
           threadModel: online ? '' : model,
@@ -803,6 +805,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     const description = typeof saved?.role === 'string' ? saved.role : wanted;
     setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, description } : bot)));
+    setThreads((current) => current.map((thread) => (thread.botId === botId ? { ...thread, description } : thread)));
   }, []);
 
   const loadJobs = useCallback<Store['loadJobs']>(async (botId) => {

@@ -44,6 +44,8 @@ export type Thread = {
   /** The bot, or the first member of a group. */
   botId: string;
   name: string;
+  /** The bot's role or description. */
+  description?: string;
   preview: string;
   time: string;
   unread?: boolean;
