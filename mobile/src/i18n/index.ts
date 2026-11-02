@@ -64,8 +64,11 @@ export function useInitializeLanguage() {
     if (Platform.OS !== 'web') {
       void SecureStore.getItemAsync(STORAGE_KEY).then((saved) => {
         if (!active || revision !== initialRevision) return;
-        if (saved === 'zh' || saved === 'en' || saved === 'system') {
+        if (saved === 'zh' || saved === 'en') {
           preference = saved;
+          publish();
+        } else if (saved === 'system') {
+          preference = resolveLanguage('system', systemLocale());
           publish();
         }
       }).catch(() => undefined);

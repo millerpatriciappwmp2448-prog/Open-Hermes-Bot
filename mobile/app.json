@@ -3,6 +3,7 @@
     "name": "Hermes Bot",
     "slug": "hermes-bot-mobile",
     "version": "1.0.0",
+    "build": "14",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

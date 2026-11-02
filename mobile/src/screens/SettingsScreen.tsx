@@ -23,7 +23,7 @@ export function SettingsScreen() {
     { id: 'zh', label: '简体中文' },
     { id: 'en', label: 'English' },
   ];
-  const selectedLanguage = languageOptions.find((option) => option.id === language)!;
+  const selectedLanguage = languageOptions.find((option) => option.id === language) ?? languageOptions[0];
   const insets = useSafeAreaInsets();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const languageTriggerRef = useRef<any>(null);

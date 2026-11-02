@@ -61,16 +61,16 @@ export function ConversationsScreen() {
     [needle, threads],
   );
 
-  function faceOf(thread: Thread) {
+  function faceOf(thread: Thread, size = 38) {
     if (thread.kind === 'group') {
       const members = (thread.members ?? [])
         .map((id) => botById(id))
         .filter(Boolean)
         .map((bot) => ({ shape: bot!.shape, color: bot!.color }));
-      return <BloubGroup members={members} size={56} active={thread.typing} />;
+      return <BloubGroup members={members} size={size} active={thread.typing} />;
     }
     const bot = botById(thread.botId);
-    return <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={56} active={thread.typing} />;
+    return <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={size} active={thread.typing} />;
   }
 
   function open(thread: Thread) {
@@ -140,7 +140,7 @@ export function ConversationsScreen() {
                 onLongPress={() => setMenu(thread)}
                 delayLongPress={260}
               >
-                {faceOf(thread)}
+                {faceOf(thread, 56)}
                 <Text style={styles.pinnedName} numberOfLines={1}>
                   {thread.kind === 'group' ? thread.name : thread.name.split(' ')[0]}
                 </Text>
