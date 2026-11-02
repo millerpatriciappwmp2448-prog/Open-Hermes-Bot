@@ -197,6 +197,7 @@ export const english: Readonly<Record<string, string>> = {
   "已连接服务器。创建第一个智能体后，Hermes 会保存它的记忆、外观和会话。": "Your host is connected. Create the first agent and Hermes keeps its memory, its face, and its sessions.",
   "创建智能体": "Create a agent",
   "重新运行初始设置": "Run the setup again",
+  "搜索": "Search",
   "搜索智能体": "Search agents",
   "搜索模型": "Search models",
   "没有找到匹配的模型。": "No model by that name.",
