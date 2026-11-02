@@ -1,6 +1,7 @@
 import { t, useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -55,15 +56,13 @@ function MessageText({ text, users, style }: { text: string; users: Bot[]; style
 }
 
 export function ChatScreen({ route, navigation }: Props) {
-  const { styles, C, INK } = useStyles();
+  const { styles, C } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
   const {
-    threads,
     messages,
     bots,
     botById,
-    prefs,
     chatPreferences,
     send,
     markRead,
@@ -75,7 +74,14 @@ export function ChatScreen({ route, navigation }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [botOpen, setBotOpen] = useState(false);
   const [active, setActive] = useState<Message | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible);
   const scroll = useRef<ScrollViewInstance>(null);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const thread = threadById(route.params.threadId);
   const threadId = route.params.threadId;
@@ -93,14 +99,17 @@ export function ChatScreen({ route, navigation }: Props) {
 
   if (!thread) {
     return (
-      <View style={[styles.root, { paddingTop: insets.top }]}>
-        <View style={styles.nav}>
+      <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.nav} testID="chat-header">
           <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
-            <BackIcon />
+            <BackIcon size={17} color={C.text} />
           </Pressable>
-          <View style={styles.chatId}>
-            <Text style={styles.chatName}>{t("此会话已不存在")}</Text>
+          <View style={styles.navCenter}>
+            <View style={styles.chatId}>
+              <Text style={styles.chatName} numberOfLines={1}>{t("此会话已不存在")}</Text>
+            </View>
           </View>
+          <View style={styles.navPlaceholder} />
         </View>
         <Text style={styles.missing}>{t("此会话已删除，可返回会话列表查看其他会话。")}</Text>
       </View>
@@ -170,9 +179,9 @@ export function ChatScreen({ route, navigation }: Props) {
             {message.kind === 'attachment' && message.attachment ? (
               <View style={styles.attachment}>
                 {message.attachment.name.endsWith('.HEIC') || message.attachment.name.endsWith('.jpg') ? (
-                  <PhotoIcon color={mine ? INK.onPaperQuiet : C.text} />
+                  <PhotoIcon color={mine ? C.bg : C.text} />
                 ) : (
-                  <FileIcon color={mine ? INK.onPaperQuiet : C.text} />
+                  <FileIcon color={mine ? C.bg : C.text} />
                 )}
                 <View style={styles.attachmentCopy}>
                   <Text style={ink} numberOfLines={1}>
@@ -185,7 +194,7 @@ export function ChatScreen({ route, navigation }: Props) {
               </View>
             ) : message.kind === 'voice' ? (
               <View style={styles.voice}>
-                <MicIcon size={14} color={mine ? INK.onPaperQuiet : C.text} />
+                <MicIcon size={14} color={mine ? C.bg : C.text} />
                 <Text style={ink}>{t("语音消息")}</Text>
                 <Text style={[styles.voiceTime, mine ? styles.onPaperQuiet : null]}>
                   {message.duration ?? '0:07'}
@@ -217,38 +226,38 @@ export function ChatScreen({ route, navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={[styles.root, { paddingTop: insets.top }]}>
-        <View style={styles.nav}>
+        <View style={styles.nav} testID="chat-header">
           <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
-            <BackIcon />
+            <BackIcon size={17} color={C.text} />
           </Pressable>
 
-          <Pressable
-            style={styles.chatId}
-            onPress={() => (isGroup ? setDetailsOpen(true) : setBotOpen(true))}
-            accessibilityRole="button"
-            accessibilityLabel={t("打开 {0}", {"0": thread.name})}
-          >
-            {isGroup ? (
-              <BloubGroup members={faces} size={30} active={thread.typing} />
-            ) : (
-              <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={30} active={thread.typing} />
-            )}
-            <View style={styles.chatTitles}>
-              <Text style={styles.chatName} numberOfLines={1}>
-                {thread.name}
-              </Text>
-              <Text style={styles.chatSub} numberOfLines={1}>
-                {isGroup ? thread.subtitle : t("Hermes 主机 · {0}", {"0": thread.threadModel || t('跟随服务器')})}
-              </Text>
-            </View>
-          </Pressable>
+          <View style={styles.navCenter}>
+            <Pressable
+              style={styles.chatId}
+              onPress={() => (isGroup ? setDetailsOpen(true) : setBotOpen(true))}
+              accessibilityRole="button"
+              accessibilityLabel={t("打开 {0}", {"0": thread.name})}
+              testID="chat-identity"
+            >
+              {isGroup ? (
+                <BloubGroup members={faces} size={23} active={thread.typing} />
+              ) : (
+                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={23} active={thread.typing} />
+              )}
+              <View style={styles.chatTitles}>
+                <Text style={styles.chatName} numberOfLines={1}>
+                  {thread.name}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
 
           <Pressable
             style={styles.navIcon}
             onPress={() => (isGroup ? setDetailsOpen(true) : navigation.navigate('ChatSettings', { threadId: thread.id }))}
             accessibilityLabel={isGroup ? t("群组详情") : t("会话详情")}
           >
-            <MoreIcon />
+            <MoreIcon size={18} color={C.text} />
           </Pressable>
         </View>
 
@@ -256,6 +265,8 @@ export function ChatScreen({ route, navigation }: Props) {
           ref={scroll}
           style={styles.body}
           contentContainerStyle={styles.bodyContent}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}
         >
           {meta ? (
@@ -287,7 +298,7 @@ export function ChatScreen({ route, navigation }: Props) {
         </ScrollView>
 
         {!isGroup ? <TaskDock todos={thread.todos} running={!!thread.typing} /> : null}
-        <Composer thread={thread} bots={bots} onSend={delivery} />
+        <Composer thread={thread} bots={bots} onSend={delivery} bottomInset={keyboardVisible ? 0 : insets.bottom} />
       </View>
 
       {/* The bot itself, from its face at the top of the conversation. */}
@@ -324,54 +335,66 @@ const useStyles = themedStyles(({ C, INK }) => ({
   missing: { color: INK.quiet, padding: 20, fontSize: 12 },
 
   nav: {
-    height: 56,
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: C.divider,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: C.bg,
   },
-  navIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
-  chatId: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  chatTitles: { flex: 1, gap: 1 },
-  chatName: { color: C.text, fontSize: 14.5, fontWeight: '600', letterSpacing: -0.23 },
-  chatSub: { color: INK.quiet, fontSize: 10 },
+  navIcon: {
+    width: 40, height: 40, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: 20,
+    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
+    boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
+  },
+  chatId: {
+    flexShrink: 1, minWidth: 0, maxWidth: '100%', minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 22,
+    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
+    boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
+  },
+  chatTitles: { flexShrink: 1, minWidth: 0 },
+  chatName: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
+  navCenter: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  navPlaceholder: { width: 40, flexShrink: 0 },
 
   body: { flex: 1 },
-  bodyContent: { paddingHorizontal: 13, paddingTop: 13, paddingBottom: 2 },
-  event: { marginBottom: 14, color: INK.faint, fontSize: 9, textAlign: 'center' },
-  time: { marginBottom: 11, color: INK.meta, fontSize: 10, textAlign: 'center' },
-  empty: { color: INK.quiet, fontSize: 11, lineHeight: 16, textAlign: 'center', paddingHorizontal: 20, marginTop: 24 },
+  bodyContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
+  event: { marginBottom: 6, color: INK.faint, fontSize: 11, textAlign: 'center' },
+  time: { marginBottom: 20, color: INK.meta, fontSize: 11, textAlign: 'center' },
+  empty: { color: INK.quiet, fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: 20, marginTop: 24 },
 
-  msg: { width: '100%', marginBottom: 9 },
+  msg: { width: '100%', marginBottom: 12 },
   msgUser: { alignItems: 'flex-end' },
   msgBot: { alignItems: 'flex-start' },
   msgGroup: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
-  msgAvatar: { marginTop: 16 },
-  bubbleWrap: { flexShrink: 1, maxWidth: '86%', alignItems: 'flex-start' },
-  bubbleWrapUser: { alignItems: 'flex-end', maxWidth: '80%' },
+  msgAvatar: { marginTop: 20 },
+  bubbleWrap: { flexShrink: 1, maxWidth: '92%', alignItems: 'flex-start' },
+  bubbleWrapUser: { alignItems: 'flex-end', maxWidth: '82%' },
 
-  bubble: { maxWidth: '100%', paddingVertical: 9, paddingHorizontal: 12, borderRadius: 16 },
-  bubbleBot: { backgroundColor: C.bubble },
-  bubbleUser: { backgroundColor: C.paper },
+  bubble: { maxWidth: '100%', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 19 },
+  bubbleBot: {
+    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.line,
+    boxShadow: '0px 2px 5px rgba(0,0,0,0.025)',
+  },
+  bubbleUser: { backgroundColor: C.text },
   bubbleGroup: { maxWidth: '100%' },
-  bubbleBotText: { color: C.text, fontSize: 13, lineHeight: 19.4 },
-  bubbleUserText: { color: INK.onPaper, fontSize: 13, lineHeight: 19.4 },
+  bubbleBotText: { color: C.text, fontSize: 14, lineHeight: 21 },
+  bubbleUserText: { color: C.bg, fontSize: 14, lineHeight: 21 },
   bubbleFailed: { borderWidth: 1, borderColor: C.border, backgroundColor: C.recording },
-  bubbleFailedText: { color: C.recordingInk, fontSize: 13, lineHeight: 19.4 },
+  bubbleFailedText: { color: C.recordingInk, fontSize: 14, lineHeight: 21 },
   failedLabel: { marginBottom: 2, color: C.recordingInk, fontSize: 11, fontWeight: '600' },
   mention: { backgroundColor: C.mention, borderRadius: 4, fontWeight: '500' },
 
   attachment: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 150 },
   attachmentCopy: { flexShrink: 1 },
   attachmentSize: { color: INK.quiet, fontSize: 9, marginTop: 1 },
-  onPaperQuiet: { color: INK.onPaperQuiet },
+  onPaperQuiet: { color: C.bg, opacity: 0.8 },
   voice: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 130 },
   voiceTime: { color: INK.quiet, fontSize: 10, fontVariant: ['tabular-nums'] },
 
-  author: { marginLeft: 3, marginBottom: 3, color: INK.quiet, fontSize: 10, fontWeight: '600' },
+  author: { marginLeft: 3, marginBottom: 5, color: INK.quiet, fontSize: 11, fontWeight: '500' },
   tapback: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -388,5 +411,5 @@ const useStyles = themedStyles(({ C, INK }) => ({
   tapbackCount: { color: INK.quiet, fontSize: 9 },
 
   typing: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
-  typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 10 },
-}));
+  typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 11 },
+}), false);

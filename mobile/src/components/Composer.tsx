@@ -1,11 +1,11 @@
 import { t, useTranslation } from "../i18n";
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
 import type { Attachment, Bot, MessageKind, Thread } from '../data';
 import { ATTACHMENTS } from '../data';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
-import { ArrowUpIcon, AttachIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon, StopIcon } from './Icons';
+import { ArrowUpIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon, PlusIcon, StopIcon } from './Icons';
 import { Sheet } from './Sheet';
 import { Bloub } from './Bloub';
 import { Row, SheetHeader } from './UI';
@@ -30,6 +30,7 @@ type ComposerProps = {
   thread: Thread;
   bots: Bot[];
   onSend: (payload: Outgoing) => void;
+  bottomInset: number;
 };
 
 /**
@@ -37,7 +38,7 @@ type ComposerProps = {
  * it offers answers: a file becomes a message, the microphone becomes a
  * voice note, and an @ opens the roster of the round.
  */
-export function Composer({ thread, bots, onSend }: ComposerProps) {
+export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
   const { styles, C, INK, scheme } = useStyles();
   useTranslation();
   const { prefs, stop } = useStore();
@@ -45,6 +46,8 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [attaching, setAttaching] = useState(false);
+  const input = useRef<TextInputInstance>(null);
+  const dockStyle = [styles.dock, { paddingBottom: Math.max(12, bottomInset) }];
 
   useEffect(() => {
     if (!recording) return;
@@ -76,11 +79,13 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
     if (!draft.trim() || thread.typing) return;
     onSend({ text: draft });
     setDraft('');
+    input.current?.blur();
+    Keyboard.dismiss();
   }
 
   if (recording) {
     return (
-      <View style={styles.dock}>
+      <View style={dockStyle}>
         <View style={styles.recordingMeta}>
           <View style={styles.liveDot} />
           <Text style={styles.recordingLabel}>{t("正在聆听")}</Text>
@@ -121,7 +126,7 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
   }
 
   return (
-    <View style={styles.dock}>
+    <View style={dockStyle}>
       <View>
         {roster.length > 0 ? (
           <View style={styles.roster}>
@@ -139,53 +144,60 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
           </View>
         ) : null}
 
-        <View style={styles.composer}>
+        <View style={styles.composerRow} testID="chat-composer">
           <Pressable
-            style={[styles.button, styles.attach]}
+            style={styles.attach}
             onPress={() => setAttaching(true)}
+            accessibilityRole="button"
             accessibilityLabel={t("添加附件")}
           >
-            <AttachIcon />
+            <PlusIcon size={20} />
           </Pressable>
-          <TextInput keyboardAppearance={scheme}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={t("给 Hermes 发消息")}
-            placeholderTextColor={INK.meta}
-            style={styles.input}
-            returnKeyType="send"
-            onSubmitEditing={send}
-            blurOnSubmit={false}
-          />
-          {thread.typing ? (
-            <Pressable
-              style={[styles.button, styles.cream]}
-              onPress={() => stop(thread.id)}
-              accessibilityRole="button"
-              accessibilityLabel={t("停止")}
-            >
-              <StopIcon />
-            </Pressable>
-          ) : draft.trim() ? (
-            <Pressable
-              style={[styles.button, styles.cream]}
-              onPress={send}
-              accessibilityLabel={t("发送")}
-            >
-              <ArrowUpIcon />
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.button, styles.cream]}
-              onPress={() => {
-                setSeconds(0);
-                setRecording(true);
-              }}
-              accessibilityLabel={t("语音输入")}
-            >
-              <MicIcon />
-            </Pressable>
-          )}
+          <View style={styles.composer}>
+            <TextInput keyboardAppearance={scheme}
+              ref={input}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={t("给 Hermes 发消息")}
+              placeholderTextColor={INK.meta}
+              accessibilityLabel={t("给 Hermes 发消息")}
+              style={styles.input}
+              returnKeyType="send"
+              onSubmitEditing={send}
+              blurOnSubmit={false}
+            />
+            {thread.typing ? (
+              <Pressable
+                style={[styles.button, styles.cream]}
+                onPress={() => stop(thread.id)}
+                accessibilityRole="button"
+                accessibilityLabel={t("停止")}
+              >
+                <StopIcon size={13} color={C.bg} />
+              </Pressable>
+            ) : draft.trim() ? (
+              <Pressable
+                style={[styles.button, styles.cream]}
+                onPress={send}
+                accessibilityRole="button"
+                accessibilityLabel={t("发送")}
+              >
+                <ArrowUpIcon size={17} color={C.bg} />
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[styles.button, styles.microphone]}
+                onPress={() => {
+                  setSeconds(0);
+                  setRecording(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t("语音输入")}
+              >
+                <MicIcon size={16} color={INK.quiet} />
+              </Pressable>
+            )}
+          </View>
         </View>
       </View>
 
@@ -225,22 +237,31 @@ export function Composer({ thread, bots, onSend }: ComposerProps) {
 }
 
 const useStyles = themedStyles(({ C, INK }) => ({
-  dock: { paddingTop: 6, paddingHorizontal: 9, paddingBottom: 10 },
+  dock: { paddingTop: 8, paddingHorizontal: 16, paddingBottom: 12 },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   composer: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    minHeight: 50,
+    minHeight: 46,
     padding: 5,
     borderWidth: 1,
-    borderColor: C.line,
+    borderColor: C.hairline,
     borderRadius: 25,
-    backgroundColor: C.field,
+    backgroundColor: C.cardRaised,
+    boxShadow: '0px 3px 16px rgba(0,0,0,0.05)',
   },
-  button: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
-  attach: { backgroundColor: C.field2 },
-  cream: { backgroundColor: C.paper },
-  input: { flex: 1, paddingHorizontal: 3, color: C.text, fontSize: 13 },
+  button: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17 },
+  attach: {
+    width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23,
+    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
+    boxShadow: '0px 3px 16px rgba(0,0,0,0.05)',
+  },
+  cream: { backgroundColor: C.text },
+  microphone: { backgroundColor: C.hover },
+  input: { flex: 1, minWidth: 0, paddingHorizontal: 9, paddingVertical: 7, color: C.text, fontSize: 14 },
 
   roster: {
     position: 'absolute',
@@ -311,4 +332,4 @@ const useStyles = themedStyles(({ C, INK }) => ({
   bar: { width: 2.5, borderRadius: 2, backgroundColor: C.recordingInk },
   time: { color: C.recordingInk, fontSize: 9, fontVariant: ['tabular-nums'] },
   note: { marginTop: 7, color: INK.label, fontSize: 9, textAlign: 'center' },
-}));
+}), false);

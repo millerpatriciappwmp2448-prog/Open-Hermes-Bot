@@ -21,8 +21,8 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
 };
 
 /**
- * The agent's own task list (Hermes' `todo_list`), as a small tab resting on
- * the composer. Folded, it is one line: the count and the step being worked
+ * The agent's own task list (Hermes' `todo_list`), as a small card above
+ * the input. Folded, it is one line: the count and the step being worked
  * on. It goes away once every step is settled.
  */
 export function TaskDock({ todos, running }: Props) {
@@ -124,18 +124,16 @@ function Pulse({ running }: { running: boolean }) {
   return <Animated.View style={[styles.pulse, { opacity }]} testID={live ? 'task-pulse' : 'task-still'} />;
 }
 
-// Native points: the composer below is laid out with the scaled box factor, so
-// its edge padding and corner are read back through `box()` to sit flush.
+// Match the input pill: 16pt page inset + 46pt attachment button + 8pt gap.
 const useStyles = themedStyles(
   ({ C, INK }) => ({
     dock: {
-      marginHorizontal: box(9) + 20,
-      marginBottom: -box(6),
+      marginLeft: 70,
+      marginRight: 16,
+      marginBottom: -2,
       borderWidth: 1,
-      borderBottomWidth: 0,
       borderColor: C.line,
-      borderTopLeftRadius: 14,
-      borderTopRightRadius: 14,
+      borderRadius: 14,
       backgroundColor: C.field,
       overflow: 'hidden',
     },
