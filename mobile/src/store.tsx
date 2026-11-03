@@ -1028,9 +1028,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      if (payload.kind === 'attachment' || payload.kind === 'voice') {
-        // The bridge takes both; this app does not send the bytes yet.
-        patchThread(threadId, { preview: t("附件和语音暂不支持发送到桥接服务。") });
+      if (payload.kind === 'voice') {
+        patchThread(threadId, { preview: t("语音暂不支持发送到桥接服务。") });
         return;
       }
 
@@ -1040,6 +1039,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const assistantId = `a-${Date.now()}`;
       let answer = '';
       let settled = false;
+      const uploadController = new AbortController();
 
       // Write the assistant message only once there is something to show in it.
       const upsert = (text: string, failed = false) => {
@@ -1086,6 +1086,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (settled) return;
         settled = true;
         delete turnsRef.current[threadId];
+        uploadController.abort();
         close?.();
         patchThread(threadId, {
           typing: false,
@@ -1100,6 +1101,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       void (async () => {
         try {
+          let outgoing = body;
+          if (payload.kind === 'attachment') {
+            if (!payload.attachment) throw new BridgeError(t("请选择要发送的附件。"), 'bad_attachment');
+            const uploaded = await active.uploadAttachment(payload.attachment, uploadController.signal);
+            if (settled) return;
+            outgoing = `${body}\n\nAttached: ${uploaded.path}`;
+          }
+          if (client.current !== active) {
+            settle(t("连接已改变，请重新发送。"), true);
+            return;
+          }
           let sessionId = thread.sessionId;
           if (!sessionId) {
             const created = await active.createSession(botId, thread.name);
@@ -1128,11 +1140,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             }
           }
           if (settled) return;
+          if (client.current !== active) {
+            settle(t("连接已改变，请重新发送。"), true);
+            return;
+          }
           close = active.turn(
             {
               bot: botId,
               session: sessionId,
-              message: body,
+              message: outgoing,
               ...modelForTurn(picksRef.current[botId], optionsRef.current[botId]),
             },
             {

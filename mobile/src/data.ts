@@ -22,7 +22,16 @@ export type Reaction = { emoji: string; count: number };
 
 export type MessageKind = 'text' | 'voice' | 'attachment';
 
-export type Attachment = { kind: string; name: string; size: string; uri?: string };
+export type Attachment = {
+  kind: string;
+  name: string;
+  size: string;
+  uri?: string;
+  bytes?: number;
+  mimeType?: string;
+  /** A browser picker returns a File; native pickers return a cached URI. */
+  file?: Blob;
+};
 
 export type Message = {
   id: string;

@@ -1,6 +1,6 @@
 import { t, useTranslation } from "../i18n";
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import { Alert, Keyboard, Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import type { Attachment, Bot, MessageKind, Thread } from '../data';
@@ -47,11 +47,28 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [attaching, setAttaching] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const pickerLock = useRef(false);
+  const pendingPicker = useRef<'photo' | 'file' | 'camera' | null>(null);
+  const mounted = useRef(true);
+  const typing = useRef(thread.typing);
+  typing.current = thread.typing;
   const input = useRef<TextInputInstance>(null);
   const dockStyle = [styles.dock, { paddingBottom: Math.max(12, bottomInset) }];
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; pendingPicker.current = null; };
+  }, []);
+
+  function sendAttachment(attachment: Attachment) {
+    if (!mounted.current || typing.current) return;
+    input.current?.blur();
+    Keyboard.dismiss();
+    onSend({ text: attachment.name, kind: 'attachment', attachment });
+  }
+
   async function pickPhoto() {
-    setAttaching(false);
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
@@ -61,32 +78,25 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
       const asset = result.assets[0];
       const name = asset.fileName ?? asset.uri.split('/').pop() ?? 'image.jpg';
       const size = asset.fileSize ? `${(asset.fileSize / 1024 / 1024).toFixed(1)} MB` : '未知';
-      onSend({
-        text: name,
-        kind: 'attachment',
-        attachment: { kind: '照片', name, size, uri: asset.uri },
-      });
+      sendAttachment({ kind: '照片', name, size, uri: asset.uri,
+        bytes: asset.fileSize, mimeType: asset.mimeType, file: asset.file });
     }
   }
 
   async function pickFile() {
-    setAttaching(false);
-    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: false });
+    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       const size = asset.size ? `${(asset.size / 1024).toFixed(1)} KB` : '未知';
-      onSend({
-        text: asset.name,
-        kind: 'attachment',
-        attachment: { kind: '文件', name: asset.name, size, uri: asset.uri },
-      });
+      sendAttachment({ kind: '文件', name: asset.name, size, uri: asset.uri,
+        bytes: asset.size, mimeType: asset.mimeType, file: asset.file });
     }
   }
 
   async function takePhoto() {
-    setAttaching(false);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
+      Alert.alert(t('无法使用相机'), t('请在系统设置中允许访问相机。'));
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -97,11 +107,33 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
       const asset = result.assets[0];
       const name = asset.fileName ?? `照片-${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}.jpg`;
       const size = asset.fileSize ? `${(asset.fileSize / 1024 / 1024).toFixed(1)} MB` : '未知';
-      onSend({
-        text: name,
-        kind: 'attachment',
-        attachment: { kind: '相机', name, size, uri: asset.uri },
-      });
+      sendAttachment({ kind: '相机', name, size, uri: asset.uri,
+        bytes: asset.fileSize, mimeType: asset.mimeType, file: asset.file });
+    }
+  }
+
+  function queuePicker(kind: 'photo' | 'file' | 'camera') {
+    if (pickerLock.current || typing.current) return;
+    pickerLock.current = true;
+    setPickerBusy(true);
+    pendingPicker.current = kind;
+    setAttaching(false);
+  }
+
+  async function openPendingPicker() {
+    const kind = pendingPicker.current;
+    pendingPicker.current = null;
+    if (!kind) return;
+    try {
+      if (!mounted.current || typing.current) return;
+      if (kind === 'photo') await pickPhoto();
+      else if (kind === 'file') await pickFile();
+      else await takePhoto();
+    } catch {
+      if (mounted.current) Alert.alert(t('无法添加附件'), t('请选择其他文件或重试。'));
+    } finally {
+      pickerLock.current = false;
+      if (mounted.current) setPickerBusy(false);
     }
   }
 
@@ -202,7 +234,8 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
 
         <View style={styles.composerRow} testID="chat-composer">
           <Pressable
-            style={styles.attach}
+            style={[styles.attach, (thread.typing || pickerBusy) && { opacity: 0.4 }]}
+            disabled={thread.typing || pickerBusy}
             onPress={() => setAttaching(true)}
             accessibilityRole="button"
             accessibilityLabel={t("添加附件")}
@@ -257,7 +290,7 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
         </View>
       </View>
 
-      <Sheet visible={attaching} onClose={() => setAttaching(false)}>
+      <Sheet visible={attaching} onClose={() => setAttaching(false)} onDismiss={openPendingPicker}>
         <SheetHeader
           title={t("添加附件")}
           onClose={() => setAttaching(false)}
@@ -267,7 +300,7 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
             name={t("照片")}
             meta={t("从相册选择")}
             chevron={false}
-            onPress={pickPhoto}
+            onPress={() => queuePicker('photo')}
             right={<PhotoIcon />}
           />
           <View style={styles.attachLine}>
@@ -275,7 +308,7 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
               name={t("文件")}
               meta={t("从文件中选择")}
               chevron={false}
-              onPress={pickFile}
+              onPress={() => queuePicker('file')}
               right={<FileIcon />}
             />
           </View>
@@ -284,7 +317,7 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
               name={t("相机")}
               meta={t("拍摄照片")}
               chevron={false}
-              onPress={takePhoto}
+              onPress={() => queuePicker('camera')}
               right={<CameraIcon />}
             />
           </View>

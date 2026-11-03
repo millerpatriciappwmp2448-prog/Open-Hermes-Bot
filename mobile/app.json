@@ -3,7 +3,6 @@
     "name": "Hermes Bot",
     "slug": "hermes-bot-mobile",
     "version": "1.0.0",
-    "build": "14",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -11,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hermesbot.mobile",
-      "buildNumber": "15",
+      "buildNumber": "16",
       "deploymentTarget": "17.0",
       "infoPlist": {
         "CFBundleDevelopmentRegion": "en",
@@ -31,7 +30,12 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      ["expo-image-picker", {
+        "photosPermission": "允许 Hermes Bot 选择照片并发送给你的智能体。",
+        "cameraPermission": "允许 Hermes Bot 拍摄照片并发送给你的智能体。",
+        "microphonePermission": false
+      }]
     ]
   }
 }

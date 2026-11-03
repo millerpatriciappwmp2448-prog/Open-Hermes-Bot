@@ -559,5 +559,17 @@ export const english: Readonly<Record<string, string>> = {
   "收起任务列表": "Hide task list",
   "待处理": "Pending",
   "进行中": "In progress",
-  "已取消": "Cancelled"
+  "已取消": "Cancelled",
+  "请选择不超过 25 MB 的非空文件。": "Choose a non-empty file up to 25 MB.",
+  "附件上传失败，请重试。": "Attachment upload failed. Please retry.",
+  "服务器未返回有效的附件路径。": "The server did not return a valid attachment path.",
+  "已取消上传。": "Upload cancelled.",
+  "附件上传超时，请重试。": "Attachment upload timed out. Please retry.",
+  "附件上传失败，请检查网络后重试。": "Attachment upload failed. Check your connection and retry.",
+  "语音暂不支持发送到桥接服务。": "Voice messages are not yet supported by the bridge.",
+  "请选择要发送的附件。": "Choose an attachment to send.",
+  "无法使用相机": "Camera unavailable",
+  "请在系统设置中允许访问相机。": "Allow camera access in system settings.",
+  "无法添加附件": "Could not add attachment",
+  "请选择其他文件或重试。": "Choose another file or try again."
 };

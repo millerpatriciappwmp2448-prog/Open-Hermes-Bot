@@ -62,6 +62,10 @@ def verify(path):
         interface_style = info.get('UIUserInterfaceStyle', 'Automatic')
         if interface_style != 'Automatic':
             raise ValueError(f'Native appearance is forced to {interface_style}')
+        photo_permission = info.get('NSPhotoLibraryUsageDescription', '')
+        camera_permission = info.get('NSCameraUsageDescription', '')
+        if not photo_permission.strip() or not camera_permission.strip():
+            raise ValueError('Missing photo library or camera permission description')
         root = plists[0].rsplit('/', 1)[0] + '/'
         main = root + info['CFBundleExecutable']
         if not archive.read(root + 'main.jsbundle'):
@@ -88,6 +92,8 @@ def verify(path):
             'localizations': info.get('CFBundleLocalizations', []),
             'minimum_ios': info['MinimumOSVersion'],
             'interface_style': interface_style,
+            'photo_permission': photo_permission,
+            'camera_permission': camera_permission,
             'javascript_bundled': True,
             'binaries': binaries,
         }

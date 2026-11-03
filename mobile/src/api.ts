@@ -1,4 +1,5 @@
 import { t } from './i18n';
+import type { Attachment } from './data';
 import { parseTodos, type TodoItem } from './taskDock';
 
 export type { TodoItem, TodoStatus } from './taskDock';
@@ -263,6 +264,48 @@ export function createBridgeClient(rawBase: string, token: string) {
     token,
 
     health: () => bridgeHealth(root),
+
+    uploadAttachment: async (
+      attachment: Attachment,
+      callerSignal?: AbortSignal,
+    ): Promise<{ name: string; path: string; bytes: number; mime: string }> => {
+      const size = attachment.bytes ?? attachment.file?.size;
+      if (!attachment.name.trim() || (!attachment.file && !attachment.uri) ||
+          (size !== undefined && (!Number.isFinite(size) || size <= 0 || size > 25 * 1024 * 1024))) {
+        throw new BridgeError(t("请选择不超过 25 MB 的非空文件。"), 'bad_attachment');
+      }
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      callerSignal?.addEventListener('abort', abort);
+      if (callerSignal?.aborted) controller.abort();
+      const timer = setTimeout(abort, 120000);
+      try {
+        // RCTNetworking reads a native file URI into the raw HTTP body.
+        // On web, fetch accepts the picker File directly. Neither sends a phone path to Hermes.
+        const body = attachment.file ?? ({ uri: attachment.uri } as unknown as BodyInit);
+        const response = await fetch(`${root}/v1/attachments?filename=${encodeURIComponent(attachment.name)}`, {
+          method: 'POST',
+          headers: { ...auth, Accept: 'application/json', 'Content-Type': attachment.mimeType || 'application/octet-stream' },
+          body,
+          signal: controller.signal,
+        });
+        if (!response.ok) throw await readError(response, t("附件上传失败，请重试。"));
+        const uploaded = await response.json();
+        if (typeof uploaded.path !== 'string' || !uploaded.path.startsWith('/') ||
+            uploaded.path.includes('\0') || !Number.isFinite(uploaded.bytes) || uploaded.bytes <= 0) {
+          throw new BridgeError(t("服务器未返回有效的附件路径。"), 'bad_upload');
+        }
+        return uploaded;
+      } catch (error) {
+        if (callerSignal?.aborted) throw new BridgeError(t("已取消上传。"), 'cancelled');
+        if (controller.signal.aborted) throw new BridgeError(t("附件上传超时，请重试。"), 'timeout');
+        if (error instanceof BridgeError) throw error;
+        throw new BridgeError(t("附件上传失败，请检查网络后重试。"), 'unreachable');
+      } finally {
+        clearTimeout(timer);
+        callerSignal?.removeEventListener('abort', abort);
+      }
+    },
 
     monitor: (): Promise<ServerMonitor> => request<ServerMonitor>('/v1/monitor', undefined, 12000),
 
