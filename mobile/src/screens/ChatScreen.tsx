@@ -349,14 +349,15 @@ const useStyles = themedStyles(({ C, INK }) => ({
     boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
   },
   chatId: {
-    flexShrink: 1, minWidth: 0, maxWidth: '100%', minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 22,
-    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
-    boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
   chatTitles: { flexShrink: 1, minWidth: 0 },
   chatName: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
-  navCenter: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  navCenter: { position: 'absolute', left: 0, right: 0, alignItems: 'center', justifyContent: 'center', pointerEvents: 'box-none' },
   navPlaceholder: { width: 40, flexShrink: 0 },
 
   body: { flex: 1 },
@@ -413,3 +414,4 @@ const useStyles = themedStyles(({ C, INK }) => ({
   typing: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
   typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 11 },
 }), false);
+
