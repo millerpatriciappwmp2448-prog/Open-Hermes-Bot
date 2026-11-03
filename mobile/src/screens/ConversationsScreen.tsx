@@ -76,6 +76,7 @@ export function ConversationsScreen() {
 
   function open(thread: Thread) {
     navigation.navigate('Chat', { threadId: thread.id });
+    if (!thread?.id) return;
   }
 
   function toggleSearch() {

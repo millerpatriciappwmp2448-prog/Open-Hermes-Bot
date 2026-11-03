@@ -37,6 +37,7 @@ export function t(key: string, params?: Params): string {
 export function localeTag(): string { return language === 'zh' ? 'zh-CN' : 'en-US'; }
 
 function setPreference(next: LanguagePreference) {
+  if (!next) return;
   preference = next;
   revision += 1;
   saveError = false;
