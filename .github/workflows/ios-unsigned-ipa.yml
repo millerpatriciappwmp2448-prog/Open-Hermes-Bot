@@ -58,6 +58,9 @@ jobs:
       - name: Check appearance preferences
         run: node scripts/test-appearance.cjs
 
+      - name: Check native chat and language screen lifecycles
+        run: node scripts/test-native-screens.cjs
+
       - name: Check new bot profile names
         run: node scripts/test-bot-names.cjs
 

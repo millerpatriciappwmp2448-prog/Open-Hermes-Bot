@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { t, useTranslation, type LanguagePreference } from "../i18n";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
@@ -58,7 +58,7 @@ export function SettingsScreen() {
   }, [insets.bottom, insets.top, languageOpen, viewportHeight, viewportWidth]);
 
   useEffect(() => {
-    if (!languageOpen || typeof window === 'undefined') return;
+    if (!languageOpen || Platform.OS !== 'web' || typeof window === 'undefined') return;
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setLanguageOpen(false);
     };

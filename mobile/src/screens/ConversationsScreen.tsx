@@ -20,7 +20,7 @@ import { themedStyles } from '../theme';
  * mark it read, or to let it go.
  */
 export function ConversationsScreen() {
-  const { styles, INK, scheme } = useStyles();
+  const { styles, C, INK, scheme } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
   const navigation = useAppNavigation();
@@ -75,8 +75,8 @@ export function ConversationsScreen() {
   }
 
   function open(thread: Thread) {
-    navigation.navigate('Chat', { threadId: thread.id });
     if (!thread?.id) return;
+    navigation.navigate('Chat', { threadId: thread.id });
   }
 
   function toggleSearch() {
@@ -99,18 +99,21 @@ export function ConversationsScreen() {
           </Pressable>
           <View style={styles.actions}>
             <Pressable
-              style={styles.round}
+              style={({ pressed }) => [styles.round, styles.headerAction, pressed && styles.pressed]}
+              accessibilityRole="button"
               accessibilityLabel={t("搜索")}
+              accessibilityState={{ expanded: searchExpanded }}
               onPress={toggleSearch}
             >
-              <SearchIcon />
+              <SearchIcon size={21} color={C.text} />
             </Pressable>
             <Pressable
-              style={styles.round}
+              style={({ pressed }) => [styles.round, styles.headerAction, pressed && styles.pressed]}
+              accessibilityRole="button"
               accessibilityLabel={t("新建智能体")}
               onPress={() => setCreating(true)}
             >
-              <PlusIcon />
+              <PlusIcon size={26} color={C.text} />
             </Pressable>
           </View>
         </View>
@@ -152,7 +155,7 @@ export function ConversationsScreen() {
                 onLongPress={() => setMenu(thread)}
                 delayLongPress={260}
               >
-                  {faceOf(thread, 64)}
+                {faceOf(thread, 58)}
                 <Text style={styles.pinnedName} numberOfLines={1}>
                   {thread.kind === 'group' ? thread.name : thread.name.split(' ')[0]}
                 </Text>
@@ -329,6 +332,11 @@ const useStyles = themedStyles(({ C, INK }) => ({
     borderColor: C.line,
     borderRadius: 20,
     backgroundColor: C.field,
+  },
+  headerAction: {
+    borderWidth: 0.75,
+    borderColor: C.border,
+    backgroundColor: `${C.cardRaised}b3`,
   },
   searchBox: { paddingHorizontal: 16 },
   search: {

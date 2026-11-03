@@ -74,7 +74,7 @@ export function ChatScreen({ route, navigation }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [botOpen, setBotOpen] = useState(false);
   const [active, setActive] = useState<Message | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible);
+  const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
   const scroll = useRef<ScrollViewInstance>(null);
 
   useEffect(() => {

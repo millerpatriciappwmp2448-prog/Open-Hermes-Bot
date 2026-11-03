@@ -1,0 +1,5 @@
+                    onPress={() => {
+                      setPreference(option.id);
+                      // Delay closing to avoid state update on unmounting component
+                      setTimeout(() => setLanguageOpen(false), 50);
+                    }}
