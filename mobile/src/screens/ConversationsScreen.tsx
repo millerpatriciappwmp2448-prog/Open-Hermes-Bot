@@ -13,11 +13,6 @@ import type { Thread } from '../data';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
 import { themedStyles } from '../theme';
-function extractRoleLabel(desc: string | undefined): string {
-  if (!desc?.trim()) return '';
-  const first = desc.trim().split(/[。，.]/)[0];
-  return first.length > 20 ? first.slice(0, 20) + '…' : first;
-}
 
 /**
  * What a person opens the app on: the bots they keep close, and the
@@ -147,7 +142,7 @@ export function ConversationsScreen() {
         <>
       {pinned.length > 0 ? (
         <View style={styles.pinned}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pinnedScroll}>
+          <View style={styles.pinnedGrid}>
             {pinned.map((thread) => (
               <Pressable
                 key={thread.id}
@@ -156,13 +151,15 @@ export function ConversationsScreen() {
                 onLongPress={() => setMenu(thread)}
                 delayLongPress={260}
               >
-                  {faceOf(thread, 72)}
+                  {faceOf(thread, 64)}
                 <Text style={styles.pinnedName} numberOfLines={1}>
                   {thread.kind === 'group' ? thread.name : thread.name.split(' ')[0]}
                 </Text>
               </Pressable>
             ))}
-          </ScrollView></View>) : null}
+          </View>
+        </View>
+      ) : null}
 
       <ScrollView style={styles.recent} contentContainerStyle={styles.recentBody}>
         <View style={styles.sectionLabel}>
@@ -198,7 +195,7 @@ export function ConversationsScreen() {
                 <View style={styles.threadTop}>
                   <Text numberOfLines={1} style={{ flex: 1 }}>
                     <Text style={styles.threadName}>{thread.name}</Text>
-                      {thread.description ? <Text style={styles.threadTag}> {extractRoleLabel(thread.description)}</Text> : null}
+                      {thread.description ? <Text style={styles.threadTag}> {thread.description}</Text> : null}
                   </Text>
                   <Text style={styles.threadTime}>{thread.time}</Text>
                 </View>
@@ -360,8 +357,8 @@ const useStyles = themedStyles(({ C, INK }) => ({
     textTransform: 'uppercase',
   },
   sectionCount: { color: INK.quiet, fontSize: 10 },
-  pinnedScroll: { paddingHorizontal: 16, gap: 12 },
-  pinnedItem: { alignItems: 'center', gap: 6, paddingVertical: 4 },
+  pinnedGrid: { flexDirection: 'row', gap: 1 },
+  pinnedItem: { flex: 1, alignItems: 'center', gap: 4, paddingTop: 4, paddingBottom: 2 },
   pressed: { opacity: 0.6 },
   pinnedName: { color: INK.quiet, fontSize: 10, fontWeight: '500', textAlign: 'center' },
 
@@ -400,4 +397,3 @@ const useStyles = themedStyles(({ C, INK }) => ({
   menuCard: { borderRadius: 13, backgroundColor: C.cardRaised, overflow: 'hidden' },
   menuLine: { height: 1, backgroundColor: C.hairline },
 }));
-
