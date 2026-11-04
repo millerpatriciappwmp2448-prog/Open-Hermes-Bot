@@ -1,48 +1,48 @@
-﻿{
-    "expo":  {
-                 "name":  "Hermes Bot",
-                 "slug":  "hermes-bot-mobile",
-                 "version":  "1.0.0",
-                 "orientation":  "portrait",
-                 "icon":  "./assets/icon.png",
-                 "userInterfaceStyle":  "automatic",
-                 "backgroundColor":  "#1d1d1f",
-                 "ios":  {
-                             "supportsTablet":  true,
-                             "bundleIdentifier":  "com.hermesbot.mobile",
-                             "buildNumber":  "17",
-                             "deploymentTarget":  "17.0",
-                             "infoPlist":  {
-                                               "CFBundleDevelopmentRegion":  "en",
-                                               "CFBundleLocalizations":  [
-                                                                             "en",
-                                                                             "zh-Hans",
-                                                                             "zh-Hant"
-                                                                         ]
-                                           }
-                         },
-                 "android":  {
-                                 "adaptiveIcon":  {
-                                                      "backgroundColor":  "#E6F4FE",
-                                                      "foregroundImage":  "./assets/android-icon-foreground.png",
-                                                      "backgroundImage":  "./assets/android-icon-background.png",
-                                                      "monochromeImage":  "./assets/android-icon-monochrome.png"
-                                                  },
-                                 "predictiveBackGestureEnabled":  false
-                             },
-                 "web":  {
-                             "favicon":  "./assets/favicon.png"
-                         },
-                 "plugins":  [
-                                 "expo-secure-store",
-                                 [
-                                     "expo-image-picker",
-                                     {
-                                         "photosPermission":  "允许 Hermes Bot 选择照片并发送给你的智能体。",
-                                         "cameraPermission":  "允许 Hermes Bot 拍摄照片并发送给你的智能体。",
-                                         "microphonePermission":  false
-                                     }
-                                 ]
-                             ]
-             }
+{
+  "expo": {
+    "name": "Hermes Bot",
+    "slug": "hermes-bot-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#1d1d1f",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hermesbot.mobile",
+      "buildNumber": "18",
+      "deploymentTarget": "17.0",
+      "infoPlist": {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleLocalizations": [
+          "en",
+          "zh-Hans",
+          "zh-Hant"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许 Hermes Bot 选择照片并发送给你的智能体。",
+          "cameraPermission": "允许 Hermes Bot 拍摄照片并发送给你的智能体。",
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
 }
