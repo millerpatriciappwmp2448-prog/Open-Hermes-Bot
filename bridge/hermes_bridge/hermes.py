@@ -113,9 +113,11 @@ class Hermes:
         path: str,
         body: dict | None = None,
         timeout: float | None = None,
+        extra_headers: dict | None = None,
     ) -> dict:
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Accept": "application/json", **self._auth(profile)}
+        headers.update(extra_headers or {})
         if data is not None:
             headers["Content-Type"] = "application/json"
         url = f"{self.scheme}://{self.host}:{self.port}{self.api_path(profile, path)}"
@@ -334,6 +336,13 @@ class Hermes:
             {"title": title},
         )
 
+    def require_analysis_tools(self, profile: str) -> None:
+        payload = self._call(profile, 'GET', '/v1/toolsets')
+        rows = payload.get('data')
+        if not isinstance(rows, list) or any(not isinstance(row, dict) or row.get('enabled') is not False for row in rows):
+            raise HermesError(409, 'codex_analysis_profile',
+                'The review profile still exposes tools. Reload its analysis-only configuration before reviewing Codex.')
+
     def delete_session(self, profile: str, session_id: str) -> None:
         self._call(
             profile,
@@ -428,6 +437,50 @@ class Hermes:
 
     # ------------------------------------------------------------- a turn
 
+    def start_run(self, profile: str, session_id: str, message: str,
+                  model: str, provider: str, request_id: str, instructions: str = "") -> dict:
+        body = {"input": message, "session_id": session_id}
+        if instructions:
+            body["instructions"] = instructions
+        if model:
+            body.update(model=model, require_model_lock=True)
+        if provider:
+            body["provider"] = provider
+        return self._call(profile, "POST", "/v1/runs", body,
+                          extra_headers={"Idempotency-Key": request_id})
+
+    def run_status(self, profile: str, run_id: str) -> dict:
+        return self._call(profile, "GET", f"/v1/runs/{urllib.parse.quote(run_id, safe='')}")
+
+    def stop_run(self, profile: str, run_id: str) -> dict:
+        return self._call(profile, "POST", f"/v1/runs/{urllib.parse.quote(run_id, safe='')}/stop", {})
+
+    def run_events(self, profile: str, run_id: str):
+        """Subscribe to a detached run. Closing this reader never stops the run."""
+        path = self.api_path(profile, f"/v1/runs/{urllib.parse.quote(run_id, safe='')}/events")
+        cls = http.client.HTTPSConnection if self.scheme == "https" else http.client.HTTPConnection
+        connection = cls(self.host, self.port, timeout=self.config.turn_silence)
+        try:
+            connection.request("GET", path, headers={"Accept": "text/event-stream", **self._auth(profile)})
+            response = connection.getresponse()
+            if response.status >= 400:
+                raise HermesError(response.status, "run_events", "Cannot subscribe to the Hermes run.")
+            lines = []
+            while True:
+                raw = response.readline()
+                if not raw:
+                    break
+                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if not line:
+                    parsed = _parse_frame(lines)
+                    lines = []
+                    if parsed:
+                        yield parsed[1]
+                else:
+                    lines.append(line)
+        finally:
+            connection.close()
+
     def stream_turn(
         self,
         profile: str,
@@ -435,6 +488,7 @@ class Hermes:
         message: str,
         model: str = "",
         provider: str = "",
+        instructions: str = "",
     ):
         """One agent turn, as Hermes writes it.
 
@@ -449,6 +503,8 @@ class Hermes:
             **self._auth(profile),
         }
         body: dict = {"message": message}
+        if instructions:
+            body["instructions"] = instructions
         if model:
             body["model"] = model
             # The session remembers the model of its last turn, and Hermes

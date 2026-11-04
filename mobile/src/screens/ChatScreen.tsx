@@ -17,6 +17,7 @@ import { BackIcon, FileIcon, MicIcon, MoreIcon, PhotoIcon } from '../components/
 import { Composer, type Outgoing } from '../components/Composer';
 import { TaskDock } from '../components/TaskDock';
 import { TypingDots } from '../components/TypingDots';
+import { SupervisorChatStatus } from '../components/SupervisorChatStatus';
 import { BotSheet } from './BotSheet';
 import { GroupDetailsSheet } from './GroupDetailsSheet';
 import { MessageSheet } from './MessageSheet';
@@ -276,9 +277,16 @@ export function ChatScreen({ route, navigation }: Props) {
             </>
           ) : null}
 
+          {bot?.capabilities?.includes('codex-supervisor') ? (
+            <SupervisorChatStatus onDetails={() => navigation.navigate('CodexSupervisor')}
+              revision={`${thread.sessionId || ''}:${turns.length}:${!!thread.typing}`} />
+          ) : null}
+
           {turns.length === 0 ? (
             <Text style={styles.empty}>
-              {t("还没有消息，发送第一条消息开始聊天。智能体的记忆保存在服务器上。")}
+              {bot?.capabilities?.includes('codex-supervisor')
+                ? t('告诉我需要监督的 Codex 会话和目标，我会持续跟进、自动续做并检查工作。')
+                : t("还没有消息，发送第一条消息开始聊天。智能体的记忆保存在服务器上。")}
             </Text>
           ) : null}
 

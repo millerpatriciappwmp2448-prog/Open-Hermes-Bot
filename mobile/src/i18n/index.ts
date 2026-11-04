@@ -6,7 +6,7 @@ import { resolveLanguage, translate, type Language, type LanguagePreference, typ
 export type { LanguagePreference } from './core';
 const STORAGE_KEY = 'hermes.interface.language';
 const listeners = new Set<() => void>();
-let preference: LanguagePreference = 'system';
+let preference: LanguagePreference = 'en';
 let revision = 0;
 let saving: Promise<void> = Promise.resolve();
 let saveError = false;
@@ -37,7 +37,7 @@ export function t(key: string, params?: Params): string {
 export function localeTag(): string { return language === 'zh' ? 'zh-CN' : 'en-US'; }
 
 function setPreference(next: LanguagePreference) {
-  if (!next) return;
+  if (!next || (next !== 'zh' && next !== 'en')) return;
   preference = next;
   revision += 1;
   saveError = false;
@@ -65,18 +65,20 @@ export function useInitializeLanguage() {
     if (Platform.OS !== 'web') {
       void SecureStore.getItemAsync(STORAGE_KEY).then((saved) => {
         if (!active || revision !== initialRevision) return;
+        // Accept only 'zh' or 'en'; ignore legacy 'system' or invalid values
         if (saved === 'zh' || saved === 'en') {
           preference = saved;
           publish();
-        } else if (saved === 'system') {
-          preference = resolveLanguage('system', systemLocale());
+        } else if (saved) {
+          // Legacy value: detect system locale once and save it
+          const detected = /^zh(?:[-_]|$)/i.test(systemLocale()) ? 'zh' : 'en';
+          preference = detected;
           publish();
+          void SecureStore.setItemAsync(STORAGE_KEY, detected).catch(() => undefined);
         }
       }).catch(() => undefined);
     }
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && preference === 'system') publish();
-    });
-    return () => { active = false; subscription.remove(); };
+    // No longer react to AppState changes for system locale
+    return () => { active = false; };
   }, []);
 }

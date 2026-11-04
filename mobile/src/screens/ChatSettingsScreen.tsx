@@ -35,6 +35,15 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const closeConfirm = () => { if (!deleting) { setConfirming(null); setDeleteError(''); } };
   const tapbacks = thread ? chatPreferences[thread.botId]?.tapbacks !== false : true;
 
+  async function changePin() {
+    if (!thread || savingPreferences) return;
+    setSavingPreferences(true);
+    setPreferencesError('');
+    try { await togglePin(thread.id); }
+    catch { setPreferencesError(t('设置未保存，请重试。')); }
+    finally { setSavingPreferences(false); }
+  }
+
   async function changeTapbacks(value: boolean) {
     if (!thread || savingPreferences) return;
     setSavingPreferences(true);
@@ -148,7 +157,8 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
               </Pressable> : null}
               <View style={[styles.card, styles.row]}>
                 <Text style={[styles.rowText, styles.flex]}>{t('已置顶')}</Text>
-                <Switch accessibilityLabel={t('已置顶')} value={Boolean(thread.pinned)} onValueChange={() => togglePin(thread.id)}
+                <Switch accessibilityLabel={t('已置顶')} value={Boolean(thread.pinned)} disabled={savingPreferences}
+                  onValueChange={() => void changePin()}
                   trackColor={{ false: C.field2, true: C.green }} ios_backgroundColor={C.field2} />
               </View>
               <View style={[styles.card, styles.row]}>

@@ -16,6 +16,7 @@ import { SessionTranscriptScreen } from './src/screens/SessionTranscriptScreen';
 import { ConversationsScreen } from './src/screens/ConversationsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ServerStatusScreen } from './src/screens/ServerStatusScreen';
+import { CodexSupervisorScreen } from './src/screens/CodexSupervisorScreen';
 import { SetupScreen } from './src/screens/SetupScreen';
 import { ConnectionScreen } from './src/screens/ConnectionScreen';
 import { ModelsScreen } from './src/screens/ModelsScreen';
@@ -65,6 +66,7 @@ export default function App() {
               <Stack.Screen name="SessionTranscript" component={SessionTranscriptScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
               <Stack.Screen name="ServerStatus" component={ServerStatusScreen} />
+              <Stack.Screen name="CodexSupervisor" component={CodexSupervisorScreen} />
               <Stack.Screen name="Setup" component={SetupScreen} />
               <Stack.Screen name="Connection" component={ConnectionScreen} />
               <Stack.Screen name="Models" component={ModelsScreen} />

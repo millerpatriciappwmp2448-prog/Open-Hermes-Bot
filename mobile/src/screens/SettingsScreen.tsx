@@ -107,6 +107,7 @@ export function SettingsScreen() {
         <View style={styles.group}>
           <Row name={t('服务器会话')} value="" onPress={() => navigation.navigate('SessionHistory')} />
           <Row name={t('服务器状态')} value="" line onPress={() => navigation.navigate('ServerStatus')} />
+          <Row name={t('Codex 监督')} value="" line onPress={() => navigation.navigate('CodexSupervisor')} />
           <Row
             name={t("连接")}
             line

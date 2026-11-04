@@ -8,8 +8,11 @@ import { Bloub } from './Bloub';
 import { CheckIcon, ChevronIcon, SearchIcon } from './Icons';
 
 /** Credentials and provider URLs never leave Hermes. */
-export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
+export function ServerModelPicker({ botId, onPicked, onChangeBot, draftPick, onDraftPick }: {
   botId: string; onPicked?: () => void; onChangeBot?: () => void;
+  /** Pass onDraftPick to choose a server model without saving it yet (agent creation). */
+  draftPick?: ModelRef | null;
+  onDraftPick?: (pick: ModelRef | null) => void;
 }) {
   const { styles, C, scheme } = useStyles();
   useTranslation();
@@ -26,8 +29,10 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
   const pending = useRef(false);
   const choices = modelChoices(options);
   const providers = [...new Set([options?.currentProvider, picked?.provider, ...choices.map(c => c.provider)].filter((p): p is string => Boolean(p)))];
-  const selected = choices.find(c => c.model === picked?.model && c.provider === picked?.provider);
-  const current = picked?.model || options?.current || t('暂未读取到');
+  const deferred = typeof onDraftPick === 'function';
+  const activePick = deferred ? draftPick : picked;
+  const selected = choices.find(c => c.model === activePick?.model && c.provider === activePick?.provider);
+  const current = activePick?.model || options?.current || t('暂未读取到');
   const needle = query.trim().toLowerCase();
   const visible = choices.filter(c => `${c.label} ${c.model} ${c.providerName}`.toLowerCase().includes(needle));
   const disabled = busy || loading;
@@ -47,6 +52,11 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
 
   async function choose(ref: ModelRef | null) {
     if (pending.current) return;
+    if (deferred) {
+      onDraftPick?.(ref);
+      onPicked?.();
+      return;
+    }
     pending.current = true;
     setError(''); setSaved(false); setBusy(true);
     try {
@@ -73,14 +83,14 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
           <Text style={styles.changeText}>{t('切换')}</Text><ChevronIcon size={10} color={C.text2} />
         </Pressable> : null}
       </View>
-      <View style={styles.currentCard} accessibilityLabel={t('当前选择：{0}', { 0: picked?.model || t('跟随服务器') })}>
+      <View style={styles.currentCard} accessibilityLabel={t('当前选择：{0}', { 0: activePick?.model || t('跟随服务器') })}>
         <View style={styles.between}>
           <Text style={styles.caption}>{t('当前模型')}</Text>
-          <View style={styles.status}><View style={styles.dot} /><Text style={styles.statusText}>{picked ? t('手动选择') : t('跟随服务器')}</Text></View>
+          <View style={styles.status}><View style={styles.dot} /><Text style={styles.statusText}>{activePick ? t('手动选择') : t('跟随服务器')}</Text></View>
         </View>
         <Text style={styles.current}>{selected?.label || current}</Text>
         {selected && selected.label !== current ? <Text style={styles.modelId}>{current}</Text> : null}
-        <Text style={styles.caption}>{picked?.provider || options?.currentProvider || t('服务器提供商')}</Text>
+        <Text style={styles.caption}>{activePick?.provider || options?.currentProvider || t('服务器提供商')}</Text>
       </View>
       <View style={styles.between}>
         <Text style={styles.section}>{t('服务器可用模型')} <Text style={styles.count}>{choices.length}</Text></Text>
@@ -97,14 +107,14 @@ export function ServerModelPicker({ botId, onPicked, onChangeBot }: {
       </View>
       <View style={[styles.options, disabled && styles.disabled]}>
         {!needle ? <Pressable accessibilityRole="button" accessibilityLabel={t('跟随服务器')}
-          accessibilityState={{ selected: !picked, disabled }} disabled={disabled}
-          style={({ pressed }) => [styles.choice, !picked && styles.selectedRow, pressed && styles.pressed]}
+          accessibilityState={{ selected: !activePick, disabled }} disabled={disabled}
+          style={({ pressed }) => [styles.choice, !activePick && styles.selectedRow, pressed && styles.pressed]}
           onPress={() => void choose(null)}>
-          {marker(!picked)}
+          {marker(!activePick)}
           <View style={styles.flex}><Text style={styles.name}>{t('跟随服务器')}</Text><Text style={styles.meta}>{options?.current || t('暂未读取到')}</Text></View>
         </Pressable> : null}
         {visible.map((choice, index) => {
-          const checked = picked?.model === choice.model && picked.provider === choice.provider;
+          const checked = activePick?.model === choice.model && activePick.provider === choice.provider;
           return <Pressable key={JSON.stringify([choice.provider, choice.model])} accessibilityRole="button"
             accessibilityLabel={`${choice.label} · ${choice.providerName || t('服务器提供商')}`}
             accessibilityState={{ selected: checked, disabled }} disabled={disabled}

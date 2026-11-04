@@ -2,9 +2,11 @@ import { t, useTranslation, localeTag } from './i18n';
 import { localizeDemo } from './i18n/demo';
 import { modelForTurn, readModelPick, withModelPick, type ModelRef } from './modelSelection';
 import { profileNameFor } from './botNames';
+import type { CodexChat, CodexSupervisorStatus, CodexWatchSpec } from './codexSupervisor';
 import { readChatPreferences, withChatPreferences, sessionsForBot, type ChatPreferences } from './chatPreferences';
 import { readSchedules, type Schedule } from './schedules';
 import { sameTodos, type TodoItem } from './taskDock';
+import { watchTurn, type TurnWatch, type RunSnapshot } from './turnRecovery';
 import {
   createContext,
   useCallback,
@@ -47,6 +49,7 @@ import {
   type HistoryPage,
   type TranscriptPage,
   type ServerMonitor,
+  type BridgeRun,
 } from './api';
 
 /**
@@ -77,7 +80,7 @@ export type Connection = {
   provider: string;
 };
 
-type NewBot = { name: string; shape: BloubShape; color: string; model: string };
+type NewBot = { name: string; shape: BloubShape; color: string; model: string; selectedModel?: ModelRef | null };
 type NewGroup = { name: string; members: string[]; model: string };
 type Outgoing = {
   text: string;
@@ -113,6 +116,10 @@ type Store = {
   loadHistory: (botId: string, offset: number) => Promise<HistoryPage>;
   loadTranscript: (botId: string, sessionId: string, offset: number) => Promise<TranscriptPage>;
   loadMonitor: () => Promise<ServerMonitor>;
+  loadCodexStatus: () => Promise<CodexSupervisorStatus>;
+  loadCodexChats: () => Promise<CodexChat[]>;
+  startCodexWatch: (spec: CodexWatchSpec) => Promise<CodexSupervisorStatus>;
+  pauseCodexWatch: () => Promise<CodexSupervisorStatus>;
   /** Read the agent's task list for a chat's session from Hermes. */
   loadTodos: (threadId: string) => Promise<void>;
 
@@ -120,7 +127,7 @@ type Store = {
   threadById: (id: string) => Thread | undefined;
 
   addBot: (input: NewBot) => string;
-  updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color'>>) => Promise<void>;
+  updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color' | 'tag'>>) => Promise<void>;
   removeBot: (id: string) => Promise<void>;
   /** Write what the bot is for into its SOUL.md; it applies from its next session. */
   saveDescription: (botId: string, text: string) => Promise<void>;
@@ -136,7 +143,7 @@ type Store = {
   leaveGroup: (id: string) => void;
 
   setModel: (threadId: string, model: string) => void;
-  togglePin: (threadId: string) => void;
+  togglePin: (threadId: string) => Promise<void>;
   markRead: (threadId: string) => void;
   markUnread: (threadId: string) => void;
   removeThread: (threadId: string) => Promise<void>;
@@ -238,7 +245,9 @@ function toBot(raw: BridgeBot): Bot {
     role: raw.primary ? t("默认") : 'Hermes',
     session: raw.profile === 'default' ? '' : raw.profile.slice(0, 4),
     description: raw.role || '',
+    tag: raw.tag || '',
     primary: raw.primary,
+    capabilities: raw.capabilities || [],
   };
 }
 
@@ -296,6 +305,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const client = useRef<BridgeClient | null>(null);
   const savedRef = useRef<Saved | null>(null);
   const turnsRef = useRef<Record<string, () => void>>({});
+  const watchesRef = useRef<Record<string, TurnWatch>>({});
+  const revisionsRef = useRef<Record<string, number>>({});
+  const syncRef = useRef<{ key: string; work: Promise<void> } | null>(null);
+  const syncGeneration = useRef(0);
   const threadsRef = useRef<Thread[]>(threads);
   const connectionRef = useRef(connection);
   useEffect(() => {
@@ -326,9 +339,65 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   /* --------------------------------------------------------- the bridge */
 
-  const adopt = useCallback(async (url: string, token: string, device: string) => {
-    const bridge = createBridgeClient(url, token);
+  const observeRun = useCallback((bridge: BridgeClient, threadId: string, botId: string,
+    sessionId: string, requestId: string, start?: () => Promise<RunSnapshot>) => {
+    if (watchesRef.current[threadId]) return;
+    const assistantId = `run:${requestId}`;
+    let answer = '';
+    const patch = (value: Partial<Thread>) => {
+      revisionsRef.current[threadId] = (revisionsRef.current[threadId] || 0) + 1;
+      setThreads(current => current.map(thread => thread.id === threadId ? { ...thread, ...value } : thread));
+    };
+    const upsert = (text: string, failed = false) => {
+      if (!text) return;
+      setMessages(current => {
+        const rows = current[threadId] || [];
+        const message: Message = { id: failed ? `${assistantId}:error` : assistantId, from: botId, text, failed: failed || undefined };
+        return { ...current, [threadId]: rows.some(row => row.id === message.id)
+          ? rows.map(row => row.id === message.id ? message : row) : [...rows, message] };
+      });
+    };
+    const finish = (text: string, failed = false) => {
+      delete watchesRef.current[threadId];
+      delete turnsRef.current[threadId];
+      upsert(text, failed);
+      patch({ typing: false, tool: undefined, preview: (text || answer).replace(/\s+/g, ' ').slice(0, 90), time: t('刚刚') });
+    };
+    patch({ typing: true, sessionId });
+    const watch = watchTurn({
+      start: start || (() => bridge.readTurn(botId, sessionId, requestId)),
+      read: () => bridge.readTurn(botId, sessionId, requestId),
+      stop: () => bridge.stopTurn(botId, sessionId, requestId),
+    }, {
+      snapshot: run => {
+        answer = run.text || '';
+        upsert(answer);
+        patch({ tool: run.tool || undefined, sessionId: run.sessionId || sessionId });
+      },
+      done: text => finish(text || answer),
+      error: error => finish(error instanceof Error ? error.message
+        : (error as { message?: string })?.message || t('无法连接智能体。'), true),
+    });
+    watchesRef.current[threadId] = watch;
+    turnsRef.current[threadId] = () => { watch.stop(); finish(answer || t('已停止')); };
+    if (AppState.currentState && AppState.currentState !== 'active') watch.pause();
+  }, []);
+
+  const adopt = useCallback((url: string, token: string, device: string): Promise<void> => {
+    const key = `${url}\n${token}`;
+    if (syncRef.current?.key === key) return syncRef.current.work;
+    const generation = ++syncGeneration.current;
+    const revisions = { ...revisionsRef.current };
+    const work = (async () => {
+    const bridge = client.current?.baseUrl === normalizeUrl(url) && client.current.token === token
+      ? client.current : createBridgeClient(url, token);
+    // Publish the host-owned agent before reading bots/sessions/pins together.
+    // Older bridges can still connect; the supervisor entry requires an update.
+    await bridge.ensureCodexAgent().catch(error => {
+      if (!(error instanceof BridgeError) || error.code !== 'not_found') throw error;
+    });
     const [rawBots, sessions, savedPrefs] = await Promise.all([bridge.bots(), bridge.sessions(), bridge.prefs()]);
+    const pending: BridgeRun[] = await bridge.activeTurns();
 
     const newest = (botId: string): BridgeSession | undefined =>
       sessions
@@ -337,7 +406,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     const loaded = await Promise.all(
       rawBots.map(async (raw) => {
-        const latest = newest(raw.id);
+        const running = pending.find(run => run.bot === raw.id);
+        const latest = running ? sessions.find(row => row.id === running.sessionId && row.bot === raw.id)
+          || { id: running.sessionId, bot: raw.id, lastActive: Date.now() / 1000, messageCount: 0 } as BridgeSession : newest(raw.id);
         const [rows, options] = await Promise.all([
           latest ? bridge.messages(raw.id, latest.id, 80).catch(() => []) : Promise.resolve([]),
           bridge.models(raw.id).catch(() => undefined),
@@ -360,6 +431,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         botId: entry.raw.id,
         name: entry.raw.name,
         description: entry.raw.description || '',
+        tag: entry.raw.tag || '',
         preview: previewOf(
           rows,
           entry.latest ? t("{0} 条消息", {"0": entry.latest.messageCount}) : t("暂无会话"),
@@ -367,6 +439,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         time: entry.latest ? relativeTime(entry.latest.lastActive) : '',
         threadModel: entry.pick?.model || entry.options?.current || '',
         sessionId: entry.latest?.id,
+        pinned: (savedPrefs.mobilePinnedBots as Record<string, boolean> | undefined)?.[entry.raw.id] === true,
         todos,
         unread: false,
       };
@@ -399,6 +472,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       health = undefined;
     }
 
+    if (generation !== syncGeneration.current) return;
     client.current = bridge;
     profilesRef.current = profiles;
     optionsRef.current = nextOptions;
@@ -407,8 +481,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setModelPicks(nextPicks);
     setChatPreferences(Object.fromEntries(rawBots.map(raw => [raw.id, readChatPreferences(savedPrefs, raw.profile || 'default')])));
     setBots(nextBots);
-    setThreads(nextThreads);
-    setMessages(nextMessages);
+    const preserve = (id: string) => Boolean(turnsRef.current[id]) || revisionsRef.current[id] !== revisions[id];
+    setThreads(current => nextThreads.map(thread => {
+      const prior = current.find(row => row.id === thread.id);
+      return prior && preserve(thread.id) ? { ...thread, sessionId: prior.sessionId,
+        typing: prior.typing, tool: prior.tool, todos: prior.todos, preview: prior.preview, time: prior.time } : thread;
+    }));
+    setMessages(current => Object.fromEntries(Object.entries(nextMessages).map(([id, rows]) =>
+      [id, preserve(id) ? current[id] || rows : rows])));
     setConnection({ status: 'connected', url, device, health, model, provider });
     setPrefs((current) => ({
       ...current,
@@ -420,7 +500,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch {
       setDevices([]);
     }
-  }, []);
+    if (generation !== syncGeneration.current) return;
+    pending.forEach(run => {
+      const id = `bot:${run.bot}`;
+      if (!turnsRef.current[id] && nextThreads.some(thread => thread.id === id)) {
+        observeRun(bridge, id, run.bot, run.sessionId, run.requestId);
+      }
+    });
+    })();
+    syncRef.current = { key, work };
+    void work.finally(() => { if (syncRef.current?.work === work) syncRef.current = null; }).catch(() => {});
+    return work;
+  }, [observeRun]);
 
   const refreshModels = useCallback(async (botId: string) => {
     const active = client.current;
@@ -521,6 +612,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return snapshot;
   }, []);
 
+  const codexCall = useCallback(async <T,>(run: (active: BridgeClient) => Promise<T>) => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const result = await run(active);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    return result;
+  }, []);
+  const loadCodexStatus = useCallback(() => codexCall(active => active.codexStatus()), [codexCall]);
+  const loadCodexChats = useCallback(() => codexCall(active => active.codexChats()), [codexCall]);
+  const startCodexWatch = useCallback((spec: CodexWatchSpec) => codexCall(active => active.startCodexWatch(spec)), [codexCall]);
+  const pauseCodexWatch = useCallback(() => codexCall(active => active.pauseCodexWatch()), [codexCall]);
+
   const loadTranscript = useCallback<Store['loadTranscript']>(async (botId, sessionId, offset) => {
     const active = client.current;
     if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
@@ -612,7 +715,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const disconnect = useCallback(async () => {
-    Object.values(turnsRef.current).forEach((close) => close());
+    syncGeneration.current++;
+    syncRef.current = null;
+    Object.values(watchesRef.current).forEach(watch => watch.detach());
+    watchesRef.current = {};
     turnsRef.current = {};
     client.current = null;
     savedRef.current = null;
@@ -677,17 +783,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // reachable again.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && connectionRef.current.status === 'error' && savedRef.current) {
-        void retry();
-      }
+      Object.values(watchesRef.current).forEach(watch => state === 'active' ? watch.resume() : watch.pause());
+      if (state === 'active' && savedRef.current) void retry();
     });
     return () => subscription.remove();
   }, [retry]);
 
+  useEffect(() => () => {
+    syncGeneration.current++;
+    Object.values(watchesRef.current).forEach(watch => watch.detach());
+    watchesRef.current = {};
+  }, []);
+
   /* ----------------------------------------------------------- the bots */
 
   const addBot = useCallback<Store['addBot']>(
-    ({ name, shape, color, model }) => {
+    ({ name, shape, color, model, selectedModel }) => {
       const label = name.trim() || t("新智能体");
       const online = connectionRef.current.status === 'connected';
       const taken = bots.map((bot) => bot.id);
@@ -713,6 +824,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           botId: bot.id,
           name: label,
           description: bot.description,
+          tag: bot.tag,
           preview: online ? t("正在服务器上创建…") : t("已创建演示智能体。"),
           time: t("刚刚"),
           threadModel: online ? '' : model,
@@ -724,7 +836,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (online && client.current) {
         const active = client.current;
         void active
-          .createBot({ name: profile, title: label, color, shape })
+          .createBot({
+            name: profile,
+            title: label,
+            color,
+            shape,
+            ...(selectedModel ? { model: selectedModel } : {}),
+          })
           .then(async (created) => {
             if (client.current !== active) return;
             profilesRef.current[created.id] = created.profile || 'default';
@@ -733,6 +851,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             if (options) {
               optionsRef.current = { ...optionsRef.current, [created.id]: options };
               setModelOptions(optionsRef.current);
+            }
+            if (selectedModel) {
+              const nextPicks = { ...picksRef.current, [created.id]: selectedModel };
+              picksRef.current = nextPicks;
+              setModelPicks(nextPicks);
             }
             setBots((current) =>
               current.map((entry) => (entry.id === id ? { ...toBot(created), name: label } : entry)),
@@ -745,7 +868,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                       botId: created.id,
                       preview: t("暂无会话"),
                       time: '',
-                      threadModel: options?.current || '',
+                      threadModel: selectedModel?.model || options?.current || '',
                     }
                   : entry,
               ),
@@ -775,6 +898,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(patch.name ? { title: patch.name } : {}),
           ...(patch.color ? { color: patch.color } : {}),
           ...(patch.shape ? { shape: patch.shape } : {}),
+          ...(patch.tag !== undefined ? { tag: patch.tag } : {}),
         });
         if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
       }
@@ -785,6 +909,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             thread.kind === 'bot' && thread.botId === id ? { ...thread, name: patch.name! } : thread,
           ),
         );
+      }
+      if (patch.tag !== undefined) {
+        setThreads((current) => current.map((thread) =>
+          thread.kind === 'bot' && thread.botId === id ? { ...thread, tag: patch.tag } : thread,
+        ));
       }
     },
     [],
@@ -936,12 +1065,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [patchThread],
   );
 
-  const togglePin = useCallback<Store['togglePin']>((threadId) => {
-    setThreads((current) =>
-      current.map((thread) =>
-        thread.id === threadId ? { ...thread, pinned: !thread.pinned } : thread,
-      ),
-    );
+  const togglePin = useCallback<Store['togglePin']>(async (threadId) => {
+    const active = client.current;
+    const write = modelWrites.current.catch(() => undefined).then(async () => {
+      const thread = threadsRef.current.find(row => row.id === threadId);
+      if (!thread) return;
+      const pinned = !thread.pinned;
+      if (thread.id.startsWith('bot:')) {
+        if (!active) throw new BridgeError(t('请先连接服务器。'));
+        await active.pinBot(thread.botId, pinned);
+        if (client.current !== active) return;
+      }
+      revisionsRef.current[threadId] = (revisionsRef.current[threadId] || 0) + 1;
+      threadsRef.current = threadsRef.current.map(row => row.id === threadId ? { ...row, pinned } : row);
+      setThreads(threadsRef.current);
+    });
+    modelWrites.current = write;
+    await write;
   }, []);
 
   const markRead = useCallback<Store['markRead']>(
@@ -1096,6 +1236,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         });
       };
 
+      revisionsRef.current[threadId] = (revisionsRef.current[threadId] || 0) + 1;
       patchThread(threadId, { typing: true, tool: undefined });
       turnsRef.current[threadId] = halt;
 
@@ -1144,32 +1285,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             settle(t("连接已改变，请重新发送。"), true);
             return;
           }
-          close = active.turn(
-            {
-              bot: botId,
-              session: sessionId,
-              message: outgoing,
-              ...modelForTurn(picksRef.current[botId], optionsRef.current[botId]),
-            },
-            {
-              onDelta: (delta) => {
-                if (settled) return;
-                answer += delta;
-                upsert(answer);
-              },
-              onTool: (tool) => {
-                if (settled) return;
-                patchThread(threadId, { tool: tool || undefined });
-              },
-              onTodos: (todos) => {
-                if (settled) return;
-                patchThread(threadId, { todos });
-              },
-              onDone: (text) => settle(text || answer, false),
-              onError: (message) => settle(message, true),
-            },
-          );
-          if (settled) close();
+          const requestId = userMessage.id;
+          const input = { bot: botId, session: sessionId, requestId, message: outgoing,
+            ...modelForTurn(picksRef.current[botId], optionsRef.current[botId]) };
+          observeRun(active, threadId, botId, sessionId, requestId, () => active.startTurn(input));
+
         } catch (error) {
           settle(
             error instanceof BridgeError ? error.message : t("无法连接智能体。"),
@@ -1178,7 +1298,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       })();
     },
-    [patchThread],
+    [patchThread, observeRun],
   );
 
   const stop = useCallback<Store['stop']>((threadId) => {
@@ -1229,6 +1349,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadHistory,
       loadTranscript,
       loadMonitor,
+      loadCodexStatus,
+      loadCodexChats,
+      startCodexWatch,
+      pauseCodexWatch,
       loadTodos,
       botById,
       threadById,
@@ -1299,6 +1423,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadHistory,
       loadTranscript,
       loadMonitor,
+      loadCodexStatus,
+      loadCodexChats,
+      startCodexWatch,
+      pauseCodexWatch,
       loadTodos,
       saveDescription,
       loadJobs,

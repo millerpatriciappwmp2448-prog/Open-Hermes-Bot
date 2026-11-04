@@ -1,6 +1,7 @@
 import { t } from './i18n';
 import type { Attachment } from './data';
 import { parseTodos, type TodoItem } from './taskDock';
+import type { CodexChat, CodexSupervisorStatus, CodexWatchSpec } from './codexSupervisor';
 
 export type { TodoItem, TodoStatus } from './taskDock';
 
@@ -18,6 +19,7 @@ export type BridgeBot = {
   profile: string;
   name: string;
   title: string;
+  tag?: string;
   description: string;
   color: string;
   shape: string;
@@ -25,6 +27,7 @@ export type BridgeBot = {
   hasKey: boolean;
   /** The app's block in the bot's SOUL.md: what the bot is for. */
   role?: string;
+  capabilities?: string[];
 };
 
 export type BridgeSession = {
@@ -68,6 +71,11 @@ export type BridgeDevice = {
   name: string;
   createdAt: number;
   lastSeenAt: number;
+};
+
+export type BridgeRun = {
+  bot: string; sessionId: string; requestId: string; id: string;
+  status: string; text: string; tool: string; error: string;
 };
 
 export type BridgeModels = {
@@ -121,6 +129,7 @@ const BRIDGE_ERRORS: Readonly<Record<string, string>> = {
   exists: '该智能体已存在，请换一个名称。',
   bad_color: '不支持此颜色，请重新选择。',
   bad_shape: '不支持此外观形状，请重新选择。',
+  bad_model: '模型选择无效，请从服务器模型列表重新选择。',
   primary: '主智能体是 Hermes 本身，无法删除。',
   timeout: 'Hermes 回复超时，请稍后重试。',
   silent: 'Hermes 长时间没有返回数据，请检查服务器状态。',
@@ -265,6 +274,18 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     health: () => bridgeHealth(root),
 
+    codexStatus: () => request<CodexSupervisorStatus>('/v1/codex/status'),
+    ensureCodexAgent: async (): Promise<BridgeBot> =>
+      (await request<{ bot: BridgeBot }>('/v1/codex/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).bot,
+    codexChats: async (): Promise<CodexChat[]> =>
+      (await request<{ threads: CodexChat[] }>('/v1/codex/threads')).threads,
+    startCodexWatch: (spec: CodexWatchSpec) => request<CodexSupervisorStatus>('/v1/codex/watch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec),
+    }),
+    pauseCodexWatch: () => request<CodexSupervisorStatus>('/v1/codex/pause', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    }),
+
     uploadAttachment: async (
       attachment: Attachment,
       callerSignal?: AbortSignal,
@@ -370,6 +391,8 @@ export function createBridgeClient(rawBase: string, token: string) {
       color: string;
       shape: string;
       description?: string;
+      tag?: string;
+      model?: { model: string; provider: string };
       soul?: boolean;
     }): Promise<BridgeBot> =>
       (
@@ -382,7 +405,7 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     updateBot: async (
       botId: string,
-      patch: Partial<Pick<BridgeBot, 'title' | 'color' | 'shape' | 'description'>> & { soul?: boolean },
+      patch: Partial<Pick<BridgeBot, 'title' | 'tag' | 'color' | 'shape' | 'description'>> & { soul?: boolean },
     ): Promise<BridgeBot> =>
       (
         await request<{ bot: BridgeBot }>(`/v1/bots/${bot(botId)}`, {
@@ -442,6 +465,29 @@ export function createBridgeClient(rawBase: string, token: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prefs }),
       }),
+
+    pinBot: async (botId: string, pinned: boolean): Promise<void> => {
+      await request(`/v1/bots/${bot(botId)}/pin`, { method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned }) });
+    },
+
+    activeTurns: async (): Promise<BridgeRun[]> =>
+      (await request<{ runs: BridgeRun[] }>('/v1/active-turns')).runs,
+
+    startTurn: async (input: { bot: string; session: string; requestId: string; message: string; model?: string; provider?: string }): Promise<BridgeRun> =>
+      (await request<{ run: BridgeRun }>(`/v1/sessions/${bot(input.bot)}/${session(input.session)}/turns/${encodeURIComponent(input.requestId)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input.message, model: input.model, provider: input.provider }),
+      })).run,
+
+    readTurn: async (botId: string, sessionId: string, requestId: string): Promise<BridgeRun> =>
+      (await request<{ run: BridgeRun }>(`/v1/sessions/${bot(botId)}/${session(sessionId)}/turns/${encodeURIComponent(requestId)}`)).run,
+
+    stopTurn: async (botId: string, sessionId: string, requestId: string): Promise<void> => {
+      await request(`/v1/sessions/${bot(botId)}/${session(sessionId)}/turns/${encodeURIComponent(requestId)}/stop`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+    },
 
     /**
      * One turn. Streams over XHR because a phone's fetch does not hand out a

@@ -55,6 +55,12 @@ class FakeHermes:
             ],
         }
         self.cron = True
+        self.run_starts = 0
+        self.run_state = 'completed'
+        self.detached_runs = {}
+        self.run_keys = {}
+        self.model_options: dict[str, dict] = {}
+        self.toolsets = []
         self.jobs: dict[str, list[dict]] = {
             "nova": [
                 {
@@ -182,6 +188,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         profile, rest = self._split()
+        if rest.startswith('/v1/runs/'):
+            if not self._authorised(profile):
+                return self._json(401, {'error': 'key'})
+            row = self.fake.detached_runs.get((profile, rest.split('/')[3]))
+            return self._json(200, row) if row else self._json(404, {'error': 'missing'})
         parsed = urlsplit(self.path)
         self.fake.calls.append(("GET", profile, rest))
         if not self._authorised(profile):
@@ -189,6 +200,9 @@ class _Handler(BaseHTTPRequestHandler):
 
         if rest == "/health/detailed":
             return self._json(200, {"ok": True})
+
+        if rest == '/v1/toolsets':
+            return self._json(200, {'platform': 'api_server', 'data': self.fake.toolsets})
 
         if rest == "/api/sessions":
             query = parse_qs(parsed.query)
@@ -224,6 +238,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(200, {"data": rows, "pagination": {"returned": len(rows)}})
 
         if rest == "/api/model/options":
+            override = self.fake.model_options.get(profile)
+            if override is not None:
+                return self._json(200, override)
             return self._json(
                 200,
                 {
@@ -251,6 +268,26 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         profile, rest = self._split()
+        if rest == '/v1/runs':
+            if not self._authorised(profile):
+                return self._json(401, {'error': 'key'})
+            body = self._body()
+            key = (profile, self.headers.get('Idempotency-Key'))
+            if key not in self.fake.run_keys:
+                self.fake.run_starts += 1
+                rid = 'run_' + str(self.fake.run_starts)
+                self.fake.run_keys[key] = rid
+                self.fake.detached_runs[profile, rid] = {
+                    'run_id': rid, 'status': self.fake.run_state,
+                    'session_id': body.get('session_id'), 'output': 'Detached reply',
+                }
+            return self._json(202, {'run_id': self.fake.run_keys[key], 'status': self.fake.run_state})
+        if rest.startswith('/v1/runs/') and rest.endswith('/stop'):
+            if not self._authorised(profile):
+                return self._json(401, {'error': 'key'})
+            row = self.fake.detached_runs[profile, rest.split('/')[3]]
+            row['status'] = 'cancelled'
+            return self._json(200, row)
         self.fake.calls.append(("POST", profile, rest))
         if not self._authorised(profile):
             return self._json(401, {"error": {"message": "Invalid gateway API key"}})

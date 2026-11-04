@@ -61,6 +61,18 @@ jobs:
       - name: Check native chat and language screen lifecycles
         run: node scripts/test-native-screens.cjs
 
+      - name: Check turn recovery after disconnecting or reopening
+        run: node scripts/test-turn-recovery.cjs
+
+      - name: Check host-backed pins and active run restoration
+        run: node scripts/test-store-recovery.cjs
+
+      - name: Check Codex supervision screen
+        run: node scripts/test-codex-supervisor.cjs
+
+      - name: Check dedicated supervisor chat
+        run: node scripts/test-supervisor-chat.cjs
+
       - name: Check new bot profile names
         run: node scripts/test-bot-names.cjs
 

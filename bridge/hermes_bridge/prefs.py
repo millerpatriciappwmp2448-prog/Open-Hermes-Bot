@@ -16,7 +16,7 @@ import yaml
 
 from .config import Config
 
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 # The app was called Grok Bot before: those preferences are read once, so the
 # rename costs the person nothing.
@@ -60,3 +60,15 @@ def write(config: Config, prefs: dict) -> None:
         tmp = path.with_name(path.name + ".bridge-tmp")
         tmp.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
         os.replace(tmp, path)
+
+
+def pin(config: Config, bot: str, pinned: bool) -> dict:
+    """Patch one bot atomically, retaining all other preferences."""
+    with _lock:
+        saved = read(config)
+        pins = saved.get("mobilePinnedBots")
+        pins = dict(pins) if isinstance(pins, dict) else {}
+        pins[bot] = pinned
+        saved["mobilePinnedBots"] = pins
+        write(config, saved)
+        return saved

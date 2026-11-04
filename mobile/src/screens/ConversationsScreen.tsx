@@ -1,6 +1,6 @@
 import { t, useTranslation } from "../i18n";
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub, BloubGroup } from '../components/Bloub';
 import { PlusIcon, SearchIcon, SettingsIcon } from '../components/Icons';
@@ -79,6 +79,11 @@ export function ConversationsScreen() {
     navigation.navigate('Chat', { threadId: thread.id });
   }
 
+  async function changePin(threadId: string) {
+    try { await togglePin(threadId); setMenu(null); }
+    catch { Alert.alert(t('设置未保存，请重试。')); }
+  }
+
   function toggleSearch() {
     if (searchExpanded && query) {
       setQuery('');
@@ -146,7 +151,7 @@ export function ConversationsScreen() {
         <>
       {pinned.length > 0 ? (
         <View style={styles.pinned}>
-          <View style={styles.pinnedGrid}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pinnedGrid}>
             {pinned.map((thread) => (
               <Pressable
                 key={thread.id}
@@ -161,7 +166,7 @@ export function ConversationsScreen() {
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         </View>
       ) : null}
 
@@ -177,7 +182,7 @@ export function ConversationsScreen() {
             left={{
               label: thread.pinned ? t("取消置顶") : t("置顶"),
               glyph: '⌖',
-              onPress: () => togglePin(thread.id),
+              onPress: () => void changePin(thread.id),
             }}
             right={{
               label: thread.unread ? t("已读") : t("未读"),
@@ -199,7 +204,7 @@ export function ConversationsScreen() {
                 <View style={styles.threadTop}>
                   <Text numberOfLines={1} style={{ flex: 1 }}>
                     <Text style={styles.threadName}>{thread.name}</Text>
-                      {thread.description ? <Text style={styles.threadTag}> {thread.description}</Text> : null}
+                      {thread.tag ? <Text style={styles.threadTag}> {thread.tag}</Text> : null}
                   </Text>
                   <Text style={styles.threadTime}>{thread.time}</Text>
                 </View>
@@ -268,8 +273,7 @@ export function ConversationsScreen() {
                   name={menu.pinned ? t("取消置顶") : t("置顶会话")}
                   chevron={false}
                   onPress={() => {
-                    togglePin(menu.id);
-                    setMenu(null);
+                    void changePin(menu.id);
                   }}
                 />
                 <View style={styles.menuLine} />
@@ -367,7 +371,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
   },
   sectionCount: { color: INK.quiet, fontSize: 10 },
   pinnedGrid: { flexDirection: 'row', gap: 1 },
-  pinnedItem: { flex: 1, alignItems: 'center', gap: 4, paddingTop: 4, paddingBottom: 2 },
+  pinnedItem: { width: 82, flexShrink: 0, alignItems: 'center', gap: 4, paddingTop: 4, paddingBottom: 2 },
   pressed: { opacity: 0.6 },
   pinnedName: { color: INK.quiet, fontSize: 10, fontWeight: '500', textAlign: 'center' },
 

@@ -1,5 +1,5 @@
 import { t, useTranslation } from "../i18n";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -12,6 +12,8 @@ import { Sheet } from '../components/Sheet';
 import { Bloub } from '../components/Bloub';
 import { BackIcon, ChevronIcon, CloseIcon } from '../components/Icons';
 import { ModelList } from '../components/ModelList';
+import { ServerModelPicker } from '../components/ServerModelPicker';
+import type { ModelRef } from '../modelSelection';
 import { COLORS, DEFAULT_MODEL, SHAPES } from '../data';
 import type { BloubShape } from '../bloubFrames';
 import { useStore } from '../store';
@@ -33,7 +35,7 @@ export function NewAgentSheet({
 }) {
   const { styles, INK, scheme } = useStyles();
   useTranslation();
-  const { bots, prefs, connection, addBot, addGroup } = useStore();
+  const { bots, prefs, connection, modelOptions, addBot, addGroup } = useStore();
   const online = connection.status === 'connected';
   const window = useWindowDimensions();
   const [tab, setTab] = useState<'bot' | 'group'>('bot');
@@ -41,8 +43,16 @@ export function NewAgentSheet({
   const [shape, setShape] = useState<BloubShape>('capsule');
   const [color, setColor] = useState(COLORS[0]);
   const [model, setModel] = useState(prefs.defaultModel);
+  const [selectedModel, setSelectedModel] = useState<ModelRef | null>(null);
   const [pickingModel, setPickingModel] = useState(false);
   const [members, setMembers] = useState<string[]>(['atlas', 'june', 'chief']);
+
+  useEffect(() => {
+    if (!visible) {
+      setSelectedModel(null);
+      setModel(prefs.defaultModel);
+    }
+  }, [visible, prefs.defaultModel]);
 
   const ready = name.trim().length > 0 && (tab === 'bot' || members.length > 1);
 
@@ -50,7 +60,7 @@ export function NewAgentSheet({
     if (!ready) return;
     const id =
       tab === 'bot'
-        ? addBot({ name, shape, color, model })
+        ? addBot({ name, shape, color, model, selectedModel })
         : addGroup({ name: name || t("团队"), members, model });
     onClose();
     onCreated?.(id);
@@ -81,13 +91,22 @@ export function NewAgentSheet({
 
       {pickingModel ? (
         <View style={[styles.picker, { height: Math.round(window.height * 0.45) }]}>
-          <ModelList
-            selected={model}
-            onPick={(picked) => {
-              setModel(picked);
-              setPickingModel(false);
-            }}
-          />
+          {online ? (
+            <ServerModelPicker
+              botId={bots.find((bot) => bot.primary)?.id || 'default'}
+              draftPick={selectedModel}
+              onDraftPick={setSelectedModel}
+              onPicked={() => setPickingModel(false)}
+            />
+          ) : (
+            <ModelList
+              selected={model}
+              onPick={(picked) => {
+                setModel(picked);
+                setPickingModel(false);
+              }}
+            />
+          )}
         </View>
       ) : (
         <>
@@ -201,7 +220,11 @@ export function NewAgentSheet({
               <View style={styles.card}>
                 <Pressable style={styles.row} onPress={() => setPickingModel(true)}>
                   <View style={styles.rowCopy}>
-                    <Text style={styles.rowName}>{model || DEFAULT_MODEL}</Text>
+                    <Text style={styles.rowName}>
+                      {online
+                        ? selectedModel?.model || modelOptions[bots.find((bot) => bot.primary)?.id || 'default']?.current || t('跟随服务器')
+                        : model || DEFAULT_MODEL}
+                    </Text>
                     <Text style={styles.rowMeta}>{online ? t('从服务器可用模型中选择') : t('演示模型')}</Text>
                   </View>
                   <ChevronIcon />

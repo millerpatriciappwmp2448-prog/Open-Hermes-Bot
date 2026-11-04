@@ -1,12 +1,12 @@
 import { english } from './translations';
 
 export type Language = 'zh' | 'en';
-export type LanguagePreference = Language | 'system';
+export type LanguagePreference = Language;
 export type Params = Readonly<Record<string, string | number>>;
 
 export function resolveLanguage(preference: LanguagePreference, systemLocale: string): Language {
-  if (preference !== 'system') return preference;
-  return /^zh(?:[-_]|$)/i.test(systemLocale) ? 'zh' : 'en';
+  // Only 'zh' and 'en' allowed; fallback to 'en' for invalid/legacy values
+  return preference === 'zh' ? 'zh' : 'en';
 }
 
 /** Interpolate once so user/server values are never recursively translated. */

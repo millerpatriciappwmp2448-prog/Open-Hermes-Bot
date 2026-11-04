@@ -31,6 +31,7 @@ export function BotSheet({
   const { botById, threads, updateBot, removeBot } = useStore();
   const bot = botId ? botById(botId) : undefined;
   const [name, setName] = useState(bot?.name ?? '');
+  const [tag, setTag] = useState(bot?.tag ?? '');
   const [shape, setShape] = useState<BloubShape>(bot?.shape ?? 'cercle');
   const [color, setColor] = useState(bot?.color ?? COLORS[0]);
   const [confirming, setConfirming] = useState(false);
@@ -44,6 +45,7 @@ export function BotSheet({
   useEffect(() => {
     if (!bot || !visible) return;
     setName(bot.name);
+    setTag(bot.tag ?? '');
     setShape(bot.shape);
     setColor(bot.color);
     // A question asked about another bot is not asked about this one.
@@ -60,7 +62,7 @@ export function BotSheet({
     if (busy) return;
     setSaving(true); setSaveError('');
     try {
-      await updateBot(bot!.id, { name: name.trim() || bot!.name, shape, color });
+      await updateBot(bot!.id, { name: name.trim() || bot!.name, tag: tag.trim(), shape, color });
       onClose();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : t('无法保存智能体。'));
@@ -97,6 +99,7 @@ export function BotSheet({
         </View>
 
         <Field label={t("名称")} value={name} onChange={setName} placeholder={t("智能体名称")} editable={!busy} />
+        <Field label={t("角色标签")} value={tag} onChange={setTag} placeholder={t("例如：研究助理")} editable={!busy} />
 
         <SectionLabel>{t("形状")}</SectionLabel>
         <View style={styles.shapeGrid}>

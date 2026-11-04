@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import secrets
 import threading
 import time
 import traceback
@@ -24,6 +25,9 @@ from .devices import Devices, Pairing
 from .hermes import Hermes, HermesError
 from .profiles import BotError
 from .monitor import Monitor, gateway_stats
+from .turns import Turns
+from .codex import CodexCompanion, parse_review, review_prompt, require_analysis_profile
+from .codex_agent import CodexAgent
 
 log = logging.getLogger("hermes_bridge")
 
@@ -54,7 +58,11 @@ class Bridge:
         self.devices = Devices(config)
         self.pairing = Pairing(config)
         self.hermes = Hermes(config)
+        self.turns = Turns(config, self.hermes)
         self.monitor = Monitor(config.hermes_home)
+        self.codex = CodexCompanion(config)
+        self.codex_agent = CodexAgent(config, self.hermes, self.codex)
+        self.codex_review_lock = threading.Lock()
 
 
 ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
@@ -68,7 +76,17 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("PATCH", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_update", False),
     ("DELETE", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_delete", False),
     ("GET", re.compile(r"^/v1/models$"), "_models", False),
+    ("PUT", re.compile(r"^/v1/bots/(?P<bot>[^/]+)/pin$"), "_pin", False),
+    ("GET", re.compile(r"^/v1/active-turns$"), "_active_turns", False),
+    ("PUT", re.compile(r"^/v1/sessions/(?P<bot>[^/]+)/(?P<session>[^/]+)/turns/(?P<request>[A-Za-z0-9_-]{1,100})$"), "_start_turn", False),
+    ("GET", re.compile(r"^/v1/sessions/(?P<bot>[^/]+)/(?P<session>[^/]+)/turns/(?P<request>[A-Za-z0-9_-]{1,100})$"), "_get_turn", False),
+    ("POST", re.compile(r"^/v1/sessions/(?P<bot>[^/]+)/(?P<session>[^/]+)/turns/(?P<request>[A-Za-z0-9_-]{1,100})/stop$"), "_stop_turn", False),
     ("GET", re.compile(r"^/v1/monitor$"), "_monitor", False),
+    ("GET", re.compile(r"^/v1/codex/(?P<operation>status|threads)$"), "_codex_read", False),
+    ("POST", re.compile(r"^/v1/codex/agent$"), "_codex_agent", False),
+    ("POST", re.compile(r"^/v1/codex/agent/tool$"), "_codex_agent_tool", False),
+    ("POST", re.compile(r"^/v1/codex/(?P<operation>watch|pause)$"), "_codex_write", False),
+    ("POST", re.compile(r"^/v1/codex/review$"), "_codex_review", False),
     ("GET", re.compile(r"^/v1/jobs$"), "_jobs", False),
     ("POST", re.compile(r"^/v1/jobs$"), "_job_create", False),
     (
@@ -212,7 +230,8 @@ class Handler(BaseHTTPRequestHandler):
                     continue
                 if not public:
                     token = self._bearer()
-                    if not token or not self.bridge.devices.verify(token):
+                    authorized = self.bridge.codex_agent.authorized(token) if name == "_codex_agent_tool" else self.bridge.devices.verify(token)
+                    if not token or not authorized:
                         raise ApiError(
                             401,
                             "unauthorized",
@@ -434,6 +453,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _bot_create(self, match, query) -> int:
         body = self._json_body()
+        chosen_model = body.get("model")
+        if chosen_model is not None:
+            if not isinstance(chosen_model, dict):
+                raise BotError(400, "bad_model", "A model choice must include a model and provider.")
+            model_name = str(chosen_model.get("model") or "").strip()[:240]
+            provider = str(chosen_model.get("provider") or "").strip()[:120]
+            if not model_name:
+                raise BotError(400, "bad_model", "A model choice must include a model and provider.")
+        else:
+            model_name = ""
+            provider = ""
         bot = profiles.create_bot(
             self.config,
             name=str(body.get("name") or ""),
@@ -442,7 +472,14 @@ class Handler(BaseHTTPRequestHandler):
             shape=str(body.get("shape") or ""),
             description=str(body.get("description") or ""),
             soul_role=body.get("soul") is True,
+            tag=str(body.get("tag") or ""),
         )
+        if model_name:
+            current_prefs = prefs.read(self.config)
+            picks = current_prefs.get("picks") if isinstance(current_prefs.get("picks"), dict) else {}
+            picks[bot["profile"]] = {"model": model_name, "provider": provider}
+            current_prefs["picks"] = picks
+            prefs.write(self.config, current_prefs)
         return self._json(201, {"bot": bot})
 
     def _bot_update(self, match, query) -> int:
@@ -471,6 +508,89 @@ class Handler(BaseHTTPRequestHandler):
             code = "unsupported" if exc.status in (404, 405, 501) else "unavailable"
             gateway = {"available": False, "error": code}
         return self._json(200, {"resources": resources, "gateway": gateway})
+
+    def _codex_read(self, match, query) -> int:
+        return self._json(200, self.bridge.codex.call('GET', '/' + param(match, 'operation')))
+
+    def _codex_agent(self, match, query) -> int:
+        port = self.server.server_address[1]
+        bot = self.bridge.codex_agent.ensure(f"http://127.0.0.1:{port}")
+        return self._json(200, {"bot": bot})
+
+    def _codex_agent_tool(self, match, query) -> int:
+        body = self._json_body()
+        name, args = body.get("name"), body.get("arguments")
+        conversation = []
+        if isinstance(args, dict) and "directiveId" in args:
+            try:
+                directive = self.bridge.codex_agent._current(args["directiveId"])
+                if directive.get("session"):
+                    page = self.bridge.hermes.message_page(directive["bot"], directive["session"], limit=8, offset=0)
+                    messages = page.get("messages", [])
+                    # Keep only user and assistant messages for context
+                    conversation = [{"role": msg["role"], "content": msg["content"]}
+                                    for msg in messages if msg["role"] in ("user", "assistant")]
+            except Exception:
+                # Conversation loading is advisory; do not fail the tool call.
+                pass
+        return self._json(200, self.bridge.codex_agent.tool(name, args, conversation))
+
+    def _codex_write(self, match, query) -> int:
+        body = self._json_body()
+        operation = param(match, 'operation')
+        if operation == 'watch':
+            profile = body.get('profile')
+            if not isinstance(profile, str):
+                raise ApiError(400, 'bad_watch', 'Choose a Hermes review agent.')
+            profiles.get_bot(self.config, profile)
+        return self._json(200, self.bridge.codex.call('POST', '/' + operation, body))
+
+    def _codex_review(self, match, query) -> int:
+        body = self._json_body()
+        spec, evidence = body.get('spec'), body.get('evidence')
+        if not isinstance(spec, dict) or not isinstance(evidence, dict) or len(json.dumps(body)) > 64000:
+            raise ApiError(400, 'bad_watch', 'Send a bounded goal and recent evidence.')
+        profile = spec.get('profile')
+        if not isinstance(profile, str) or not isinstance(spec.get('goal'), str) or not 1 <= len(spec['goal']) <= 8000:
+            raise ApiError(400, 'bad_watch', 'Choose a Hermes review agent and a goal.')
+        profiles.get_bot(self.config, profile)
+        profile = self.bridge.codex_agent.review_profile(profile)
+        model, provider = spec.get('model') or '', spec.get('provider') or ''
+        if not isinstance(model, str) or len(model) > 240 or not isinstance(provider, str) or len(provider) > 120:
+            raise ApiError(400, 'bad_watch', 'Choose a valid model and provider.')
+        if not self.bridge.codex_review_lock.acquire(blocking=False):
+            raise ApiError(409, 'codex_review_busy', 'Another supervision review is running.')
+        try:
+            require_analysis_profile(self.config, profile)
+            self.bridge.hermes.require_analysis_tools(profile)
+            # Each assessment has a fresh session so previous evidence cannot
+            # masquerade as the currently observed turn.
+            session = self.bridge.hermes.create_session(profile, 'Codex supervision review')
+            stream = self.bridge.hermes.stream_turn(profile, session['id'], review_prompt(spec, evidence), model, provider)
+            text = ''
+            try:
+                for event, data in stream:
+                    if event == 'assistant.delta' and isinstance(data.get('delta'), str):
+                        text += data['delta']
+                    elif event == 'assistant.completed' and not text:
+                        final = data.get('text') or data.get('content')
+                        if not isinstance(final, str) and isinstance(data.get('message'), dict):
+                            final = data['message'].get('content')
+                        if isinstance(final, str):
+                            text = final
+                    elif event in ('error', 'run.failed', 'run.cancelled'):
+                        raise HermesError(502, 'codex_review_failed', 'The supervision model could not complete its review.')
+                    elif event == 'tool.started':
+                        raise HermesError(502, 'codex_review_failed', 'The review agent attempted a tool action; use an agent configured for analysis only.')
+                    if len(text) > 16000:
+                        raise HermesError(502, 'codex_review_failed', 'The supervision review was too large.')
+                    if event == 'done':
+                        break
+            finally:
+                stream.close()
+            return self._json(200, parse_review(text))
+        finally:
+            self.bridge.codex_review_lock.release()
 
     # ------------------------------------------------------------- schedules
 
@@ -647,6 +767,41 @@ class Handler(BaseHTTPRequestHandler):
 
     # -------------------------------------------------------------- turns
 
+    def _start_turn(self, match, query):
+        bot = param(match, "bot")
+        profiles.get_bot(self.config, bot)
+        body = self._json_body()
+        message = str(body.get("message") or "")
+        if not message.strip():
+            raise ApiError(400, "empty_message", "An empty message is not a turn.")
+        session, request = param(match, "session"), param(match, "request")
+        model, provider = str(body.get("model") or "")[:200], str(body.get("provider") or "")[:80]
+        directive = self.bridge.codex_agent.accept(bot, session, request, message, model, provider)
+        instructions = self.bridge.codex_agent.instructions(directive) if directive else ""
+        run = self.bridge.turns.start(bot, session, request, message, model, provider, instructions=instructions)
+        return self._json(202, {"run": run})
+
+    def _get_turn(self, match, query):
+        bot = param(match, "bot")
+        profiles.get_bot(self.config, bot)
+        return self._json(200, {"run": self.bridge.turns.get(bot, param(match, "session"), param(match, "request"))})
+
+    def _active_turns(self, match, query):
+        return self._json(200, {"runs": self.bridge.turns.active()})
+
+    def _stop_turn(self, match, query):
+        bot = param(match, "bot")
+        profiles.get_bot(self.config, bot)
+        return self._json(200, {"run": self.bridge.turns.stop(bot, param(match, "session"), param(match, "request"))})
+
+    def _pin(self, match, query):
+        bot = param(match, "bot")
+        profiles.get_bot(self.config, bot)
+        body = self._json_body()
+        if not isinstance(body.get("pinned"), bool):
+            raise ApiError(400, "bad_prefs", "Pinned must be a boolean.")
+        return self._json(200, {"prefs": prefs.pin(self.config, bot, body["pinned"])})
+
     def _turn(self, match, query) -> int:
         bot_id = param(match, "bot")
         session_id = param(match, "session")
@@ -658,6 +813,8 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "empty_message", "An empty message is not a turn.")
         model = str(body.get("model") or "").strip()[:200]
         provider = str(body.get("provider") or "").strip()[:80]
+        directive = self.bridge.codex_agent.accept(bot_id, session_id, "legacy-" + secrets.token_hex(16), message, model, provider)
+        instructions = self.bridge.codex_agent.instructions(directive) if directive else ""
         if not self.bridge.hermes.key_for(profile):
             raise ApiError(
                 409,
@@ -685,7 +842,8 @@ class Handler(BaseHTTPRequestHandler):
                 payload["revision"] = revision
             self._sse("todos", payload)
 
-        stream = self.bridge.hermes.stream_turn(profile, session_id, message, model, provider)
+        options = {"instructions": instructions} if instructions else {}
+        stream = self.bridge.hermes.stream_turn(profile, session_id, message, model, provider, **options)
         try:
             for event, data in stream:
                 if event == "assistant.delta" and data.get("delta"):

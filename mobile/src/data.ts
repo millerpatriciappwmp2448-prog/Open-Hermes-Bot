@@ -13,9 +13,12 @@ export type Bot = {
   color: string;
   role: string;
   session: string;
+  /** Short, editable role label shown beside the name in the conversation list. */
+  tag?: string;
   /** What the bot is for, as written in its SOUL.md on the server. */
   description?: string;
   primary?: boolean;
+  capabilities?: string[];
 };
 
 export type Reaction = { emoji: string; count: number };
@@ -55,6 +58,8 @@ export type Thread = {
   name: string;
   /** The bot's role or description. */
   description?: string;
+  /** Independent short role label; never inferred from the description. */
+  tag?: string;
   preview: string;
   time: string;
   unread?: boolean;

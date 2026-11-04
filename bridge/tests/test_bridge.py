@@ -45,6 +45,7 @@ class BridgeTest(unittest.TestCase):
                             "title": "Nova",
                             "color": "#2fbfa0",
                             "shape": "goutte",
+                            "tag": "研究助理",
                         }
                     },
                     "description": "Notes and recall",
@@ -235,6 +236,7 @@ class BridgeTest(unittest.TestCase):
         self.assertNotIn("key-primary", env)
         meta = yaml.safe_load((profile / "profile.yaml").read_text(encoding="utf-8"))
         self.assertEqual(meta["ui_meta"]["hermes-bots"]["title"], "Atlas")
+        self.assertEqual(body["bot"]["tag"], "")
         self.assertEqual(
             (profile / "SOUL.md").read_text(encoding="utf-8"),
             "You are Atlas, briefly.\n",
@@ -259,8 +261,21 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(meta["ui_meta"]["hermes-bots"]["title"], "Nova Deux")
         self.assertEqual(meta["ui_meta"]["hermes-bots"]["color"], "#123456")
         self.assertEqual(meta["ui_meta"]["hermes-bots"]["shape"], "goutte")
+        self.assertEqual(meta["ui_meta"]["hermes-bots"]["tag"], "研究助理")
         status, body = self.call("PATCH", "/v1/bots/nova", {"color": "javascript:"})
         self.assertEqual(status, 400)
+
+    def test_create_bot_persists_tag_separately_from_description(self):
+        status, body = self.call("POST", "/v1/bots", {
+            "name": "researcher", "title": "Researcher",
+            "tag": "研究助理", "description": "分析用户提供的研究材料。",
+        })
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["bot"]["tag"], "研究助理")
+        self.assertEqual(body["bot"]["description"], "分析用户提供的研究材料。")
+        self.assertEqual(body["bot"]["role"], "")
+        meta = yaml.safe_load((self.home / "profiles" / "researcher" / "profile.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(meta["ui_meta"]["hermes-bots"]["tag"], "研究助理")
 
     def test_deleting_a_bot_leaves_a_tombstone_and_keeps_the_bytes(self):
         self.call("POST", "/v1/bots", {"name": "rook", "title": "Rook"})
@@ -591,6 +606,129 @@ class BridgeTest(unittest.TestCase):
         status, body = self.call("PATCH", "/v1/bots/nova", {"description": "just a label"})
         self.assertEqual(status, 200, body)
         self.assertEqual(soul.read_text(encoding="utf-8"), "Hand written.\n")
+
+    def test_a_role_tag_is_separate_from_description_and_soul(self):
+        soul = self.home / "profiles" / "nova" / "SOUL.md"
+        soul.write_text("Hand written role instructions.\n", encoding="utf-8")
+
+        status, body = self.call("GET", "/v1/bots")
+        self.assertEqual(status, 200, body)
+        nova = {bot["id"]: bot for bot in body["bots"]}["nova"]
+        self.assertEqual(nova["tag"], "研究助理")
+        self.assertEqual(nova["description"], "Notes and recall")
+
+        status, body = self.call("PATCH", "/v1/bots/nova", {"tag": "项目研究"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["bot"]["tag"], "项目研究")
+        self.assertEqual(body["bot"]["description"], "Notes and recall")
+        self.assertEqual(soul.read_text(encoding="utf-8"), "Hand written role instructions.\n")
+
+        status, body = self.call("PATCH", "/v1/bots/nova", {"tag": ""})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["bot"]["tag"], "")
+
+    def test_model_options_are_read_from_each_profile(self):
+        self.fake.model_options["nova"] = {
+            "model": "openai/gpt-custom",
+            "provider": "auto",
+            "providers": [{"slug": "openai", "name": "OpenAI", "authenticated": True,
+                           "models": [{"id": "gpt-custom", "name": "GPT Custom"}]}],
+        }
+        status, body = self.call("GET", "/v1/models?bot=nova")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["models"]["current"], "gpt-custom")
+        self.assertEqual(body["models"]["currentProvider"], "openai")
+        self.assertEqual(body["models"]["providers"][0]["models"][0]["id"], "gpt-custom")
+
+    def test_create_bot_saves_its_model_choice_for_its_own_profile(self):
+        (self.home / "profile.yaml").write_text(yaml.safe_dump({
+            "ui_meta": {"hermes-bot": {
+                "hidden": ["keep"],
+                "picks": {"nova": {"model": "nova-model", "provider": "private"}},
+            }},
+        }), encoding="utf-8")
+        status, body = self.call("POST", "/v1/bots", {
+            "name": "writer", "title": "Writer",
+            "model": {"model": "gpt-custom", "provider": "openai"},
+        })
+        self.assertEqual(status, 201, body)
+        saved = yaml.safe_load((self.home / "profile.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(saved["ui_meta"]["hermes-bot"]["picks"]["writer"], {
+            "model": "gpt-custom", "provider": "openai",
+        })
+        self.assertEqual(saved["ui_meta"]["hermes-bot"]["picks"]["nova"], {
+            "model": "nova-model", "provider": "private",
+        })
+        self.assertEqual(saved["ui_meta"]["hermes-bot"]["hidden"], ["keep"])
+
+    def test_create_bot_rejects_empty_model_choice(self):
+        status, body = self.call("POST", "/v1/bots", {
+            "name": "writer", "model": {"model": "", "provider": "openai"},
+        })
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "bad_model")
+
+    def test_codex_routes_require_pairing_and_only_forward_fixed_operations(self):
+        with patch.object(self.server.bridge.codex, 'call', return_value={'enabled': False}) as companion:
+            for method, path in [('GET', '/v1/codex/status'), ('GET', '/v1/codex/threads'),
+                                 ('POST', '/v1/codex/watch'), ('POST', '/v1/codex/pause')]:
+                status, _ = self.call(method, path, {} if method == 'POST' else None, token=False)
+                self.assertEqual(status, 401)
+            companion.assert_not_called()
+            status, body = self.call('GET', '/v1/codex/status')
+            self.assertEqual(status, 200, body)
+            companion.assert_called_with('GET', '/status')
+            status, body = self.call('POST', '/v1/codex/watch', {
+                'profile': 'nova', 'threadId': 'chat', 'goal': 'Finish the change', 'reviewEnabled': True,
+            })
+            self.assertEqual(status, 200, body)
+            self.assertEqual(companion.call_args.args[1], '/watch')
+            status, _ = self.call('POST', '/v1/codex/send', {'prompt': 'arbitrary'})
+            self.assertEqual(status, 404)
+
+    def test_codex_review_uses_selected_profile_and_model_and_rejects_bad_output(self):
+        (self.home / 'profiles' / 'nova' / 'config.yaml').write_text(yaml.safe_dump({
+            'platform_toolsets': {'api_server': ['no_mcp']},
+        }), encoding='utf-8')
+        proposal = {'action': 'continue', 'analysis': 'Tests were skipped.', 'instruction': 'Run the tests.'}
+        def stream(*args):
+            yield 'assistant.delta', {'delta': json.dumps(proposal)}
+            yield 'done', {'ok': True}
+        with patch.object(self.server.bridge.hermes, 'stream_turn', side_effect=stream) as run:
+            status, body = self.call('POST', '/v1/codex/review', {
+                'spec': {'profile': 'nova', 'goal': 'Fix the bug', 'model': 'chosen', 'provider': 'private'},
+                'evidence': {'turnId': 't1', 'items': []},
+            })
+            self.assertEqual(status, 200, body)
+            self.assertEqual(body, proposal)
+            self.assertEqual(run.call_args.args[0], 'nova')
+            self.assertEqual(run.call_args.args[-2:], ('chosen', 'private'))
+        def bad_stream(*args):
+            yield 'assistant.delta', {'delta': 'bad output'}
+        with patch.object(self.server.bridge.hermes, 'stream_turn', side_effect=bad_stream):
+            status, body = self.call('POST', '/v1/codex/review', {
+                'spec': {'profile': 'nova', 'goal': 'Fix the bug'}, 'evidence': {},
+            })
+            self.assertEqual(status, 502, body)
+
+    def test_codex_review_refuses_tool_enabled_profiles_before_starting_a_turn(self):
+        with patch.object(self.server.bridge.hermes, 'stream_turn') as run:
+            status, body = self.call('POST', '/v1/codex/review', {
+                'spec': {'profile': 'nova', 'goal': 'Fix the bug'}, 'evidence': {},
+            })
+            self.assertEqual(status, 409, body)
+            run.assert_not_called()
+        (self.home / 'profiles' / 'nova' / 'config.yaml').write_text(yaml.safe_dump({
+            'platform_toolsets': {'api_server': ['no_mcp']},
+        }), encoding='utf-8')
+        self.fake.toolsets = [{'name': 'terminal', 'enabled': True}]
+        with patch.object(self.server.bridge.hermes, 'stream_turn') as run:
+            status, body = self.call('POST', '/v1/codex/review', {
+                'spec': {'profile': 'nova', 'goal': 'Fix the bug'}, 'evidence': {},
+            })
+            self.assertEqual(status, 409, body)
+            run.assert_not_called()
+
 
 
 if __name__ == "__main__":

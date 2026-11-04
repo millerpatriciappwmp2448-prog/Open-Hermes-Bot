@@ -47,5 +47,8 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Test Codex companion
+        run: node --test companion/tests/*.test.cjs
+
       - name: Coverage
         run: npm run test:coverage

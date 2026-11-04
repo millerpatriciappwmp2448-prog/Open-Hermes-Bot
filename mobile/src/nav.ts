@@ -6,6 +6,7 @@ export type RootStackParamList = {
   Chats: undefined;
   Settings: undefined;
   ServerStatus: undefined;
+  CodexSupervisor: undefined;
   Setup: undefined;
   Connection: undefined;
   Models: undefined;

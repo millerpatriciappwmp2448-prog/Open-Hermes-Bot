@@ -17,6 +17,7 @@ import sys
 import time
 import zlib
 from pathlib import Path
+from typing import Callable
 
 import yaml
 
@@ -172,7 +173,11 @@ def read_meta(config: Config, profile: str) -> dict:
         "title": str(bots.get("title") or "").strip(),
         "color": str(bots.get("color") or "").strip(),
         "shape": str(bots.get("shape") or "").strip(),
+        "tag": str(bots.get("tag") or "").strip()[:40],
         "description": str(data.get("description") or "").strip(),
+        "capabilities": bots.get("capabilities") if isinstance(bots.get("capabilities"), list) else [],
+        "managed": str(bots.get("managed") or ""),
+        "internal": bots.get("internal") is True,
     }
 
 
@@ -201,6 +206,12 @@ def write_meta(config: Config, profile: str, fields: dict) -> dict:
         bots["color"] = fields["color"]
     if "shape" in fields and fields["shape"]:
         bots["shape"] = fields["shape"]
+    if "tag" in fields:
+        tag = str(fields["tag"] or "").strip()[:40]
+        if tag:
+            bots["tag"] = tag
+        else:
+            bots.pop("tag", None)
     if "description" in fields:
         data["description"] = fields["description"]
         data["description_auto"] = False
@@ -224,6 +235,7 @@ def list_bots(config: Config) -> list[dict]:
             "profile": PRIMARY,
             "name": primary["title"] or "Hermes",
             "title": primary["title"],
+            "tag": primary["tag"],
             "description": primary["description"],
             "role": read_role(config, PRIMARY),
             "color": primary["color"] or color,
@@ -245,6 +257,8 @@ def list_bots(config: Config) -> list[dict]:
         if (root / ".deleted" / name).exists():
             continue
         meta = read_meta(config, name)
+        if meta["internal"]:
+            continue
         color, shape = face_for(name)
         bots.append(
             {
@@ -252,12 +266,14 @@ def list_bots(config: Config) -> list[dict]:
                 "profile": name,
                 "name": meta["title"] or name.replace("-", " ").title(),
                 "title": meta["title"],
+                "tag": meta["tag"],
                 "description": meta["description"],
                 "role": read_role(config, name),
                 "color": meta["color"] or color,
                 "shape": meta["shape"] or shape,
                 "primary": False,
                 "hasKey": bool(_env_key(config, name)),
+                "capabilities": meta["capabilities"],
             }
         )
     return bots
@@ -300,6 +316,8 @@ def create_bot(
     shape: str = "",
     description: str = "",
     soul_role: bool = False,
+    tag: str = "",
+    prepare: Callable[[Path], None] | None = None,
 ) -> dict:
     """Lay a new profile out, publish it in one rename, and ask the gateway.
 
@@ -326,6 +344,7 @@ def create_bot(
 
     title = (title or "").strip()[:80]
     description = (description or "").strip()[:600]
+    tag = (tag or "").strip()[:40]
     color = clean_color(color)
     shape = clean_shape(shape)
     if not color or not shape:
@@ -421,7 +440,14 @@ def create_bot(
                 (staging / "skins").mkdir(exist_ok=True)
 
         meta = {
-            "ui_meta": {"hermes-bots": {"title": title, "color": color, "shape": shape}},
+            "ui_meta": {
+                "hermes-bots": {
+                    "title": title,
+                    "color": color,
+                    "shape": shape,
+                    **({"tag": tag} if tag else {}),
+                }
+            },
             **({"description": description, "description_auto": False} if description else {}),
         }
         (staging / "profile.yaml").write_text(
@@ -438,11 +464,15 @@ def create_bot(
             if updated != existing:
                 soul.write_text(updated, encoding="utf-8")
 
+        if prepare is not None:
+            prepare(staging)
         os.replace(staging, final)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
     hot_serve(config, name)
+    if read_meta(config, name)["internal"]:
+        return {"id": name, "profile": name, "internal": True}
     return get_bot(config, name)
 
 
@@ -454,6 +484,8 @@ def update_bot(config: Config, bot_id: str, fields: dict) -> dict:
         cleaned["title"] = str(fields.get("title") or "").strip()[:80]
     if "description" in fields:
         cleaned["description"] = str(fields.get("description") or "").strip()[:600]
+    if "tag" in fields:
+        cleaned["tag"] = str(fields.get("tag") or "").strip()[:40]
     if "color" in fields:
         color = clean_color(str(fields.get("color") or ""))
         if not color:
