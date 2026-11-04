@@ -19,12 +19,12 @@ concurrency:
 jobs:
   build-ios:
     name: Build TrollStore IPA
-    # Use the ARM64 hosted pool; Intel jobs have failed before runner allocation.
-    runs-on: macos-26
+    # macOS 26 jobs have exhausted runner allocation; use the macOS 15 Intel pool.
+    runs-on: macos-15-intel
     timeout-minutes: 60
     env:
       CI: '1'
-      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     defaults:
       run:
         working-directory: mobile
