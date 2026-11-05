@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import http.client
 import os
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,6 +17,18 @@ from .hermes import HermesError
 
 MAX_RESPONSE = 1024 * 1024
 OPERATIONS = {('GET', '/status'), ('GET', '/threads'), ('POST', '/watch'), ('POST', '/pause'), ('POST', '/read')}
+
+
+class UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP through a private SSH-forwarded socket shared with a container."""
+    def __init__(self, path: str, timeout: float):
+        super().__init__('localhost', timeout=timeout)
+        self.path = path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.path)
 
 
 def require_analysis_profile(config: Config, profile: str) -> None:
@@ -39,6 +53,15 @@ class CodexCompanion:
             raise HermesError(400, 'bad_watch', 'Unknown Codex supervision operation.')
         url = os.environ.get('HERMES_CODEX_URL', '')
         token = os.environ.get('HERMES_CODEX_TOKEN', '').strip()
+        unix_path = os.environ.get('HERMES_CODEX_SOCKET', '')
+        if not url and not unix_path:
+            try:
+                saved = json.loads((self.config.state_dir / 'codex-companion.json').read_text(encoding='utf-8'))
+                if isinstance(saved, dict):
+                    unix_path = saved.get('socket', '')
+                    token = token or saved.get('token', '')
+            except (OSError, ValueError):
+                pass
         # A local installation can share the companion token file. A remote host
         # supplies the token through its service environment and uses an SSH tunnel.
         if not token and url:
@@ -46,8 +69,26 @@ class CodexCompanion:
                 token = (self.config.hermes_home / 'codex-supervisor' / 'token').read_text(encoding='utf-8').strip()
             except OSError:
                 pass
-        if not url or not token:
+        if (not url and not unix_path) or not isinstance(token, str) or not token:
             raise HermesError(409, 'codex_not_configured', 'Configure the local Codex companion connection on the Hermes host.')
+        if unix_path:
+            if not isinstance(unix_path, str) or not unix_path.startswith('/') or '\x00' in unix_path:
+                raise HermesError(409, 'codex_not_configured', 'Configure an absolute private companion socket path.')
+            connection = UnixHTTPConnection(unix_path, timeout=min(self.config.request_timeout, 25))
+            try:
+                connection.request(method, path, body=None if body is None else json.dumps(body).encode('utf-8'),
+                    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json', 'Accept': 'application/json'})
+                response = connection.getresponse()
+                if response.status == 400:
+                    raise HermesError(400, 'bad_watch', 'Choose a Codex chat, a supervision goal and a Hermes agent.')
+                if response.status < 200 or response.status >= 300:
+                    raise HermesError(502, 'codex_unavailable', 'The Codex companion refused the request. Check its service and connection.')
+                raw = response.read(MAX_RESPONSE + 1)
+            except (OSError, http.client.HTTPException):
+                raise HermesError(502, 'codex_unavailable', 'Cannot reach the companion on the Codex computer. Check its service and tunnel.') from None
+            finally:
+                connection.close()
+            return self._decode(raw)
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != 'http' or parsed.hostname not in ('127.0.0.1', 'localhost', '::1') or '@' in parsed.netloc or parsed.path not in ('', '/') or parsed.query or parsed.fragment:
             raise HermesError(409, 'codex_not_configured', 'The Codex companion must be reached through a loopback address or an SSH tunnel.')
@@ -68,6 +109,10 @@ class CodexCompanion:
             raise HermesError(502, 'codex_unavailable', 'The Codex companion refused the request. Check its service and pairing token.') from exc
         except (OSError, urllib.error.URLError) as exc:
             raise HermesError(502, 'codex_unavailable', 'Cannot reach the companion on the Codex computer. Check its service and tunnel.') from exc
+        return self._decode(raw)
+
+    @staticmethod
+    def _decode(raw: bytes) -> dict:
         try:
             if len(raw) > MAX_RESPONSE:
                 raise ValueError('large response')

@@ -131,6 +131,7 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ),
     ("POST", re.compile(r"^/v1/attachments$"), "_attachment", False),
     ("POST", re.compile(r"^/v1/voice$"), "_voice", False),
+    ("GET", re.compile(r"^/v1/voice$"), "_voice_status", False),
     ("GET", re.compile(r"^/v1/prefs$"), "_prefs_read", False),
     ("PUT", re.compile(r"^/v1/prefs$"), "_prefs_write", False),
     ("GET", re.compile(r"^/v1/sections$"), "_sections_read", False),
@@ -909,11 +910,20 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(201, saved)
 
     def _voice(self, match, query) -> int:
+        mime = (self.headers.get("Content-Type") or "audio/mp4").split(";")[0].strip().lower()
+        if mime not in media.AUDIO_TYPES:
+            raise ApiError(415, "bad_audio", "Select a supported audio recording.")
         data = self._raw_body()
-        mime = (self.headers.get("Content-Type") or "audio/m4a").split(";")[0]
         saved = media.save_upload(self.config, f"voice.{media.audio_extension(mime)}", mime, data)
-        transcript = media.transcribe(self.config, Path(saved["path"]))
-        return self._json(200, {"transcript": transcript, "path": saved["path"]})
+        path = Path(saved["path"])
+        try:
+            transcript = media.transcribe(self.config, path)
+        finally:
+            path.unlink(missing_ok=True)
+        return self._json(200, {"transcript": transcript})
+
+    def _voice_status(self, match, query) -> int:
+        return self._json(200, media.voice_status(self.config))
 
     # ------------------------------------------------------------- prefs
 

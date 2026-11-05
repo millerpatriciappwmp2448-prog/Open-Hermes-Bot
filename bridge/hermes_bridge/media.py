@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import subprocess
+import sys
 import time
 from pathlib import Path
 from urllib.parse import unquote
@@ -26,6 +27,7 @@ AUDIO_TYPES = {
     "audio/wave": "wav",
     "audio/mpeg": "mp3",
     "audio/mp4": "m4a",
+    "audio/m4a": "m4a",
     "audio/x-m4a": "m4a",
     "audio/ogg": "ogg",
     "audio/webm": "webm",
@@ -72,9 +74,24 @@ def save_upload(config: Config, filename: str, mime: str, data: bytes) -> dict:
     }
 
 
-def _hermes_python(home: Path) -> str:
-    candidates = sorted(glob.glob(str(home / "tools" / "python-*" / "bin" / "python3")))
-    return candidates[-1] if candidates else "python3"
+def _agent_home(config: Config) -> Path:
+    explicit = os.environ.get("HERMES_AGENT_HOME", "").strip()
+    candidates = [Path(explicit).expanduser()] if explicit else [
+        config.hermes_home / "hermes-agent", Path(sys.prefix).parent, Path.cwd(),
+    ]
+    for candidate in candidates:
+        if (candidate / "tools" / "transcription_tools.py").is_file():
+            return candidate.absolute()
+    raise MediaError(501, "no_transcription", "Hermes transcription tools are unavailable.")
+
+
+def _hermes_python(agent_home: Path) -> str:
+    # Keep the venv path, not its symlink target: resolving it loses packages.
+    for relative in (".venv/bin/python", ".venv/Scripts/python.exe"):
+        candidate = agent_home / relative
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
 
 
 def _python_path(home: Path) -> str:
@@ -92,41 +109,42 @@ if agent_home:
     sys.path.insert(0, agent_home)
 
 try:
-    from tools.transcription_tools import transcribe_audio
-
-    print(json.dumps(transcribe_audio(sys.argv[1]), separators=(",", ":")))
+    from tools import transcription_tools as stt
+    loader = getattr(stt, "_load_stt_config", None)
+    resolver = getattr(stt, "_get_provider", None)
+    cfg = loader() if callable(loader) else {}
+    enabled = stt.is_stt_enabled(cfg) if hasattr(stt, "is_stt_enabled") else True
+    provider = resolver(cfg) if enabled and callable(resolver) else ("unknown" if enabled else "none")
+    available = enabled and provider not in ("none", "")
+    if sys.argv[1] == "--status":
+        answer = {"available": available, "provider": provider}
+    elif not available:
+        answer = {"success": False, "code": "no_transcription", "error": "Configure an available STT backend in Hermes."}
+    else:
+        answer = stt.transcribe_audio(sys.argv[1])
+    print(json.dumps(answer, separators=(",", ":")))
 except Exception as exc:
     print(json.dumps({"success": False, "transcript": "", "error": str(exc)}, separators=(",", ":")))
 """
 
 
-def transcribe(config: Config, path: Path) -> str:
-    """Hermes transcribes, with the python the gateway already runs.
-
-    The recording never leaves this machine; what comes back is words.
-    """
-
-    home = config.hermes_home
-    agent_home = home / "hermes-agent"
-    if not (agent_home / "tools" / "transcription_tools.py").is_file():
-        raise MediaError(
-            501,
-            "no_transcription",
-            "Hermes has no transcription tools installed on this machine.",
-        )
+def _run_transcription(config: Config, argument: str, timeout: int) -> dict:
+    agent_home = _agent_home(config)
     env = {
         **os.environ,
         "HERMES_AGENT_HOME": str(agent_home),
-        "PYTHONPATH": _python_path(home),
+        "HERMES_HOME": str(config.hermes_home),
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(agent_home), os.environ.get("PYTHONPATH", ""), _python_path(config.hermes_home)])),
     }
     try:
         result = subprocess.run(
-            [_hermes_python(home), "-", str(path)],
+            [_hermes_python(agent_home), "-", argument],
             input=TRANSCRIBE.encode("utf-8"),
             cwd=str(agent_home),
             env=env,
             capture_output=True,
-            timeout=180,
+            timeout=timeout,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -151,6 +169,24 @@ def transcribe(config: Config, path: Path) -> str:
             "transcription_failed",
             detail[-1] if detail else "The recording could not be transcribed.",
         )
+    return answer
+
+
+def voice_status(config: Config) -> dict:
+    """Probe Hermes' configured backend without recording or installing models."""
+    try:
+        answer = _run_transcription(config, "--status", 20)
+        return {"available": answer.get("available") is True,
+                "provider": str(answer.get("provider") or "none")}
+    except MediaError:
+        return {"available": False, "provider": "none"}
+
+
+def transcribe(config: Config, path: Path) -> str:
+    """Use Hermes' STT configuration; a configured cloud backend may upload audio."""
+    answer = _run_transcription(config, str(path), 180)
+    if answer.get("code") == "no_transcription":
+        raise MediaError(501, "no_transcription", "Configure an available STT backend in Hermes.")
     if not answer.get("success"):
         raise MediaError(
             502,

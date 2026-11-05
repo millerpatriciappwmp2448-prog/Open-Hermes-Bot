@@ -59,6 +59,23 @@ The reverse tunnel and companion must keep running. Do not expose port 8770 on a
 public interface. No SSH destination or service configuration is changed by the
 companion scripts.
 
+If the bridge runs inside Docker, host loopback is not container loopback. Use
+a private Unix socket under an existing bind mount instead. On the bridge, set
+`HERMES_CODEX_SOCKET` to the **container** path and `HERMES_CODEX_TOKEN` to the
+companion token. Alternatively, write `codex-companion.json` in the bridge's
+state directory with `socket` and `token` fields, owned by the bridge user with
+mode `0600`. Explicit service environment settings take precedence.
+
+The repository includes `companion/ssh_tunnel.py` for this case. Run it on the
+Codex computer with `--host`, `--identity`, `--socket` (the **host** path), and
+`--state-dir`. It reconnects after network interruptions and removes only stale
+sockets it owns. Add `--group-readable` when the socket directory's inherited
+group is the bridge user's group. Give the SSH user only the required directory
+traverse/write permissions; do not open the entire Hermes data directory.
+On Windows, start the helper with `Start-Process -WindowStyle Hidden` and quoted
+absolute arguments. It must remain running with the companion; restart it after
+a computer reboot. It creates no public listener and does not enable a watch.
+
 For model review, set these variables in the companion's environment **before**
 starting it:
 
