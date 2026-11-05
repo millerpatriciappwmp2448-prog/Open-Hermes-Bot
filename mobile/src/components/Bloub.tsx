@@ -193,13 +193,13 @@ type Gaze = { yaw: number; pitch: number };
 type ActKind = 'wink' | 'tour' | 'squint';
 type Act = { kind: ActKind; at: number; until: number };
 const ACT_SECONDS: Record<ActKind, number> = { wink: 0.6, tour: 1.5, squint: 1 };
+type FaceFrame = BotFrame & { bodyTransform: string };
 
 /**
  * Drives one face. The engine is a pure function of time and already blinks,
  * drifts the gaze and breathes; this decides where the face looks and when it
- * does something. The body stays put while the eyes travel over it, which
- * reads as the head turning: rest in the upper right, then a glance left, down
- * or up, and back. Every 5-9 s it does one small thing: a wink, a squint, or a
+ * does something. The eyes turn across the face while the body gently tilts
+ * with them, without squashing its chosen shape. Every 5-9 s it does one small thing: a wink, a squint, or a
  * spin that carries both eyes once round the ball (round faces only). Coloured
  * rings appear only while the agent works: the face looks up and to the right
  * and three slow rings fade in around it, then fade out when it is done.
@@ -298,7 +298,7 @@ class FaceDriver {
   private glance(t: number) {
     let hold: number;
     if (this.away) {
-      this.goal = this.rest;
+      this.goal = this.active ? this.busy : this.rest;
       this.away = false;
       hold = this.span(1.4, 3.2);
     } else {
@@ -317,7 +317,7 @@ class FaceDriver {
 
   private startAct(t: number) {
     const r = this.rand();
-    let kind: ActKind = r < 0.5 ? 'wink' : r < 0.8 ? 'tour' : 'squint';
+    let kind: ActKind = r < 0.5 ? 'wink' : r < 0.8 && !this.active ? 'tour' : 'squint';
     // A spin starts from a settled look, so the eyes do not jump into it.
     if (kind === 'tour' && (this.shape !== 'cercle' || t - this.lookAt < 1.2)) {
       kind = r < 0.65 ? 'wink' : 'squint';
@@ -362,11 +362,14 @@ class FaceDriver {
       const act = this.act;
       this.act = null;
       if (this.expr !== this.tools.neutral) this.wear(this.tools.neutral, t);
-      // Working: the face turns up and to the right, towards the rings, and
-      // holds there. The body never changes into the engine's thinking dots.
+      // Start looking towards the rings, then keep glancing while working.
+      // Keep the chosen silhouette instead of the engine's thinking dots.
       this.goal = this.busy;
       this.away = false;
       this.engine.setLook(this.look(this.busy), t, act?.kind === 'tour' ? 0.3 : 0.6);
+      this.lookAt = t;
+      this.nextLookAt = t + this.span(1, 2);
+      this.nextActAt = t + this.span(3, 6);
     } else {
       this.goal = this.rest;
       this.away = false;
@@ -384,10 +387,21 @@ class FaceDriver {
     return this.ringFrom + ((this.active ? 1 : 0) - this.ringFrom) * k;
   }
 
-  frame(now: number): BotFrame {
+  frame(now: number): FaceFrame {
     const t = this.time(now);
-    if (!this.active) this.update(t);
-    const base = this.engine.sample(t);
+    this.update(t);
+    // Keep the phase independent of active/idle changes and the engine rewind.
+    // Move the body AND its eye mask together; orbit paths remain outside
+    // this group, so they do not drag the face around with them.
+    const phase = now - this.ringEpoch;
+    const strength = this.ringLevel(now);
+    const turn = Math.sin(phase * Math.PI * 2 / 6.8);
+    // The engine already adds subtle breathing. A second non-uniform scale
+    // exaggerated it into visible deformation, especially on round faces.
+    const rotation = (2.5 + 1.5 * strength) * turn;
+    const lift = (1.5 + 2 * strength) * Math.sin(phase * Math.PI * 2 / 5.3);
+    const bodyTransform = `translate(0 ${lift.toFixed(3)}) rotate(${rotation.toFixed(3)})`;
+    const base: FaceFrame = { ...this.engine.sample(t), bodyTransform };
     const level = this.rings ? this.ringLevel(now) : 0;
     if (level <= 0.01) return base;
     const rt = now - this.ringEpoch;
@@ -397,7 +411,8 @@ class FaceDriver {
   }
 }
 
-function sameFrame(a: BotFrame, b: BotFrame) {
+function sameFrame(a: FaceFrame, b: FaceFrame) {
+  if (a.bodyTransform !== b.bodyTransform) return false;
   if (a.bodyPath !== b.bodyPath || a.bodyAlpha !== b.bodyAlpha || a.dotsBehind !== b.dotsBehind) return false;
   if (a.eyes.length !== b.eyes.length || a.dots.length !== b.dots.length || a.arcs.length !== b.arcs.length) return false;
   for (let i = 0; i < a.eyes.length; i += 1) {
@@ -518,7 +533,7 @@ function LiveFace({ shape, color, active, px, view, maskId, tools }: FaceProps) 
         </Defs>
         {ring('back')}
         {frame.dotsBehind ? dots : null}
-        <G opacity={frame.bodyAlpha}>
+        <G opacity={frame.bodyAlpha} transform={frame.bodyTransform}>
           <Path d={frame.bodyPath} fill={EYE_PAPER} />
           <G mask={`url(#${maskId})`}>
             <Rect x={-HALF_VIEW} y={-HALF_VIEW} width={span} height={span} fill={color} />
@@ -555,14 +570,16 @@ export const Bloub = memo(function Bloub({ shape = 'cercle', color, variant = 'n
   // Without the engine, a gentle whole-body sway keeps the still face alive.
   const swaying = moving && !tools;
   const motion = useRef(new Animated.Value(0)).current;
-  const sway = { lift: active ? 0.10 : 0.065, turn: active ? '8deg' : '5deg', wide: active ? 1.07 : 1.045, flat: active ? 0.93 : 0.96 };
+  // Match the engine's gentle motion even if it fails to load. Preserve the
+  // selected silhouette: independent X/Y scales visibly distort small faces.
+  const sway = { lift: active ? 0.025 : 0.015, turn: active ? '4deg' : '2.5deg' };
 
   useEffect(() => {
     motion.setValue(0);
     if (!swaying) return;
     // Transform only: iOS drives this on the UI thread, without rerendering the
     // SVG paths or blocking interactions. Offscreen navigation stops the loop.
-    const duration = active ? 620 : 1400 + (shape.length % 4) * 170;
+    const duration = active ? 2600 : 3000 + (shape.length % 4) * 170;
     const step = (toValue: number) => Animated.timing(motion, {
       toValue, duration, easing: Easing.inOut(Easing.sin),
       useNativeDriver: Platform.OS !== 'web', isInteraction: false,
@@ -578,8 +595,6 @@ export const Bloub = memo(function Bloub({ shape = 'cercle', color, variant = 'n
       style={swaying ? { width: px, height: px, transform: [
         { translateY: motion.interpolate({ inputRange: [0, 1], outputRange: [0, -px * sway.lift] }) },
         { rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', sway.turn] }) },
-        { scaleX: motion.interpolate({ inputRange: [0, 1], outputRange: [1, sway.wide] }) },
-        { scaleY: motion.interpolate({ inputRange: [0, 1], outputRange: [1, sway.flat] }) },
       ] } : { width: px, height: px }}
     >
       {tools ? (

@@ -1,23 +1,38 @@
-import { t, useTranslation } from "../i18n";
+import { localeTag, t, useTranslation } from "../i18n";
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import { Alert, AppState, Keyboard, Linking, Platform, Pressable, Text, TextInput, View, type TextInputInstance } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import type { Attachment, Bot, MessageKind, Thread } from '../data';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
-import { ArrowUpIcon, CameraIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon, PlusIcon, StopIcon } from './Icons';
+import { createDictation, type DictationError, type DictationState } from '../dictation';
+import { getDictationRecognizer } from '../dictationDevice';
+import { ArrowUpIcon, CameraIcon, CheckIcon, CloseIcon, FileIcon, MicIcon, PhotoIcon, PlusIcon, StopIcon } from './Icons';
 import { Sheet } from './Sheet';
 import { Bloub } from './Bloub';
 import { Row, SheetHeader } from './UI';
 
-/** The bars of the waveform, in the heights the mockup draws them. */
-const WAVE = [7, 14, 20, 11, 24, 16, 9, 19, 25, 13, 8, 18, 23, 12, 21, 15, 9, 17];
+/** The draft grows with its lines up to about five, then scrolls inside. */
+const INPUT_MIN = 36;
+const INPUT_MAX = 120;
 
-function clock(total: number): string {
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+/** Five level bars that follow the microphone volume while listening. */
+const LEVELS = [8, 14, 20, 14, 8];
+const IDLE_DICTATION: DictationState = { phase: 'idle', transcript: '', volume: 0 };
+
+function dictationMessage(error: DictationError): string {
+  switch (error) {
+    case 'permission': return t('请在系统设置中允许 Hermes Bot 使用麦克风和语音识别。');
+    case 'unavailable': return t('请在 iPhone 设置中开启 Siri 与听写后重试。');
+    case 'network': return t('语音识别需要网络，请稍后重试。');
+    case 'no-speech': return t('没有听到声音，请再试一次。');
+    case 'unsupported-language': return t('当前语言不支持语音识别。');
+    case 'interrupted': return t('语音输入被中断，请重试。');
+    case 'busy': return t('语音识别正忙，请稍后重试。');
+    default: return t('语音输入失败，请重试。');
+  }
 }
 
 export type Outgoing = {
@@ -36,30 +51,88 @@ type ComposerProps = {
 
 /**
  * What a person types into, attaches through, and dictates into. Everything
- * it offers answers: a file becomes a message, the microphone becomes a
- * voice note, and an @ opens the roster of the round.
+ * it offers answers: a file becomes a message, the microphone fills the draft
+ * through the iPhone's speech recognizer, and an @ opens the roster.
  */
 export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
   const { styles, C, INK, scheme } = useStyles();
   useTranslation();
-  const { prefs, stop } = useStore();
+  const { stop } = useStore();
   const [draft, setDraft] = useState('');
-  const [recording, setRecording] = useState(false);
-  const [seconds, setSeconds] = useState(0);
+  const [dictation, setDictation] = useState<DictationState>(IDLE_DICTATION);
   const [attaching, setAttaching] = useState(false);
   const [pickerBusy, setPickerBusy] = useState(false);
+  // iOS sizes a multiline field to its text by itself; the web preview does not.
+  const [webHeight, setWebHeight] = useState(INPUT_MIN);
   const pickerLock = useRef(false);
   const pendingPicker = useRef<'photo' | 'file' | 'camera' | null>(null);
   const mounted = useRef(true);
   const typing = useRef(thread.typing);
   typing.current = thread.typing;
   const input = useRef<TextInputInstance>(null);
+  const controller = useRef<ReturnType<typeof createDictation> | null>(null);
+  const transcriptRef = useRef('');
+  const focused = useIsFocused();
   const dockStyle = [styles.dock, { paddingBottom: Math.max(12, bottomInset) }];
 
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; pendingPicker.current = null; };
   }, []);
+
+  useEffect(() => {
+    const dictator = createDictation({
+      getRecognizer: getDictationRecognizer,
+      onState: (state) => {
+        transcriptRef.current = state.transcript;
+        if (mounted.current) setDictation(state);
+      },
+      onText: (text) => {
+        if (!mounted.current) return;
+        setDraft((current) => {
+          if (!current) return text;
+          const separator = localeTag().startsWith('zh') || /\s$/.test(current) ? '' : ' ';
+          return current + separator + text;
+        });
+      },
+      onError: (error) => {
+        if (!mounted.current) return;
+        // Silence after some words is the normal way a sentence ends.
+        if (error === 'no-speech' && transcriptRef.current) return;
+        const buttons = error === 'permission'
+          ? [
+              { text: t('取消'), style: 'cancel' as const },
+              { text: t('去设置'), onPress: () => { Linking.openSettings().catch(() => undefined); } },
+            ]
+          : undefined;
+        Alert.alert(t('无法使用语音输入'), dictationMessage(error), buttons);
+      },
+    });
+    controller.current = dictator;
+    return () => {
+      controller.current = null;
+      dictator.dispose();
+    };
+  }, []);
+
+  // Leaving the chat or the app keeps what was heard so far in the draft.
+  useEffect(() => {
+    if (!focused) controller.current?.background();
+  }, [focused]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'background') controller.current?.background();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  function startDictation() {
+    if (typing.current || dictation.phase !== 'idle') return;
+    input.current?.blur();
+    Keyboard.dismiss();
+    void controller.current?.start(localeTag());
+  }
 
   function sendAttachment(attachment: Attachment) {
     if (!mounted.current || typing.current) return;
@@ -137,12 +210,6 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
     }
   }
 
-  useEffect(() => {
-    if (!recording) return;
-    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
-    return () => clearInterval(timer);
-  }, [recording]);
-
   const members = useMemo(
     () =>
       (thread.members ?? [])
@@ -167,54 +234,48 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
     if (!draft.trim() || thread.typing) return;
     onSend({ text: draft });
     setDraft('');
+    setWebHeight(INPUT_MIN);
     input.current?.blur();
     Keyboard.dismiss();
   }
 
-  if (recording) {
-    return (
-      <View style={dockStyle}>
-        <View style={styles.recordingMeta}>
-          <View style={styles.liveDot} />
-          <Text style={styles.recordingLabel}>{t("正在聆听")}</Text>
-        </View>
-        <View style={styles.recorder}>
+  const listening = dictation.phase !== 'idle';
+  const level = 0.35 + 0.65 * dictation.volume;
+
+  return (
+    <View style={dockStyle}>
+      {listening ? (
+        <View style={styles.recorder} testID="dictation-dock">
           <Pressable
             style={[styles.round, styles.cancel]}
-            onPress={() => setRecording(false)}
+            onPress={() => controller.current?.cancel()}
+            accessibilityRole="button"
             accessibilityLabel={t("取消语音输入")}
           >
             <CloseIcon size={15} color={C.recordingInk} />
           </Pressable>
+          <Text
+            style={[styles.transcript, !dictation.transcript && styles.transcriptHint]}
+            numberOfLines={2}
+          >
+            {dictation.transcript || t("正在聆听")}
+          </Text>
           <View style={styles.waveform}>
-            {WAVE.map((height, index) => (
-              <View key={index} style={[styles.bar, { height }]} />
+            {LEVELS.map((height, index) => (
+              <View key={index} style={[styles.bar, { height: Math.round(height * level) }]} />
             ))}
           </View>
-          <Text style={styles.time}>{clock(seconds)}</Text>
           <Pressable
-            style={[styles.round, styles.sendButton]}
-            accessibilityLabel={t("发送语音")}
-            onPress={() => {
-              const duration = clock(seconds);
-              setRecording(false);
-              onSend({ text: t("语音消息 · {0}", {"0": duration}), kind: 'voice', duration });
-            }}
+            style={[styles.round, styles.sendButton, dictation.phase === 'finishing' && { opacity: 0.5 }]}
+            disabled={dictation.phase === 'finishing'}
+            onPress={() => controller.current?.finish()}
+            accessibilityRole="button"
+            accessibilityLabel={t("完成语音输入")}
           >
-            <ArrowUpIcon size={17} />
+            <CheckIcon size={17} color={INK.onPaper} />
           </Pressable>
         </View>
-        <Text style={styles.note}>
-          {prefs.voice === 'host'
-            ? t("由 Hermes 主机转写 · 当前为演示功能")
-            : t("在本机转写 · 当前为演示功能")}
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={dockStyle}>
+      ) : (
       <View>
         {roster.length > 0 ? (
           <View style={styles.roster}>
@@ -250,10 +311,13 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
               placeholder={t("给 Hermes 发消息")}
               placeholderTextColor={INK.meta}
               accessibilityLabel={t("给 Hermes 发消息")}
-              style={styles.input}
-              returnKeyType="send"
-              onSubmitEditing={send}
-              blurOnSubmit={false}
+              style={[styles.input, Platform.OS === 'web' && { height: webHeight }]}
+              multiline
+              scrollEnabled
+              onContentSizeChange={Platform.OS === 'web' ? (event) => {
+                const height = Math.ceil(event.nativeEvent.contentSize.height);
+                setWebHeight(Math.min(INPUT_MAX, Math.max(INPUT_MIN, height)));
+              } : undefined}
             />
             {thread.typing ? (
               <Pressable
@@ -264,31 +328,32 @@ export function Composer({ thread, bots, onSend, bottomInset }: ComposerProps) {
               >
                 <StopIcon size={13} color={C.bg} />
               </Pressable>
-            ) : draft.trim() ? (
-              <Pressable
-                style={[styles.button, styles.cream]}
-                onPress={send}
-                accessibilityRole="button"
-                accessibilityLabel={t("发送")}
-              >
-                <ArrowUpIcon size={17} color={C.bg} />
-              </Pressable>
             ) : (
-              <Pressable
-                style={[styles.button, styles.microphone]}
-                onPress={() => {
-                  setSeconds(0);
-                  setRecording(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t("语音输入")}
-              >
-                <MicIcon size={16} color={INK.quiet} />
-              </Pressable>
+              <>
+                <Pressable
+                  style={[styles.button, styles.microphone]}
+                  onPress={startDictation}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("语音输入")}
+                >
+                  <MicIcon size={16} color={INK.quiet} />
+                </Pressable>
+                {draft.trim() ? (
+                  <Pressable
+                    style={[styles.button, styles.cream]}
+                    onPress={send}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("发送")}
+                  >
+                    <ArrowUpIcon size={17} color={C.bg} />
+                  </Pressable>
+                ) : null}
+              </>
             )}
           </View>
         </View>
       </View>
+      )}
 
       <Sheet visible={attaching} onClose={() => setAttaching(false)} onDismiss={openPendingPicker}>
         <SheetHeader
@@ -334,7 +399,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     flex: 1,
     minWidth: 0,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 4,
     minHeight: 46,
     padding: 5,
@@ -352,7 +417,11 @@ const useStyles = themedStyles(({ C, INK }) => ({
   },
   cream: { backgroundColor: C.text },
   microphone: { backgroundColor: C.hover },
-  input: { flex: 1, minWidth: 0, paddingHorizontal: 9, paddingVertical: 7, color: C.text, fontSize: 14 },
+  input: {
+    flex: 1, minWidth: 0, minHeight: INPUT_MIN, maxHeight: INPUT_MAX,
+    paddingHorizontal: 9, paddingTop: 7, paddingBottom: 7,
+    color: C.text, fontSize: 16, lineHeight: 21, textAlignVertical: 'top',
+  },
 
   roster: {
     position: 'absolute',
@@ -388,19 +457,10 @@ const useStyles = themedStyles(({ C, INK }) => ({
   attachBody: { marginTop: 12, paddingHorizontal: 12 },
   attachLine: { borderTopWidth: 1, borderTopColor: C.hairline },
 
-  recordingMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginBottom: 7,
-  },
-  liveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.red },
-  recordingLabel: { color: INK.meta, fontSize: 10 },
   recorder: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     minHeight: 54,
     padding: 6,
     borderWidth: 1,
@@ -411,16 +471,16 @@ const useStyles = themedStyles(({ C, INK }) => ({
   round: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
   cancel: { backgroundColor: C.recordingButton },
   sendButton: { backgroundColor: C.paper },
+  transcript: { flex: 1, minWidth: 0, color: C.recordingInk, fontSize: 15, lineHeight: 20 },
+  transcriptHint: { opacity: 0.7 },
   waveform: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2.5,
-    height: 26,
+    gap: 3,
+    width: 31,
+    height: 24,
     overflow: 'hidden',
   },
-  bar: { width: 2.5, borderRadius: 2, backgroundColor: C.recordingInk },
-  time: { color: C.recordingInk, fontSize: 9, fontVariant: ['tabular-nums'] },
-  note: { marginTop: 7, color: INK.label, fontSize: 9, textAlign: 'center' },
+  bar: { width: 3.2, borderRadius: 2, backgroundColor: C.recordingInk },
 }), false);

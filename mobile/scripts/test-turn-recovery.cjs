@@ -60,3 +60,13 @@ test('explicit stop calls host; permanent rejection is reported once', async () 
   await new Promise(setImmediate);
   assert.equal(errors, 1);
 });
+
+test('cancelled and completed runs keep distinct outcomes for reply notifications', async () => {
+  const outcomes = [];
+  for (const status of ['cancelled', 'completed']) {
+    watchTurn({ start: async () => ({ status, text: 'partial' }), read() {}, stop() {} },
+      { snapshot() {}, done: (text, state) => outcomes.push([text, state]), error() { assert.fail(); } });
+    await new Promise(setImmediate);
+  }
+  assert.deepEqual(outcomes, [['partial', 'cancelled'], ['partial', 'completed']]);
+});

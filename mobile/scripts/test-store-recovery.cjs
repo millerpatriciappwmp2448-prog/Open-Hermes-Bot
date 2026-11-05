@@ -19,6 +19,7 @@ const fake = {
   prefs: async () => structuredClone(prefs),
   models: async () => ({ current: 'test-model', currentProvider: 'custom', providers: [] }),
   messages: async () => [], health: async () => ({ ok: true }), devices: async () => [],
+  savePrefs: async value => { prefs = structuredClone(value); },
   activeTurns: async () => pending,
   pinBot: async (id, pinned) => { prefs.mobilePinnedBots = { ...prefs.mobilePinnedBots, [id]: pinned }; },
   startTurn: async input => { starts++; return { ...input, status: runStatus, text: '' }; },
@@ -76,4 +77,114 @@ test('real StoreProvider persists pins; refresh/navigation/background cannot can
     await event('background'); await event('active');
     assert.ok(latest.messages['bot:default'].some(m => m.text === 'Recovered answer'));
   } finally { await act(async () => reopened.unmount()); }
+});
+
+test('StoreProvider saves notification choices per profile and notifies completion outside the visible chat', async () => {
+  pending = []; runStatus = 'running';
+  harness.notificationCalls.presented.length = 0;
+  const tree = await mount();
+  try {
+    assert.equal(latest.chatPreferences.default.notifications, true);
+    await act(async () => { await latest.saveChatPreferences('default', { notifications: false }); });
+    await act(async () => { await latest.saveChatPreferences('default', { tapbacks: false }); });
+    assert.equal(latest.chatPreferences.default.notifications, false);
+    assert.equal(prefs.mobileChatPreferences.default.notifications, false);
+    assert.equal(latest.chatPreferences.supervisor.notifications, true);
+    await act(async () => { await latest.refresh(); });
+    assert.equal(latest.chatPreferences.default.notifications, false);
+    async function reply(visible) {
+      runStatus = 'running';
+      await act(async () => { latest.setViewingThread(visible); latest.send('bot:default', { text: 'finish me' }); });
+      await flush();
+      await event('background'); runStatus = 'completed'; await event('active');
+    }
+    await reply(null);
+    assert.equal(harness.notificationCalls.presented.length, 0, 'muted agents stay quiet');
+    await act(async () => { await latest.saveChatPreferences('default', { notifications: true }); });
+    await reply('bot:default');
+    assert.equal(harness.notificationCalls.presented.length, 0, 'visible conversation stays quiet');
+    await reply('bot:supervisor');
+    assert.equal(harness.notificationCalls.presented.length, 1, 'another screen receives the alert');
+    const notice = harness.notificationCalls.presented[0];
+    assert.equal(notice.content.data.threadId, 'bot:default');
+    assert.equal(notice.content.data.sessionId, 's1');
+    assert.ok(!JSON.stringify(notice).includes('Recovered answer'), 'lock screen does not expose reply text');
+    assert.equal(harness.notificationCalls.permissionRequests, 0, 'authorized devices do not get permission prompts');
+  } finally { await act(async () => tree.unmount()); }
+});
+
+test('StoreProvider speaks fresh visible replies only and stops on navigation, background, mute and disconnect', async () => {
+  pending = []; runStatus = 'running';
+  harness.speechCalls.spoken.length = 0;
+  const tree = await mount();
+  try {
+    assert.equal(latest.chatPreferences.default.readAloud, false);
+    await act(async () => { await latest.saveChatPreferences('default', { readAloud: true }); });
+    assert.equal(prefs.mobileChatPreferences.default.readAloud, true);
+    assert.equal(latest.chatPreferences.supervisor.readAloud, false);
+    async function reply(visible) {
+      runStatus = 'running';
+      await act(async () => { latest.setViewingThread(visible); latest.send('bot:default', { text: 'speak this reply' }); });
+      await flush();
+      // Request is still running; only the successful final answer is spoken.
+      await event('background'); runStatus = 'completed'; await event('active');
+      await flush();
+    }
+    await reply(null);
+    assert.equal(harness.speechCalls.spoken.length, 0, 'another screen stays quiet');
+    await reply('bot:default');
+    assert.equal(harness.speechCalls.spoken.length, 1);
+    assert.equal(harness.speechCalls.spoken[0].text, 'Recovered answer');
+    let stopped = harness.speechCalls.stops;
+    await act(async () => latest.setViewingThread(null)); await flush();
+    assert.ok(harness.speechCalls.stops > stopped, 'leaving chat stops speech');
+    await reply('bot:default');
+    stopped = harness.speechCalls.stops;
+    await event('background');
+    assert.ok(harness.speechCalls.stops > stopped, 'background stops speech');
+    await event('active'); await flush();
+    assert.equal(harness.speechCalls.spoken.length, 2, 'foreground does not replay an old reply');
+    await reply('bot:default');
+    stopped = harness.speechCalls.stops;
+    await act(async () => { await latest.saveChatPreferences('default', { readAloud: false }); }); await flush();
+    assert.ok(harness.speechCalls.stops > stopped, 'disabling the agent stops speech');
+    await reply('bot:default');
+    assert.equal(harness.speechCalls.spoken.length, 3);
+    await act(async () => { await latest.saveChatPreferences('default', { readAloud: true }); });
+    for (const status of ['cancelled', 'failed']) {
+      const spoken = harness.speechCalls.spoken.length;
+      runStatus = 'running';
+      await act(async () => latest.send('bot:default', { text: 'must not read failed reply' })); await flush();
+      await event('background'); runStatus = status; await event('active'); await flush();
+      assert.equal(harness.speechCalls.spoken.length, spoken, status + ' runs never speak');
+    }
+    await reply('bot:default');
+    stopped = harness.speechCalls.stops;
+    await act(async () => { await latest.disconnect(); }); await flush();
+    assert.ok(harness.speechCalls.stops > stopped, 'disconnect stops speech');
+  } finally { await act(async () => tree.unmount()); }
+});
+
+test('restored server runs do not read historical replies aloud', async () => {
+  prefs.mobileChatPreferences.default.readAloud = true;
+  pending = [{ bot: 'default', sessionId: 's1', requestId: 'historical', status: 'running' }];
+  runStatus = 'running';
+  const before = harness.speechCalls.spoken.length;
+  const tree = await mount();
+  try {
+    latest.setViewingThread('bot:default');
+    await event('background'); runStatus = 'completed'; await event('active'); await flush();
+    assert.equal(harness.speechCalls.spoken.length, before);
+  } finally { await act(async () => tree.unmount()); }
+});
+
+test('unmounting StoreProvider stops any reply speech', async () => {
+  pending = []; runStatus = 'running';
+  const tree = await mount();
+  await act(async () => { await latest.saveChatPreferences('default', { readAloud: true }); latest.setViewingThread('bot:default'); });
+  await act(async () => latest.send('bot:default', { text: 'speak before teardown' })); await flush();
+  await event('background'); runStatus = 'completed'; await event('active'); await flush();
+  const stopped = harness.speechCalls.stops;
+  await act(async () => tree.unmount()); await flush();
+  assert.ok(harness.speechCalls.stops > stopped);
 });

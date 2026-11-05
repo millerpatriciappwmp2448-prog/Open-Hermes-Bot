@@ -11,7 +11,10 @@ const textOf = tree => JSON.stringify(tree.toJSON());
 let calls;
 function fixture(overrides = {}) {
   calls = [];
-  harness.setStore({ connection: { status: 'connected', url: 'http://bridge' }, bots: [{ id: 'default', name: 'Reviewer' }], modelPicks: {},
+  harness.setStore({ connection: { status: 'connected', url: 'http://bridge' }, bots: [
+    { id: 'default', name: 'Other agent' },
+    { id: 'codex-supervisor', name: 'Codex reviewer', capabilities: ['codex-supervisor'] },
+  ], modelPicks: {},
     loadCodexStatus: async () => ({ enabled: false, state: 'stopped', events: [] }),
     loadCodexChats: async () => [{ id: 'chat', title: 'Existing Codex task', status: { type: 'active' } }],
     startCodexWatch: async spec => { calls.push(spec); return { enabled: true, state: 'watching', spec }; },
@@ -34,7 +37,8 @@ test('native supervisor starts the selected active chat once and pauses without 
   const start = tree.root.findAllByType(PrimaryButton).find(node => node.props.label === t('开始监督'));
   assert.equal(start.props.disabled, false);
   await act(async () => { await start.props.onPress(); });
-  assert.equal(calls.length, 1); assert.equal(calls[0].threadId, 'chat'); assert.equal(calls[0].profile, 'default');
+  assert.equal(calls.length, 1); assert.equal(calls[0].threadId, 'chat'); assert.equal(calls[0].profile, 'codex-supervisor');
+  assert.ok(!textOf(tree).includes('Other agent'), 'the supervisor does not ask for another agent');
   assert.equal(calls[0].goal, 'Finish the fix and run tests'); assert.equal(calls[0].reviewEnabled, true);
   const pause = tree.root.findAllByType(PrimaryButton).find(node => node.props.label === t('暂停监督'));
   await act(async () => { await pause.props.onPress(); });
@@ -50,10 +54,29 @@ test('offline and failed companion connections show usable recovery without thro
 
 test('an existing watch restores its goal and model selection from the host', async () => {
   fixture({ loadCodexStatus: async () => ({ enabled: true, state: 'backoff', attempts: 7,
-    spec: { threadId: 'chat', goal: 'Keep working', profile: 'default', reviewEnabled: true, model: 'chosen', provider: 'provider' },
+    spec: { threadId: 'chat', goal: 'Keep working', profile: 'codex-supervisor', reviewEnabled: true, model: 'chosen', provider: 'provider' },
     outbox: { status: 'planned', dueAt: Date.now() + 10000 }, review: { status: 'ready', analysis: 'Tests still fail', recommendation: 'Fix the failing assertion' } }) });
   const tree = await mount(); assert.equal(tree.root.findByType('TextInput').props.value, 'Keep working');
   for (const value of ['chosen', 'Tests still fail', 'Fix the failing assertion', t('等待自动重试')]) assert.ok(textOf(tree).includes(value), value);
+});
+
+test('a chat-list failure preserves the active watch and its pause control', async () => {
+  fixture({ loadCodexStatus: async () => ({ enabled: true, state: 'watching',
+    spec: { threadId: 'chat', goal: 'Keep working', profile: 'codex-supervisor', reviewEnabled: true } }),
+    loadCodexChats: async () => { throw new Error('Desktop connection unavailable'); } });
+  const tree = await mount();
+  assert.ok(textOf(tree).includes('Desktop connection unavailable'));
+  assert.equal(tree.root.findByType('TextInput').props.value, 'Keep working');
+  assert.ok(tree.root.findAllByType(PrimaryButton).some(n => n.props.label === t('暂停监督')));
+  assert.ok(!textOf(tree).includes(t('未读取到 Codex 会话，请启动电脑上的连接服务并刷新。')));
+});
+
+test('missing supervisor never silently uses the primary agent', async () => {
+  fixture({ bots: [{ id: 'default', name: 'Other agent' }] });
+  const tree = await mount();
+  const start = tree.root.findAllByType(PrimaryButton).find(n => n.props.label === t('开始监督'));
+  assert.equal(start.props.disabled, true);
+  assert.ok(!textOf(tree).includes('Other agent'));
 });
 
 test('rapid start presses and unchanged saved settings cannot submit duplicate watches', async () => {

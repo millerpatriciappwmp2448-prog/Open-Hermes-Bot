@@ -6,7 +6,7 @@ export type TurnWatch = { pause(): void; resume(): void; detach(): void; stop():
 
 export function watchTurn(
   transport: { start(): Promise<RunSnapshot>; read(): Promise<RunSnapshot>; stop(): Promise<unknown> },
-  handlers: { snapshot(run: RunSnapshot): void; done(text: string): void; error(error: unknown): void; reconnecting?(): void },
+  handlers: { snapshot(run: RunSnapshot): void; done(text: string, status: 'completed' | 'cancelled'): void; error(error: unknown): void; reconnecting?(): void },
   clock = { later: (fn: () => void, ms: number) => setTimeout(fn, ms), cancel: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) },
 ): TurnWatch {
   let accepted = false, ended = false, paused = false, busy = false, wake = false, failures = 0;
@@ -25,10 +25,10 @@ export function watchTurn(
       if (stopRequested) { void transport.stop().catch(() => {}); return; }
       if (ended) return;
       handlers.snapshot(run);
-      if (run.status === 'completed') { ended = true; handlers.done(run.text || ''); }
+      if (run.status === 'completed') { ended = true; handlers.done(run.text || '', 'completed'); }
       else if (['failed', 'interrupted', 'unknown'].includes(run.status)) {
         ended = true; handlers.error({ code: 'turn_failed', message: run.error || run.status });
-      } else if (run.status === 'cancelled') { ended = true; handlers.done(run.text || ''); }
+      } else if (run.status === 'cancelled') { ended = true; handlers.done(run.text || '', 'cancelled'); }
     } catch (error) {
       if (ended) return;
       const fault = error as { status?: number; code?: string };

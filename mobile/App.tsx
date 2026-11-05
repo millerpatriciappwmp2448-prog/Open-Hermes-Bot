@@ -2,6 +2,7 @@ import {
   NavigationContainer,
   DarkTheme,
   DefaultTheme,
+  useNavigationContainerRef,
   type Theme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -24,11 +25,12 @@ import { VoiceScreen } from './src/screens/VoiceScreen';
 import { UpdatesScreen } from './src/screens/UpdatesScreen';
 import { AppearanceScreen } from './src/screens/AppearanceScreen';
 import type { RootStackParamList } from './src/nav';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTheme } from './src/theme';
 import { useInitializeAppearance } from './src/appearance';
 import { useInitializeLanguage } from './src/i18n';
 import { AvatarMotionProvider } from './src/components/AvatarMotion';
+import { ReplyNotificationRouter } from './src/components/ReplyNotificationRouter';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -36,6 +38,8 @@ export default function App() {
   useInitializeLanguage();
   useInitializeAppearance();
   const { C, scheme, ready } = useTheme();
+  const navigation = useNavigationContainerRef<RootStackParamList>();
+  const [navigationReady, setNavigationReady] = useState(false);
   const theme = useMemo<Theme>(() => {
     const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
     return { ...base, colors: { ...base.colors, background: C.bg, card: C.bg, text: C.text, border: C.divider, primary: C.paper } };
@@ -46,7 +50,8 @@ export default function App() {
       <StoreProvider>
         <AvatarMotionProvider>
           <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-          <NavigationContainer theme={theme}>
+          <ReplyNotificationRouter navigation={navigation} ready={navigationReady} />
+          <NavigationContainer ref={navigation} onReady={() => setNavigationReady(true)} theme={theme}>
             <Stack.Navigator
               screenOptions={{
                 headerShown: false,

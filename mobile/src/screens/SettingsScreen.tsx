@@ -122,7 +122,7 @@ export function SettingsScreen() {
           />
           <Row
             name={t("语音")}
-            value={prefs.voice === 'host' ? t("主机转写") : t("在本机上")}
+            value={t('手机识别')}
             line
             onPress={() => navigation.navigate('Voice')}
           />

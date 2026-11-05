@@ -12,7 +12,7 @@ test('dedicated supervisor uses the normal chat and exposes host watch status an
   const thread = { id: 'bot:supervisor', kind: 'bot', botId: bot.id, name: bot.name, threadModel: 'chosen' };
   let reads = 0, sent, destination;
   harness.setStore({ bots: [bot], threads: [thread], messages: {}, chatPreferences: {}, connection: { status: 'connected', url: 'https://bridge' },
-    botById: () => bot, threadById: () => thread, markRead() {}, loadTodos: async () => {},
+    botById: () => bot, threadById: () => thread, markRead() {}, setViewingThread() {}, loadTodos: async () => {},
     send: (id, message) => { sent = [id, message]; },
     loadCodexStatus: async () => { reads++; return { enabled: true, state: 'backoff', attempts: 12,
       spec: { profile: bot.id, goal: 'Finish and verify' }, observed: { title: 'Existing active task' },

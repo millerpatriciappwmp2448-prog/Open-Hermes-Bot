@@ -54,11 +54,23 @@ jobs:
       - name: Check chat settings preferences
         run: node scripts/test-chat-preferences.cjs
 
+      - name: Check agent reply notifications and routing
+        run: |
+          node scripts/test-reply-notifications.cjs
+          node scripts/test-chat-notifications.cjs
+          node scripts/test-notification-routing.cjs
+
       - name: Check appearance preferences
         run: node scripts/test-appearance.cjs
 
+      - name: Check per-agent reply speech and cancellation
+        run: node scripts/test-reply-speech.cjs
+
       - name: Check native chat and language screen lifecycles
         run: node scripts/test-native-screens.cjs
+
+      - name: Check avatar body motion while thinking
+        run: node scripts/test-avatar-motion.cjs
 
       - name: Check turn recovery after disconnecting or reopening
         run: node scripts/test-turn-recovery.cjs
@@ -86,6 +98,9 @@ jobs:
 
       - name: Check attachment uploads
         run: node scripts/test-attachments.cjs
+
+      - name: Check dictation
+        run: node scripts/test-dictation.cjs
 
       - name: Check Xcode
         run: xcodebuild -version

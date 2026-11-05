@@ -7,6 +7,10 @@ import { readChatPreferences, withChatPreferences, sessionsForBot, type ChatPref
 import { readSchedules, type Schedule } from './schedules';
 import { sameTodos, type TodoItem } from './taskDock';
 import { watchTurn, type TurnWatch, type RunSnapshot } from './turnRecovery';
+import { createReplyNotifier } from './replyNotifications';
+import { createReplySpeaker } from './replySpeech';
+import { maxSpeechLength, speakReply, stopReplySpeech } from './speechDevice';
+import { installReplyNotificationHandler, notificationAccess, presentReplyNotification } from './notificationDevice';
 import {
   createContext,
   useCallback,
@@ -111,7 +115,8 @@ type Store = {
   refreshModels: (botId: string) => Promise<void>;
   selectModel: (botId: string, model: ModelRef | null) => Promise<void>;
   chatPreferences: Record<string, ChatPreferences>;
-  saveChatPreferences: (botId: string, value: ChatPreferences) => Promise<void>;
+  saveChatPreferences: (botId: string, value: Partial<ChatPreferences>) => Promise<void>;
+  setViewingThread: (threadId: string | null) => void;
   loadSessions: (botId: string) => Promise<BridgeSession[]>;
   loadHistory: (botId: string, offset: number) => Promise<HistoryPage>;
   loadTranscript: (botId: string, sessionId: string, offset: number) => Promise<TranscriptPage>;
@@ -297,6 +302,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [modelOptions, setModelOptions] = useState<Record<string, BridgeModels>>({});
   const [modelPicks, setModelPicks] = useState<Record<string, ModelRef>>({});
   const [chatPreferences, setChatPreferences] = useState<Record<string, ChatPreferences>>({});
+  const chatPreferencesRef = useRef(chatPreferences);
+  const viewingThreadRef = useRef<string | null>(null);
   const optionsRef = useRef(modelOptions);
   const picksRef = useRef(modelPicks);
   const profilesRef = useRef<Record<string, string>>({});
@@ -311,6 +318,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const syncGeneration = useRef(0);
   const threadsRef = useRef<Thread[]>(threads);
   const connectionRef = useRef(connection);
+  const [replySpeaker] = useState(() => createReplySpeaker({
+    state: reply => ({ host: client.current?.baseUrl,
+      enabled: chatPreferencesRef.current[reply.botId]?.readAloud === true,
+      foreground: AppState.currentState === 'active', viewingThread: viewingThreadRef.current }),
+    maxLength: maxSpeechLength, speak: speakReply, stop: stopReplySpeech,
+  }));
+  const setViewingThread = useCallback((id: string | null) => {
+    viewingThreadRef.current = id;
+    replySpeaker.reconcile();
+  }, [replySpeaker]);
+  useEffect(() => { replySpeaker.reconcile(); }, [chatPreferences, connection, replySpeaker]);
+  const [replyNotifier] = useState(() => createReplyNotifier({
+    state: notice => ({
+      enabled: client.current?.baseUrl === notice.host && chatPreferencesRef.current[notice.botId]?.notifications !== false,
+      foreground: !AppState.currentState || AppState.currentState === 'active',
+      viewingThread: viewingThreadRef.current,
+    }),
+    allowed: async () => await notificationAccess() === 'allowed',
+    present: presentReplyNotification,
+  }));
+  useEffect(() => installReplyNotificationHandler(notice =>
+    client.current?.baseUrl === notice.host && chatPreferencesRef.current[notice.botId]?.notifications !== false &&
+    (AppState.currentState !== 'active' || viewingThreadRef.current !== notice.threadId)), []);
   useEffect(() => {
     threadsRef.current = threads;
   }, [threads]);
@@ -357,11 +387,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ? rows.map(row => row.id === message.id ? message : row) : [...rows, message] };
       });
     };
-    const finish = (text: string, failed = false) => {
+    let completed = false;
+    const finish = (text: string, failed = false, notify = false) => {
+      if (completed) return;
+      completed = true;
       delete watchesRef.current[threadId];
       delete turnsRef.current[threadId];
       upsert(text, failed);
       patch({ typing: false, tool: undefined, preview: (text || answer).replace(/\s+/g, ' ').slice(0, 90), time: t('刚刚') });
+      if (notify) {
+        void replyNotifier.complete({ host: bridge.baseUrl, botId, threadId, sessionId, requestId,
+          name: threadsRef.current.find(row => row.id === threadId)?.name || 'Hermes Bot' });
+        // Only turns sent during this store's lifetime are eligible for automatic
+        // reading. Restoring old runs/history must never unexpectedly start audio.
+        if (start) void replySpeaker.complete({ host: bridge.baseUrl, botId, threadId, sessionId, requestId, text: text || answer });
+      }
     };
     patch({ typing: true, sessionId });
     const watch = watchTurn({
@@ -374,14 +414,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         upsert(answer);
         patch({ tool: run.tool || undefined, sessionId: run.sessionId || sessionId });
       },
-      done: text => finish(text || answer),
+      done: (text, status) => finish(text || answer, false, status === 'completed'),
       error: error => finish(error instanceof Error ? error.message
         : (error as { message?: string })?.message || t('无法连接智能体。'), true),
     });
     watchesRef.current[threadId] = watch;
     turnsRef.current[threadId] = () => { watch.stop(); finish(answer || t('已停止')); };
     if (AppState.currentState && AppState.currentState !== 'active') watch.pause();
-  }, []);
+  }, [replyNotifier, replySpeaker]);
 
   const adopt = useCallback((url: string, token: string, device: string): Promise<void> => {
     const key = `${url}\n${token}`;
@@ -479,7 +519,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     picksRef.current = nextPicks;
     setModelOptions(nextOptions);
     setModelPicks(nextPicks);
-    setChatPreferences(Object.fromEntries(rawBots.map(raw => [raw.id, readChatPreferences(savedPrefs, raw.profile || 'default')])));
+    chatPreferencesRef.current = Object.fromEntries(rawBots.map(raw => [raw.id, readChatPreferences(savedPrefs, raw.profile || 'default')]));
+    setChatPreferences(chatPreferencesRef.current);
     setBots(nextBots);
     const preserve = (id: string) => Boolean(turnsRef.current[id]) || revisionsRef.current[id] !== revisions[id];
     setThreads(current => nextThreads.map(thread => {
@@ -572,7 +613,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (threadsRef.current.some(thread => thread.botId === botId && thread.id.startsWith('bot:'))) {
         throw new BridgeError(t('请先连接服务器。'));
       }
-      setChatPreferences(current => ({ ...current, [botId]: value }));
+      const previous = chatPreferencesRef.current[botId] || readChatPreferences({}, '');
+      chatPreferencesRef.current = { ...chatPreferencesRef.current, [botId]: { ...previous, ...value } };
+      setChatPreferences(chatPreferencesRef.current);
       return;
     }
     // All whole-document preference writes share the model queue.
@@ -580,9 +623,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
       const saved = await active.prefs();
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
-      await active.savePrefs(withChatPreferences(saved, profile, value));
+      const updated = withChatPreferences(saved, profile, value);
+      await active.savePrefs(updated);
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
-      setChatPreferences(current => ({ ...current, [botId]: value }));
+      chatPreferencesRef.current = { ...chatPreferencesRef.current, [botId]: readChatPreferences(updated, profile) };
+      setChatPreferences(chatPreferencesRef.current);
     });
     modelWrites.current = write;
     await write;
@@ -715,6 +760,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const disconnect = useCallback(async () => {
+    replySpeaker.cancel();
     syncGeneration.current++;
     syncRef.current = null;
     Object.values(watchesRef.current).forEach(watch => watch.detach());
@@ -730,12 +776,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     picksRef.current = {};
     setModelOptions({});
     setModelPicks({});
+    chatPreferencesRef.current = {};
     setChatPreferences({});
     setBots(demo.current.bots);
     setThreads(demo.current.threads);
     setMessages(demo.current.messages);
     setPrefs((current) => ({ ...current, connected: false, host: PREFS.host }));
-  }, []);
+  }, [replySpeaker]);
 
   const revokeDevice = useCallback(async (id: string) => {
     const active = client.current;
@@ -783,17 +830,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // reachable again.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') replySpeaker.cancel();
       Object.values(watchesRef.current).forEach(watch => state === 'active' ? watch.resume() : watch.pause());
       if (state === 'active' && savedRef.current) void retry();
     });
     return () => subscription.remove();
-  }, [retry]);
+  }, [retry, replySpeaker]);
 
   useEffect(() => () => {
+    replySpeaker.cancel();
     syncGeneration.current++;
     Object.values(watchesRef.current).forEach(watch => watch.detach());
     watchesRef.current = {};
-  }, []);
+  }, [replySpeaker]);
 
   /* ----------------------------------------------------------- the bots */
 
@@ -989,7 +1038,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     picksRef.current = nextPicks; setModelPicks(nextPicks);
     const nextOptions = { ...optionsRef.current }; delete nextOptions[id];
     optionsRef.current = nextOptions; setModelOptions(nextOptions);
-    setChatPreferences(current => { const next = { ...current }; delete next[id]; return next; });
+    const nextChatPreferences = { ...chatPreferencesRef.current }; delete nextChatPreferences[id];
+    chatPreferencesRef.current = nextChatPreferences; setChatPreferences(nextChatPreferences);
     delete profilesRef.current[id];
   }, [botById]);
 
@@ -1345,6 +1395,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selectModel,
       chatPreferences,
       saveChatPreferences,
+      setViewingThread,
       loadSessions,
       loadHistory,
       loadTranscript,
@@ -1419,6 +1470,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selectModel,
       chatPreferences,
       saveChatPreferences,
+      setViewingThread,
       loadSessions,
       loadHistory,
       loadTranscript,

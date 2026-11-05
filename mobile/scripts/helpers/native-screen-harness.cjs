@@ -66,19 +66,29 @@ class Value {
   stopAnimation() {}
 }
 const animation = () => ({ start: (done) => done?.({ finished: true }), stop() {} });
+const appStateEvents = new EventEmitter();
+const alerts = [];
+let settingsOpened = 0;
 const native = {
   Keyboard,
   Platform: { OS: 'ios', select: (choices) => choices[native.Platform.OS] ?? choices.default },
   StyleSheet: { create: (styles) => styles, absoluteFill: { position: 'absolute', inset: 0 } },
   useWindowDimensions: () => ({ width: 393, height: 852 }),
-  AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
+  AppState: {
+    currentState: 'active',
+    addEventListener(event, listener) {
+      appStateEvents.on(event, listener);
+      return { remove: () => appStateEvents.off(event, listener) };
+    },
+  },
   Appearance: { getColorScheme: () => 'light', addChangeListener: () => ({ remove() {} }) },
   AccessibilityInfo: {
     isReduceMotionEnabled: async () => true,
     addEventListener: () => ({ remove() {} }),
   },
-  Alert: { alert() {} },
+  Alert: { alert(...args) { alerts.push(args); } },
   Share: { share: async () => ({ action: 'dismissedAction' }) },
+  Linking: { openSettings: async () => { settingsOpened++; } },
   PanResponder: { create: () => ({ panHandlers: {} }) },
   Easing: { quad: (x) => x * x, in: (fn) => fn, out: (fn) => fn },
   Animated: {
@@ -93,11 +103,62 @@ for (const name of ['View', 'Text', 'TextInput', 'ScrollView', 'Pressable', 'Key
 }
 
 const navigation = { navigate() {}, goBack() {} };
+let focused = true;
 const savedPreferences = new Map();
+const notificationCalls = { presented: [], permissionRequests: 0 };
+const speechCalls = { spoken: [], stops: 0 };
+const speechNative = {
+  maxSpeechInputLength: 4000,
+  speak: (text, options) => { speechCalls.spoken.push({ text, options }); },
+  stop: async () => { speechCalls.stops++; },
+};
+// A fake of expo-speech-recognition's native module: tests drive its events.
+const dictationNative = new EventEmitter();
+function resetDictation() {
+  dictationNative.removeAllListeners();
+  Object.assign(dictationNative, {
+    available: true,
+    permission: { granted: true, canAskAgain: true },
+    requestResult: { granted: true, canAskAgain: true },
+    starts: [], stops: 0, aborts: 0, permissionRequests: 0,
+  });
+}
+resetDictation();
+Object.assign(dictationNative, {
+  isRecognitionAvailable() { return dictationNative.available; },
+  async getPermissionsAsync() { return dictationNative.permission; },
+  async requestPermissionsAsync() {
+    dictationNative.permissionRequests++;
+    return dictationNative.requestResult;
+  },
+  addListener(event, listener) {
+    dictationNative.on(event, listener);
+    return { remove: () => dictationNative.off(event, listener) };
+  },
+  start(opts) { dictationNative.starts.push({ opts, stopsAtStart: speechCalls.stops }); },
+  stop() { dictationNative.stops++; },
+  abort() {
+    dictationNative.aborts++;
+    dictationNative.emit('error', { error: 'aborted' });
+    dictationNative.emit('end', {});
+  },
+});
+const notificationNative = {
+  IosAuthorizationStatus: { NOT_DETERMINED: 0, DENIED: 1, AUTHORIZED: 2, PROVISIONAL: 3, EPHEMERAL: 4 },
+  AndroidImportance: { DEFAULT: 3 }, DEFAULT_ACTION_IDENTIFIER: 'default',
+  getPermissionsAsync: async () => ({ granted: true, canAskAgain: true, ios: { status: 2 } }),
+  requestPermissionsAsync: async () => { notificationCalls.permissionRequests++; return { granted: true, ios: { status: 2 } }; },
+  setNotificationChannelAsync: async () => {},
+  scheduleNotificationAsync: async value => { notificationCalls.presented.push(value); return value.identifier; },
+  setNotificationHandler(value) { notificationCalls.handler = value; },
+  addNotificationResponseReceivedListener(fn) { notificationCalls.listener = fn; return { remove() { delete notificationCalls.listener; } }; },
+  getLastNotificationResponse: () => null,
+  clearLastNotificationResponseAsync: async () => {},
+};
 const modules = {
   'react-native': native,
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }) },
-  '@react-navigation/native': { useIsFocused: () => true, useNavigation: () => navigation },
+  '@react-navigation/native': { useIsFocused: () => focused, useNavigation: () => navigation },
   'react-native-svg': {
     __esModule: true, default: 'Svg',
     ...Object.fromEntries(['Svg', 'Circle', 'Defs', 'G', 'LinearGradient', 'Mask', 'Path', 'Rect', 'Stop'].map((name) => [name, name])),
@@ -110,6 +171,9 @@ const modules = {
   'expo-clipboard': { setStringAsync: async () => {} },
   'expo-image-picker': { MediaTypeOptions: { Images: 'images' } },
   'expo-document-picker': {},
+  'expo-notifications': notificationNative,
+  'expo-speech': speechNative,
+  'expo-speech-recognition': { ExpoSpeechRecognitionModule: dictationNative },
 };
 let store;
 const originalLoad = Module._load;
@@ -123,7 +187,10 @@ Module._load = function (request, parent, isMain) {
 };
 
 module.exports = {
-  native, keyboardEvents, navigation, savedPreferences,
+  native, keyboardEvents, navigation, savedPreferences, notificationNative, notificationCalls,
+  speechNative, speechCalls, appStateEvents, alerts, dictationNative, resetDictation,
+  settingsCalls: () => settingsOpened,
+  setFocused: (value) => { focused = value; },
   setStore: (value) => { store = value; },
   pendingFrames: () => frames.size,
   flushFrames() {

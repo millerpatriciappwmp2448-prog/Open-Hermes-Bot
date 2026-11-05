@@ -66,6 +66,10 @@ def verify(path):
         camera_permission = info.get('NSCameraUsageDescription', '')
         if not photo_permission.strip() or not camera_permission.strip():
             raise ValueError('Missing photo library or camera permission description')
+        microphone_permission = info.get('NSMicrophoneUsageDescription', '')
+        speech_permission = info.get('NSSpeechRecognitionUsageDescription', '')
+        if not microphone_permission.strip() or not speech_permission.strip():
+            raise ValueError('Missing microphone or speech recognition permission description')
         root = plists[0].rsplit('/', 1)[0] + '/'
         main = root + info['CFBundleExecutable']
         if not archive.read(root + 'main.jsbundle'):
@@ -94,6 +98,8 @@ def verify(path):
             'interface_style': interface_style,
             'photo_permission': photo_permission,
             'camera_permission': camera_permission,
+            'microphone_permission': microphone_permission,
+            'speech_permission': speech_permission,
             'javascript_bundled': True,
             'binaries': binaries,
         }

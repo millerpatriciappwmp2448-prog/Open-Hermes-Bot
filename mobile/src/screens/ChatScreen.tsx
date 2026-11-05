@@ -11,6 +11,7 @@ import {
   type ScrollViewInstance,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub, BloubGroup } from '../components/Bloub';
 import { BackIcon, FileIcon, MicIcon, MoreIcon, PhotoIcon } from '../components/Icons';
@@ -70,6 +71,7 @@ export function ChatScreen({ route, navigation }: Props) {
     threadById,
     loadTodos,
     connection,
+    setViewingThread,
   } = useStore();
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -86,6 +88,12 @@ export function ChatScreen({ route, navigation }: Props) {
 
   const thread = threadById(route.params.threadId);
   const threadId = route.params.threadId;
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (!focused) return;
+    setViewingThread(threadId);
+    return () => setViewingThread(null);
+  }, [focused, setViewingThread, threadId]);
 
   // Opening a conversation reads it: the dot is the app's, not the bot's.
   useEffect(() => {
@@ -243,7 +251,7 @@ export function ChatScreen({ route, navigation }: Props) {
               {isGroup ? (
                 <BloubGroup members={faces} size={23} active={thread.typing} />
               ) : (
-                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={23} active={thread.typing} />
+                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={23} animated active={thread.typing} />
               )}
               <View style={styles.chatTitles}>
                 <Text style={styles.chatName} numberOfLines={1}>
@@ -363,15 +371,15 @@ const useStyles = themedStyles(({ C, INK }) => ({
     boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
   },
   chatTitles: { flexShrink: 1, minWidth: 0 },
-  chatName: { color: C.text, fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
+  chatName: { color: C.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
   navCenter: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
   navPlaceholder: { width: 40, flexShrink: 0 },
 
   body: { flex: 1 },
   bodyContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
-  event: { marginBottom: 6, color: INK.faint, fontSize: 11, textAlign: 'center' },
-  time: { marginBottom: 20, color: INK.meta, fontSize: 11, textAlign: 'center' },
-  empty: { color: INK.quiet, fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: 20, marginTop: 24 },
+  event: { marginBottom: 6, color: INK.faint, fontSize: 12, textAlign: 'center' },
+  time: { marginBottom: 20, color: INK.meta, fontSize: 12, textAlign: 'center' },
+  empty: { color: INK.quiet, fontSize: 13, lineHeight: 19, textAlign: 'center', paddingHorizontal: 20, marginTop: 24 },
 
   msg: { width: '100%', marginBottom: 12 },
   msgUser: { alignItems: 'flex-end' },
@@ -388,21 +396,21 @@ const useStyles = themedStyles(({ C, INK }) => ({
   },
   bubbleUser: { backgroundColor: C.text },
   bubbleGroup: { maxWidth: '100%' },
-  bubbleBotText: { color: C.text, fontSize: 14, lineHeight: 21 },
-  bubbleUserText: { color: C.bg, fontSize: 14, lineHeight: 21 },
+  bubbleBotText: { color: C.text, fontSize: 16, lineHeight: 23 },
+  bubbleUserText: { color: C.bg, fontSize: 16, lineHeight: 23 },
   bubbleFailed: { borderWidth: 1, borderColor: C.border, backgroundColor: C.recording },
-  bubbleFailedText: { color: C.recordingInk, fontSize: 14, lineHeight: 21 },
-  failedLabel: { marginBottom: 2, color: C.recordingInk, fontSize: 11, fontWeight: '600' },
+  bubbleFailedText: { color: C.recordingInk, fontSize: 16, lineHeight: 23 },
+  failedLabel: { marginBottom: 2, color: C.recordingInk, fontSize: 12, fontWeight: '600' },
   mention: { backgroundColor: C.mention, borderRadius: 4, fontWeight: '500' },
 
   attachment: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 150 },
   attachmentCopy: { flexShrink: 1 },
-  attachmentSize: { color: INK.quiet, fontSize: 9, marginTop: 1 },
+  attachmentSize: { color: INK.quiet, fontSize: 11, marginTop: 1 },
   onPaperQuiet: { color: C.bg, opacity: 0.8 },
   voice: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 130 },
-  voiceTime: { color: INK.quiet, fontSize: 10, fontVariant: ['tabular-nums'] },
+  voiceTime: { color: INK.quiet, fontSize: 11, fontVariant: ['tabular-nums'] },
 
-  author: { marginLeft: 3, marginBottom: 5, color: INK.quiet, fontSize: 11, fontWeight: '500' },
+  author: { marginLeft: 3, marginBottom: 5, color: INK.quiet, fontSize: 12, fontWeight: '500' },
   tapback: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -415,9 +423,9 @@ const useStyles = themedStyles(({ C, INK }) => ({
     borderRadius: 11,
     backgroundColor: C.bean,
   },
-  tapbackEmoji: { fontSize: 10 },
-  tapbackCount: { color: INK.quiet, fontSize: 9 },
+  tapbackEmoji: { fontSize: 11 },
+  tapbackCount: { color: INK.quiet, fontSize: 10 },
 
   typing: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
-  typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 11 },
+  typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 12 },
 }), false);

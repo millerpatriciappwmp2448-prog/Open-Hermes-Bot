@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
@@ -11,6 +11,7 @@ import { t, useTranslation } from '../i18n';
 import type { RootStackParamList } from '../nav';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
+import { notificationAccess, type NotificationAccess } from '../notificationDevice';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChatSettings'>;
 
@@ -22,6 +23,8 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const { chatPreferences, saveChatPreferences } = useStore();
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [preferencesError, setPreferencesError] = useState('');
+  const [access, setAccess] = useState<NotificationAccess>('undetermined');
+  const [requesting, setRequesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [jobsOpen, setJobsOpen] = useState(false);
@@ -34,6 +37,16 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const online = connection.status === 'connected';
   const closeConfirm = () => { if (!deleting) { setConfirming(null); setDeleteError(''); } };
   const tapbacks = thread ? chatPreferences[thread.botId]?.tapbacks !== false : true;
+  const notifications = thread ? chatPreferences[thread.botId]?.notifications !== false : true;
+  const readAloud = thread ? chatPreferences[thread.botId]?.readAloud === true : false;
+
+  useEffect(() => {
+    let mounted = true;
+    const update = () => { void notificationAccess().then(value => { if (mounted) setAccess(value); }); };
+    update();
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') update(); });
+    return () => { mounted = false; subscription.remove(); };
+  }, []);
 
   async function changePin() {
     if (!thread || savingPreferences) return;
@@ -44,13 +57,23 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
     finally { setSavingPreferences(false); }
   }
 
-  async function changeTapbacks(value: boolean) {
+  async function changePreference(key: 'tapbacks' | 'notifications' | 'readAloud', value: boolean) {
     if (!thread || savingPreferences) return;
     setSavingPreferences(true);
     setPreferencesError('');
-    try { await saveChatPreferences(thread.botId, { tapbacks: value }); }
+    try { await saveChatPreferences(thread.botId, { [key]: value }); }
     catch { setPreferencesError(t('设置未保存，请重试。')); }
     finally { setSavingPreferences(false); }
+  }
+
+  async function allowNotifications() {
+    if (requesting) return;
+    setRequesting(true);
+    try {
+      if (access === 'denied') await Linking.openSettings();
+      else setAccess(await notificationAccess(true));
+    } catch { setAccess('unavailable'); }
+    finally { setRequesting(false); }
   }
 
   async function exportChat() {
@@ -164,19 +187,34 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
               <View style={[styles.card, styles.row]}>
                 <Text style={[styles.rowText, styles.flex]}>{t('表情回应')}</Text>
                 <Switch accessibilityLabel={t('表情回应')} value={tapbacks}
-                  disabled={savingPreferences || (serverBot && !online)} onValueChange={value => void changeTapbacks(value)}
+                  disabled={savingPreferences || (serverBot && !online)} onValueChange={value => void changePreference('tapbacks', value)}
                   trackColor={{ false: C.field2, true: C.green }} ios_backgroundColor={C.field2} />
               </View>
-              {preferencesError ? <Text accessibilityRole="alert" style={styles.danger}>{preferencesError}</Text> : null}
               <View style={[styles.card, styles.row]}>
-                <View style={styles.flex}>
-                  <Text style={styles.rowText}>{t('通知')}</Text>
-                  <Text style={styles.meta}>{t('未接入系统推送')}</Text>
-                </View>
-                <Switch accessibilityLabel={t('通知')} value={false} disabled
+                <Text style={[styles.rowText, styles.flex]}>{t('通知')}</Text>
+                <Switch accessibilityLabel={t('通知')} value={notifications}
+                  disabled={savingPreferences || (serverBot && !online)} onValueChange={value => void changePreference('notifications', value)}
+                  trackColor={{ false: C.field2, true: C.green }} ios_backgroundColor={C.field2} />
+              </View>
+              {notifications && access !== 'allowed' ? <View style={styles.notificationAccess}>
+                <Text style={[styles.meta, styles.flex]}>{access === 'denied' ? t('系统通知已关闭')
+                  : access === 'unsupported' ? t('请在手机上授权通知') : access === 'unavailable' ? t('无法读取通知权限') : t('尚未授权系统通知')}</Text>
+                {access !== 'unsupported' ? <Pressable accessibilityRole="button" disabled={requesting}
+                  onPress={() => void allowNotifications()} hitSlop={8}>
+                  <Text style={styles.link}>{access === 'denied' ? t('打开系统设置') : t('允许通知')}</Text>
+                </Pressable> : null}
+              </View> : null}
+            </View>
+            <View style={styles.section}>
+              <Text style={styles.label}>{t('语音')}</Text>
+              <View style={[styles.card, styles.row]}>
+                <Text style={[styles.rowText, styles.flex]}>{t('朗读回复')}</Text>
+                <Switch accessibilityLabel={t('朗读回复')} value={readAloud}
+                  disabled={savingPreferences || (serverBot && !online)} onValueChange={value => void changePreference('readAloud', value)}
                   trackColor={{ false: C.field2, true: C.green }} ios_backgroundColor={C.field2} />
               </View>
             </View>
+            {preferencesError ? <Text accessibilityRole="alert" style={styles.danger}>{preferencesError}</Text> : null}
             <View style={styles.section}>
               <View style={styles.card}>
                 <Pressable accessibilityRole="button" onPress={() => void exportChat()}
@@ -244,6 +282,8 @@ const useStyles = themedStyles(({ C }) => ({
   offline: { padding: 16, gap: 10 },
   expanded: { transform: [{ rotate: '90deg' }] },
   divider: { height: 1, backgroundColor: C.hairline, marginHorizontal: 16 },
+  notificationAccess: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 2 },
+  link: { color: C.green, fontSize: 12, lineHeight: 18, fontWeight: '500' },
   danger: { color: C.red, fontSize: 15, lineHeight: 21 },
   pressed: { opacity: 0.65 },
 }), false);

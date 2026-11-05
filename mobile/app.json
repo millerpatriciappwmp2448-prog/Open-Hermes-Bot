@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hermesbot.mobile",
-      "buildNumber": "18",
+      "buildNumber": "19",
       "deploymentTarget": "17.0",
       "infoPlist": {
         "CFBundleDevelopmentRegion": "en",
@@ -36,11 +36,24 @@
     "plugins": [
       "expo-secure-store",
       [
+        "expo-notifications",
+        {
+          "enableRemoteNotifications": false
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "允许 Hermes Bot 选择照片并发送给你的智能体。",
           "cameraPermission": "允许 Hermes Bot 拍摄照片并发送给你的智能体。",
-          "microphonePermission": false
+          "microphonePermission": "允许 Hermes Bot 使用麦克风进行语音输入。"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "允许 Hermes Bot 使用麦克风进行语音输入。",
+          "speechRecognitionPermission": "允许 Hermes Bot 在手机上把语音转成文字。"
         }
       ]
     ]
