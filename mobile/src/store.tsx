@@ -326,7 +326,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const syncRef = useRef<{ key: string; work: Promise<void> } | null>(null);
   const syncGeneration = useRef(0);
   const threadsRef = useRef<Thread[]>(threads);
+  const botsRef = useRef<Bot[]>(bots);
+  botsRef.current = bots;
   const connectionRef = useRef(connection);
+  /** The pairing this phone last synced with; a later failed refresh keeps it usable. */
+  const syncedRef = useRef<string | null>(null);
   const [replySpeaker] = useState(() => createReplySpeaker({
     state: reply => ({ host: client.current?.baseUrl,
       enabled: chatPreferencesRef.current[reply.botId]?.readAloud === true,
@@ -441,16 +445,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const bridge = client.current?.baseUrl === normalizeUrl(url) && client.current.token === token
       ? client.current : createBridgeClient(url, token);
     // Publish the host-owned agent before reading bots/sessions/pins together.
-    // Older bridges can still connect; the supervisor entry requires an update.
+    // Optional: an older bridge or a busy host must not block the whole sync.
     await bridge.ensureCodexAgent().catch(error => {
-      if (!(error instanceof BridgeError) || error.code !== 'not_found') throw error;
+      if (error instanceof BridgeError && error.code === 'unauthorized') throw error;
     });
     const [rawBots, sessions, savedPrefs] = await Promise.all([bridge.bots(), bridge.sessions(), bridge.prefs()]);
-    const pending: BridgeRun[] = await bridge.activeTurns();
+    // Recovering runs is best effort; a failure here is not "server offline".
+    const pending: BridgeRun[] = await bridge.activeTurns().catch(error => {
+      if (error instanceof BridgeError && error.code === 'unauthorized') throw error;
+      return [];
+    });
 
+    // A conversation another agent opened is listed in history, never used as the main chat.
     const newest = (botId: string): BridgeSession | undefined =>
       sessions
-        .filter((row) => row.bot === botId && !row.archived)
+        .filter((row) => row.bot === botId && !row.archived && !row.fromAgent)
         .sort((left, right) => right.lastActive - left.lastActive)[0];
 
     const loaded = await Promise.all(
@@ -540,6 +549,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setMessages(current => Object.fromEntries(Object.entries(nextMessages).map(([id, rows]) =>
       [id, preserve(id) ? current[id] || rows : rows])));
     setConnection({ status: 'connected', url, device, health, model, provider });
+    syncedRef.current = key;
     setPrefs((current) => ({
       ...current,
       host: hostOf(url),
@@ -606,8 +616,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       const message =
         error instanceof BridgeError ? error.message : t("无法从桥接服务读取数据。");
-      setConnection((state) => ({ ...state, status: 'error', error: message }));
-      if (error instanceof BridgeError && error.code === 'unauthorized') {
+      const unauthorized = error instanceof BridgeError && error.code === 'unauthorized';
+      // One failed refresh of a paired, synced phone is a hiccup, not "offline":
+      // keep the controls usable and let each action report its own error.
+      const keep = !unauthorized && syncedRef.current !== null && client.current === active;
+      setConnection((state) => ({ ...state, status: keep ? state.status : 'error', error: message }));
+      if (unauthorized) {
+        syncedRef.current = null;
         savedRef.current = null;
         await writeSaved(null);
       }
@@ -628,6 +643,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return;
     }
     // All whole-document preference writes share the model queue.
+    // The switch moves at once; a failed write puts it back and reports why.
+    const before = chatPreferencesRef.current[botId] || readChatPreferences({}, profile);
+    chatPreferencesRef.current = { ...chatPreferencesRef.current, [botId]: { ...before, ...value } };
+    setChatPreferences(chatPreferencesRef.current);
     const write = modelWrites.current.catch(() => undefined).then(async () => {
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
       const saved = await active.prefs();
@@ -639,7 +658,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setChatPreferences(chatPreferencesRef.current);
     });
     modelWrites.current = write;
-    await write;
+    try {
+      await write;
+    } catch (error) {
+      if (client.current === active) {
+        const restored = { ...(chatPreferencesRef.current[botId] || before) };
+        (Object.keys(value) as (keyof ChatPreferences)[]).forEach(key => { (restored as Record<string, unknown>)[key] = before[key]; });
+        chatPreferencesRef.current = { ...chatPreferencesRef.current, [botId]: restored };
+        setChatPreferences(chatPreferencesRef.current);
+      }
+      throw error;
+    }
   }, []);
 
   const loadSessions = useCallback<Store['loadSessions']>(async botId => {
@@ -652,7 +681,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadHistory = useCallback<Store['loadHistory']>(async (botId, offset) => {
     const active = client.current;
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
     const page = await active.history(botId, offset);
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     return { ...page, sessions: page.sessions.filter(row => row.bot === botId) };
@@ -660,7 +689,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadMonitor = useCallback<Store['loadMonitor']>(async () => {
     const active = client.current;
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
     const snapshot = await active.monitor();
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     return snapshot;
@@ -668,7 +697,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const codexCall = useCallback(async <T,>(run: (active: BridgeClient) => Promise<T>) => {
     const active = client.current;
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
     const result = await run(active);
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     return result;
@@ -680,7 +709,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadTranscript = useCallback<Store['loadTranscript']>(async (botId, sessionId, offset) => {
     const active = client.current;
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
     const page = await active.transcript(botId, sessionId, offset);
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     return page;
@@ -689,7 +718,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadTodos = useCallback<Store['loadTodos']>(async (threadId) => {
     const active = client.current;
     const thread = threadsRef.current.find((entry) => entry.id === threadId);
-    if (!active || connectionRef.current.status !== 'connected') return;
+    if (!active || syncedRef.current === null) return;
     if (!thread || thread.kind !== 'bot' || !thread.sessionId || thread.typing) return;
     const { botId, sessionId } = thread;
     let todos: TodoItem[];
@@ -713,24 +742,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(async () => {
     const saved = savedRef.current;
     if (!saved) return;
-    setConnection((state) => ({ ...state, status: 'connecting', error: undefined }));
+    const synced = syncedRef.current === `${saved.url}\n${saved.token}` && client.current !== null;
+    // Returning to the app re-syncs quietly; only a phone that never synced shows "connecting".
+    if (!synced) setConnection((state) => ({ ...state, status: 'connecting', error: undefined }));
     try {
       await adopt(saved.url, saved.token, saved.device);
     } catch (error) {
       const unauthorized = error instanceof BridgeError && error.code === 'unauthorized';
       if (unauthorized) {
+        syncedRef.current = null;
         savedRef.current = null;
         await writeSaved(null);
+      }
+      const message = error instanceof BridgeError
+        ? error.message
+        : t("桥接服务未响应，请检查 Tailscale 是否已连接。");
+      if (synced && !unauthorized && savedRef.current === saved) {
+        setConnection((state) => ({ ...state, error: message }));
+        return;
       }
       setConnection((state) => ({
         ...state,
         status: 'error',
         // A rejected token was deleted above, so this phone is no longer paired.
         device: unauthorized ? '' : state.device,
-        error:
-          error instanceof BridgeError
-            ? error.message
-            : t("桥接服务未响应，请检查 Tailscale 是否已连接。"),
+        error: message,
       }));
     }
   }, [adopt]);
@@ -776,6 +812,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     watchesRef.current = {};
     turnsRef.current = {};
     client.current = null;
+    syncedRef.current = null;
     savedRef.current = null;
     await writeSaved(null);
     setConnection({ status: 'offline', url: '', device: '', model: '', provider: '' });
@@ -858,7 +895,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const addBot = useCallback<Store['addBot']>(
     ({ name, shape, color, model, selectedModel }) => {
       const label = name.trim() || t("新智能体");
-      const online = connectionRef.current.status === 'connected';
+      const online = syncedRef.current !== null;
       const taken = bots.map((bot) => bot.id);
       // A Hermes profile name is ASCII; the display name travels as the title.
       const profile = profileNameFor(label, taken);
@@ -951,7 +988,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const active = client.current;
       const serverBot = threadsRef.current.some(thread => thread.botId === id && thread.id.startsWith('bot:'));
       if (serverBot || active || savedRef.current) {
-        if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+        if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
         await active.updateBot(id, {
           ...(patch.name ? { title: patch.name } : {}),
           ...(patch.color ? { color: patch.color } : {}),
@@ -987,7 +1024,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setBots(current => current.map(bot => bot.id === botId ? { ...bot, description: wanted } : bot));
       return;
     }
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
     const saved = await active.updateBot(botId, { description: wanted, soul: true });
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     const description = typeof saved?.role === 'string' ? saved.role : wanted;
@@ -1005,16 +1042,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setBotPermissions = useCallback<Store['setBotPermissions']>(async (botId, values) => {
     const active = client.current;
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
-    const raw = await active.setPermissions(botId, values);
-    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
-    const next = toBot(raw);
-    setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, permissions: next.permissions } : bot)));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
+    const before = botsRef.current.find(bot => bot.id === botId)?.permissions ?? { crossSpace: false, manageCreated: false };
+    const patch = (permissions: Bot['permissions']) =>
+      setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, permissions } : bot)));
+    // Show the choice immediately; the server's answer is the final state.
+    patch({ ...before, ...values } as Bot['permissions']);
+    try {
+      const raw = await active.setPermissions(botId, values);
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      patch(toBot(raw).permissions);
+    } catch (error) {
+      if (client.current === active) patch(before);
+      throw error;
+    }
   }, []);
 
   const autoTagBot = useCallback<Store['autoTagBot']>(async (botId) => {
     const active = client.current;
-    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
     const raw = await active.autoTag(botId, false);
     if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     const next = toBot(raw);
@@ -1057,7 +1103,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const active = client.current;
     const serverBot = threadsRef.current.some(thread => thread.botId === id && thread.id.startsWith('bot:'));
     if (serverBot || active || savedRef.current) {
-      if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+      if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
       await active.deleteBot(id);
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     }
@@ -1089,7 +1135,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         threads.map((thread) => thread.id),
       );
       const first = bots.find((bot) => bot.id === members[0]);
-      const online = connectionRef.current.status === 'connected';
+      const online = syncedRef.current !== null;
       setThreads((current) => [
         {
           id,
@@ -1185,7 +1231,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!thread) return;
     const active = client.current;
     if (thread.kind === 'bot' && (thread.id.startsWith('bot:') || active || savedRef.current)) {
-      if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+      if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
       if (thread.sessionId) await active.deleteSession(thread.botId, thread.sessionId);
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     }
@@ -1233,7 +1279,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // One turn at a time per conversation: Hermes keeps one session thread.
       if (thread?.typing) return;
       const online =
-        connectionRef.current.status === 'connected' && client.current !== null;
+        syncedRef.current !== null && client.current !== null;
       const userMessage: Message = {
         id: `m-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
         from: 'user',

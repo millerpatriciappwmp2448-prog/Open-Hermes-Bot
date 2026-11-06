@@ -305,7 +305,7 @@ export function ChatScreen({ route, navigation }: Props) {
               <Bloub shape={bot?.shape ?? 'capsule'} color={bot?.color ?? '#4f9d8f'} size={18} animated active />
               <Text style={styles.typingLabel} numberOfLines={1}>
                 {thread.tool
-                  ? t("正在使用工具：{0}", {"0": thread.tool})
+                  ? toolLabel(thread.tool)
                   : `${thread.name} ${t("正在思考")}`}
               </Text>
               <TypingDots />
@@ -429,3 +429,14 @@ const useStyles = themedStyles(({ C, INK }) => ({
   typing: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
   typingLabel: { flexShrink: 1, color: INK.quiet, fontSize: 12 },
 }), false);
+/** Friendly label for the tool a bot is running, without raw MCP names. */
+function toolLabel(tool: string): string {
+  const name = tool.startsWith('mcp__') ? tool.split('__').slice(2).join('__') || tool : tool;
+  if (tool.startsWith('mcp__hermes_agents__')) {
+    if (name === 'message_agent') return t('正在联系其他智能体');
+    if (name === 'list_agents' || name === 'list_created') return t('正在查看其他智能体');
+    return t('正在管理智能体');
+  }
+  return t("正在使用工具：{0}", {"0": name});
+}
+

@@ -15,6 +15,14 @@ import { notificationAccess, type NotificationAccess } from '../notificationDevi
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChatSettings'>;
 
+/** The real reason a switch could not be saved, without technical noise. */
+function saveError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  if (code === 'not_found') return t('服务器上的桥接服务版本过旧，请更新后重试。');
+  const message = error instanceof Error ? error.message.trim() : '';
+  return message ? t('设置未保存：{0}', { '0': message }) : t('设置未保存，请重试。');
+}
+
 export function ChatSettingsScreen({ route, navigation }: Props) {
   useTranslation();
   const { styles, C, scheme } = useStyles();
@@ -40,7 +48,9 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const thread = threadById(route.params.threadId);
   const bot = thread ? botById(thread.botId) : undefined;
   const serverBot = Boolean(thread?.id.startsWith('bot:'));
-  const online = connection.status === 'connected';
+  // Usable as soon as this phone is paired; a failed write reports its own error.
+  const online = connection.status === 'connected' || Boolean(connection.device && connection.url);
+  const unreachable = connection.status === 'error' && !connection.device;
   const closeConfirm = () => { if (!deleting) { setConfirming(null); setDeleteError(''); } };
   const tapbacks = thread ? chatPreferences[thread.botId]?.tapbacks !== false : true;
   const notifications = thread ? chatPreferences[thread.botId]?.notifications !== false : true;
@@ -71,7 +81,7 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
     if (!thread || savingPermissions) return;
     setSavingPermissions(true); setPermissionsError('');
     try { await setBotPermissions(thread.botId, { [key]: value }); }
-    catch { setPermissionsError(t('设置未保存，请重试。')); }
+    catch (error) { setPermissionsError(saveError(error)); }
     finally { setSavingPermissions(false); }
   }
 
@@ -88,7 +98,7 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
     setSavingPreferences(true);
     setPreferencesError('');
     try { await togglePin(thread.id); }
-    catch { setPreferencesError(t('设置未保存，请重试。')); }
+    catch (error) { setPreferencesError(saveError(error)); }
     finally { setSavingPreferences(false); }
   }
 
@@ -97,7 +107,7 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
     setSavingPreferences(true);
     setPreferencesError('');
     try { await saveChatPreferences(thread.botId, { [key]: value }); }
-    catch { setPreferencesError(t('设置未保存，请重试。')); }
+    catch (error) { setPreferencesError(saveError(error)); }
     finally { setSavingPreferences(false); }
   }
 
@@ -142,7 +152,7 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
                 <Text style={styles.meta}>{serverBot ? t('Hermes 服务器') : t('演示模式')}</Text>
               </View>
             </View>
-            {serverBot && !online ? <Text accessibilityRole="alert" style={styles.offlineNote}>{t('无法连接服务器')}</Text> : null}
+            {serverBot && unreachable ? <Text accessibilityRole="alert" style={styles.offlineNote}>{t('无法连接服务器')}</Text> : null}
 
             {thread.kind === 'bot' ? (
               <View style={styles.section}>

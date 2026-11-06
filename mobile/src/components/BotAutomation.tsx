@@ -49,7 +49,8 @@ export function DescriptionEditor({ botId, onSaved, embedded = false }: { botId:
   useTranslation();
   const { botById, saveDescription, threads, connection } = useStore();
   const serverBot = threads.some(thread => thread.botId === botId && thread.id.startsWith('bot:'));
-  const offline = serverBot && connection.status !== 'connected';
+  // Paired devices stay editable through short reconnects; the save itself reports real failures.
+  const offline = serverBot && connection.status !== 'connected' && !(connection.device && connection.url);
   const stored = botById(botId)?.description ?? '';
   const [text, setText] = useState(stored);
   const [busy, setBusy] = useState(false);

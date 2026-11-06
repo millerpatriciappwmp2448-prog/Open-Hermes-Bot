@@ -55,3 +55,19 @@ class MobileRecoveryTest(unittest.TestCase):
         self.assertEqual(self.call('GET', path)[1]['run']['status'], 'cancelled')
         self.assertEqual(self.call('GET', '/v1/active-turns')[1]['runs'], [])
 
+    def test_run_forgotten_by_hermes_does_not_break_the_active_list(self):
+        # A gateway restart drops in-memory runs; the bridge still holds the
+        # reference. That must not turn the whole refresh into "offline".
+        self.fake.run_state = 'running'
+        gone = '/v1/sessions/nova/s-nova-1/turns/mobile-request-gone'
+        live = '/v1/sessions/default/s-primary-1/turns/mobile-request-live'
+        self.assertEqual(self.call('PUT', gone, {'message': 'lost'})[0], 202)
+        self.assertEqual(self.call('PUT', live, {'message': 'kept'})[0], 202)
+        for key in [k for k in self.fake.detached_runs if k[0] == 'nova']:
+            del self.fake.detached_runs[key]
+        status, body = self.call('GET', '/v1/active-turns')
+        self.assertEqual(status, 200, body)
+        self.assertEqual([run['bot'] for run in body['runs']], ['default'])
+        # The stale reference is retired, so later refreshes skip it entirely.
+        self.assertEqual(self.call('GET', '/v1/active-turns')[1]['runs'][0]['bot'], 'default')
+

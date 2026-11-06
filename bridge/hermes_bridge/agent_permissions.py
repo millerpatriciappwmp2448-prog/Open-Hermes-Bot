@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import hmac
+import json
 import os
 import re
 import secrets
@@ -65,6 +66,38 @@ class AgentPermissions:
         self.waiting: set[str] = set()
         self.depth: dict[str, int] = {}
         self.writes: dict[str, list[float]] = {}
+        self._agent_sessions: list[str] | None = None
+
+    # ---- conversations one agent opened in another
+
+    def _sessions_path(self) -> Path:
+        return self.config.state_dir / "agent-sessions.json"
+
+    def agent_sessions(self) -> set[str]:
+        """Session ids opened by message_agent; never a bot's main chat."""
+        with self.lock:
+            if self._agent_sessions is None:
+                try:
+                    rows = json.loads(self._sessions_path().read_text(encoding="utf-8"))
+                    self._agent_sessions = [str(row) for row in rows] if isinstance(rows, list) else []
+                except (OSError, ValueError):
+                    self._agent_sessions = []
+            return set(self._agent_sessions)
+
+    def _remember_session(self, session_id: str) -> None:
+        with self.lock:
+            self.agent_sessions()
+            known = [row for row in self._agent_sessions if row != session_id] + [session_id]
+            # Bounded, oldest first out: those have long left the session list.
+            self._agent_sessions = known[-2000:]
+            _write_private(self._sessions_path(), json.dumps(self._agent_sessions))
+
+    def mark(self, rows: list[dict]) -> list[dict]:
+        known = self.agent_sessions()
+        for row in rows:
+            if row.get("id") in known:
+                row["fromAgent"] = True
+        return rows
 
     # ---- tokens
 
@@ -330,6 +363,7 @@ class AgentPermissions:
         try:
             sender = meta["title"] or ("Hermes" if caller == profiles.PRIMARY else caller)
             session = self.hermes.create_session(target, f"来自 {sender}")
+            self._remember_session(session["id"])
             pick = prefs.read(self.config).get("picks", {}).get(target_bot["id"], {}) or {}
             text = (f"[Message from another Hermes agent: {sender} ({caller}). It is not the user.]\n\n" + message)
             stream = self.hermes.stream_turn(target, session["id"], text, str(pick.get("model") or ""),

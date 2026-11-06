@@ -1,5 +1,10 @@
 // Interface copy only. Server messages and user input are never translation keys.
 export const english: Readonly<Record<string, string>> = {
+  "正在联系其他智能体": "Contacting another agent",
+  "正在查看其他智能体": "Checking other agents",
+  "正在管理智能体": "Managing agents",
+  "服务器上的桥接服务版本过旧，请更新后重试。": "The bridge on the server is out of date. Update it and try again.",
+  "设置未保存：{0}": "Setting not saved: {0}",
   "查看监督详情": "Supervision details",
   "选择一个 Codex 会话并告诉我完成标准，就能开始监督。": "Choose a Codex chat and tell me the completion criteria to start supervision.",
   "监督在电脑上持续运行，关闭手机也会继续。": "Supervision continues on your computer when you close the phone.",

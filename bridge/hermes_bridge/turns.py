@@ -127,7 +127,20 @@ class Turns:
                     if row.get("id") and row.get("status") not in TERMINAL]
         results = []
         for row in rows:
-            found = self.get(row["bot"], row["sessionId"], row["requestId"])
+            try:
+                found = self.get(row["bot"], row["sessionId"], row["requestId"])
+            except HermesError as exc:
+                # One stale reference must not fail the whole list (the phone
+                # treats a failed list as "server offline"). Hermes forgets
+                # in-memory runs after a gateway restart: retire those for good;
+                # transient failures are retried on the next refresh.
+                if exc.status in (404, 410):
+                    with self.lock:
+                        saved = self.rows.get(self.key(row["bot"], row["sessionId"], row["requestId"]))
+                        if saved is not None:
+                            saved["status"] = "unknown"
+                            self._save()
+                continue
             # Include runs that completed while the phone was away; the caller
             # reads the transcript in the same refresh, so only live ones resume.
             if found["status"] not in TERMINAL:

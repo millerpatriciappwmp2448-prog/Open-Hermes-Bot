@@ -762,7 +762,9 @@ class Handler(BaseHTTPRequestHandler):
         profiles.get_bot(self.config, bot_id)
         limit = self._page_number(query, "limit", 50, 1, 100)
         offset = self._page_number(query, "offset", 0, 0, 1000000)
-        return self._json(200, self.bridge.hermes.history(profiles.profile_of(bot_id), limit, offset))
+        page = self.bridge.hermes.history(profiles.profile_of(bot_id), limit, offset)
+        self.bridge.permissions.mark(page["sessions"])
+        return self._json(200, page)
 
     def _sessions(self, match, query) -> int:
         wanted = (query.get("bot") or [""])[0]
@@ -779,6 +781,9 @@ class Handler(BaseHTTPRequestHandler):
         with ThreadPoolExecutor(max_workers=max(1, min(4, len(bots)))) as pool:
             rows = [row for batch in pool.map(fetch, bots) for row in batch]
         rows.sort(key=lambda row: row["lastActive"], reverse=True)
+        # Conversations another agent opened stay listed but are labelled, so
+        # the phone never takes one for the bot's own chat.
+        self.bridge.permissions.mark(rows)
         return self._json(200, {"sessions": rows, "errors": errors})
 
     def _session_create(self, match, query) -> int:

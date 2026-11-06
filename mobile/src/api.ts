@@ -41,6 +41,8 @@ export type BridgeSession = {
   lastActive: number;
   archived: boolean;
   source?: string;
+  /** Opened by another agent through message_agent. */
+  fromAgent?: boolean;
 };
 
 export type BridgeMessage = { id?: string; role: string; content: string; timestamp: number };
