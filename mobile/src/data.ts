@@ -19,6 +19,7 @@ export type Bot = {
   description?: string;
   primary?: boolean;
   capabilities?: string[];
+  tagAuto?: boolean;
 };
 
 export type Reaction = { emoji: string; count: number };

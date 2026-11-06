@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
+import { AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Share, Switch, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
@@ -10,7 +10,7 @@ import { ConfirmBlock } from '../components/UI';
 import { t, useTranslation } from '../i18n';
 import type { RootStackParamList } from '../nav';
 import { useStore } from '../store';
-import { themedStyles } from '../theme';
+import { themedStyles, useTheme } from '../theme';
 import { notificationAccess, type NotificationAccess } from '../notificationDevice';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ChatSettings'>;
@@ -18,10 +18,15 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ChatSettings'>;
 export function ChatSettingsScreen({ route, navigation }: Props) {
   useTranslation();
   const { styles, C } = useStyles();
+  const themeInfo = useTheme();
+  const scheme = themeInfo.appearance.scheme;
   const insets = useSafeAreaInsets();
-  const { threadById, botById, messages, togglePin, clearThread, removeBot, connection } = useStore();
+  const { threadById, botById, messages, togglePin, clearThread, removeBot, connection, updateBot, autoTagBot } = useStore();
   const { chatPreferences, saveChatPreferences } = useStore();
-  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [tagDraft, setTagDraft] = useState<string | null>(null);
+  const [tagBusy, setTagBusy] = useState(false);
+  const [tagError, setTagError] = useState('');
+    const [savingPreferences, setSavingPreferences] = useState(false);
   const [preferencesError, setPreferencesError] = useState('');
   const [access, setAccess] = useState<NotificationAccess>('undetermined');
   const [requesting, setRequesting] = useState(false);
@@ -33,6 +38,7 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const [exportError, setExportError] = useState('');
   const thread = threadById(route.params.threadId);
   const bot = thread ? botById(thread.botId) : undefined;
+  const tagValue = tagDraft ?? bot?.tag ?? thread?.tag ?? '';
   const serverBot = Boolean(thread?.id.startsWith('bot:'));
   const online = connection.status === 'connected';
   const closeConfirm = () => { if (!deleting) { setConfirming(null); setDeleteError(''); } };
@@ -47,6 +53,24 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') update(); });
     return () => { mounted = false; subscription.remove(); };
   }, []);
+
+  async function saveTag() {
+    const trimmed = tagValue.trim();
+    if (trimmed === (bot?.tag ?? thread?.tag ?? '')) { setTagDraft(null); return; }
+    if (!thread || !bot) return;
+    setTagBusy(true); setTagError('');
+    try { await updateBot(bot.id, { tag: trimmed || undefined }); setTagDraft(null); }
+    catch { setTagError(t('无法连接服务器')); }
+    finally { setTagBusy(false); }
+  }
+
+  async function generateTag() {
+    if (!thread || !bot || !serverBot || !online || tagBusy) return;
+    setTagBusy(true); setTagError('');
+    try { const generated = await autoTagBot(bot.id); setTagDraft(generated ?? ''); }
+    catch { setTagError(t('无法连接服务器')); }
+    finally { setTagBusy(false); }
+  }
 
   async function changePin() {
     if (!thread || savingPreferences) return;
@@ -120,8 +144,24 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
             </View>
 
             {thread.kind === 'bot' ? <>
+            <View style={styles.section}>
+              <Text style={styles.label}>{t('标签')}</Text>
+              <View style={[styles.card, styles.row]}>
+                <TextInput value={tagValue} onChangeText={value => setTagDraft(value.slice(0, 24))}
+                  onBlur={() => void saveTag()} onSubmitEditing={() => void saveTag()} returnKeyType="done"
+                  editable={!tagBusy && (!serverBot || online)} placeholder={t('添加标签')} placeholderTextColor={C.text2}
+                  keyboardAppearance={scheme}
+                  accessibilityLabel={t('标签')} style={[styles.rowText, styles.flex, styles.input]} />
+                <Pressable accessibilityRole="button" disabled={tagBusy || !serverBot || !online}
+                  onPress={() => void generateTag()} hitSlop={8}>
+                  <Text style={[styles.link, (tagBusy || !tagBusy || !serverBot || !online) && styles.meta]}>{tagBusy ? t('生成中…') : t('自动生成')}</Text>
+                </Pressable>
+              </View>
+              {tagError ? <Text accessibilityRole="alert" style={styles.dangerSmall}>{tagError}</Text> : null}
+            </View>
+
               <View style={styles.section}>
-                <Text style={styles.label}>{t('描述')}</Text>
+              <Text style={styles.label}>{t('描述')}</Text>
                 <DescriptionEditor key={thread.botId} botId={thread.botId} embedded />
               </View>
               <View style={styles.section}>
@@ -286,4 +326,6 @@ const useStyles = themedStyles(({ C }) => ({
   link: { color: C.green, fontSize: 12, lineHeight: 18, fontWeight: '500' },
   danger: { color: C.red, fontSize: 15, lineHeight: 21 },
   pressed: { opacity: 0.65 },
+  input: { minHeight: 36, paddingVertical: 0 },
+  dangerSmall: { color: C.red, fontSize: 13, marginTop: 8 },
 }), false);

@@ -133,6 +133,8 @@ type Store = {
 
   addBot: (input: NewBot) => string;
   updateBot: (id: string, patch: Partial<Pick<Bot, 'name' | 'shape' | 'color' | 'tag'>>) => Promise<void>;
+  /** Ask the server to summarise the description into a short role tag. */
+  autoTagBot: (botId: string) => Promise<void>;
   removeBot: (id: string) => Promise<void>;
   /** Write what the bot is for into its SOUL.md; it applies from its next session. */
   saveDescription: (botId: string, text: string) => Promise<void>;
@@ -251,6 +253,7 @@ function toBot(raw: BridgeBot): Bot {
     session: raw.profile === 'default' ? '' : raw.profile.slice(0, 4),
     description: raw.role || '',
     tag: raw.tag || '',
+    tagAuto: raw.tagAuto === true,
     primary: raw.primary,
     capabilities: raw.capabilities || [],
   };
@@ -1093,6 +1096,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const autoTagBot = useCallback<Store['autoTagBot']>(async (botId) => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const raw = await active.autoTag(botId, false);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    const next = toBot(raw);
+    setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, tag: next.tag, tagAuto: next.tagAuto } : bot)));
+    setThreads((current) => current.map((thread) => (thread.botId === botId ? { ...thread, tag: next.tag } : thread)));
+  }, []);
+
+
   const leaveGroup = useCallback<Store['leaveGroup']>((id) => {
     setThreads((current) => current.filter((thread) => thread.id !== id));
     setMessages((current) => {
@@ -1410,6 +1424,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addBot,
       updateBot,
       removeBot,
+    autoTagBot,
       saveDescription,
       loadJobs,
       createJob,
@@ -1450,6 +1465,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refresh,
       retry,
       removeBot,
+    autoTagBot,
       removeMessage,
       removeThread,
       send,
