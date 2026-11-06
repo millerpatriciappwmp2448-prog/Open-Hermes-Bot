@@ -31,10 +31,19 @@ import { useInitializeAppearance } from './src/appearance';
 import { useInitializeLanguage } from './src/i18n';
 import { AvatarMotionProvider } from './src/components/AvatarMotion';
 import { ReplyNotificationRouter } from './src/components/ReplyNotificationRouter';
+import { CrashGuard } from './src/components/CrashGuard';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
+  return (
+    <CrashGuard>
+      <AppRoot />
+    </CrashGuard>
+  );
+}
+
+function AppRoot() {
   useInitializeLanguage();
   useInitializeAppearance();
   const { C, scheme, ready } = useTheme();
