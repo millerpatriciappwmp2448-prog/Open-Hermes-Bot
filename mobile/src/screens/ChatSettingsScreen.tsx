@@ -18,8 +18,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ChatSettings'>;
 export function ChatSettingsScreen({ route, navigation }: Props) {
   useTranslation();
   const { styles, C } = useStyles();
-  const themeInfo = useTheme();
-  const scheme = themeInfo.appearance.scheme;
+  const { themeName, C: themeC, ...appearance } = useTheme();
+  const scheme = appearance.scheme;
   const insets = useSafeAreaInsets();
   const { threadById, botById, messages, togglePin, clearThread, removeBot, connection, updateBot, autoTagBot } = useStore();
   const { chatPreferences, saveChatPreferences } = useStore();
