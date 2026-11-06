@@ -1,0 +1,68 @@
+name: iOS simulator launch smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/ios17-trollstore-ipa
+    paths:
+      - '.github/workflows/ios-sim-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      CI: '1'
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci --fetch-retries=5
+      - run: npx expo prebuild --platform ios --clean --no-install
+      - run: pod install --project-directory=ios
+      - name: Build Release app for the simulator
+        run: |
+          mkdir -p artifacts
+          project="$(find ios -maxdepth 1 -name '*.xcodeproj' -print -quit)"
+          scheme="$(basename "$project" .xcodeproj)"
+          xcodebuild -workspace "ios/$scheme.xcworkspace" -scheme "$scheme" \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build > artifacts/sim-build.log 2>&1 || { tail -80 artifacts/sim-build.log; exit 1; }
+          echo "APP=$PWD/ios/build/Build/Products/Release-iphonesimulator/$scheme.app" >> "$GITHUB_ENV"
+      - name: Launch and watch for crashes
+        run: |
+          udid="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for k,v in d.items() if "iOS" in k for x in v if "iPhone" in x["name"]))')"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$APP"
+          xcrun simctl spawn "$udid" log stream --level debug --style compact --predicate 'process == "HermesBot"' > artifacts/sim-app.log 2>&1 &
+          sleep 3
+          xcrun simctl launch "$udid" com.hermesbot.mobile || true
+          sleep 40
+          xcrun simctl io "$udid" screenshot artifacts/sim-launch.png || true
+          if xcrun simctl spawn "$udid" launchctl list | grep -q com.hermesbot.mobile; then echo ALIVE > artifacts/sim-result.txt; else echo CRASHED > artifacts/sim-result.txt; fi
+          kill %1 || true
+          cp ~/Library/Logs/DiagnosticReports/HermesBot* artifacts/ 2>/dev/null || true
+          cat artifacts/sim-result.txt
+          grep -iE 'fatal|exception|Unhandled|terminat|Hermes error' artifacts/sim-app.log | tail -80 || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-sim-smoke
+          path: |
+            mobile/artifacts/sim-*
+            mobile/artifacts/HermesBot*
+          if-no-files-found: ignore
+          retention-days: 7
