@@ -15,7 +15,7 @@ permissions:
 jobs:
   smoke:
     runs-on: macos-26-intel
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       CI: '1'
       DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
@@ -33,36 +33,81 @@ jobs:
       - run: node scripts/test-ios-build-config.cjs
       - run: npx expo prebuild --platform ios --clean --no-install
       - run: pod install --project-directory=ios
-      - name: Build Release app for the simulator
+      - name: Select simulator and record test environment
         run: |
           mkdir -p artifacts
+          xcrun simctl list devices available -j > artifacts/sim-devices.json
+          python3 - <<'PY'
+          import json, os, platform
+          from pathlib import Path
+          devices = json.loads(Path('artifacts/sim-devices.json').read_text())['devices']
+          candidates = [(runtime, device) for runtime, rows in devices.items()
+                        if '.iOS-' in runtime for device in rows if 'iPhone' in device['name']]
+          if not candidates:
+              raise SystemExit('No available iPhone simulator runtime')
+          # Prefer the oldest installed runtime; record it rather than implying
+          # that the runner's current iOS is equivalent to the device's iOS 17.
+          runtime, device = min(candidates, key=lambda row: tuple(
+              int(part) for part in row[0].split('.iOS-')[1].split('-')))
+          info = json.loads(Path('app.json').read_text())['expo']
+          metadata = dict(commit=os.environ['GITHUB_SHA'], version=info['version'],
+                          build=info['ios']['buildNumber'], runtime=runtime,
+                          device=device['name'], udid=device['udid'],
+                          architecture=platform.machine())
+          Path('artifacts/sim-environment.json').write_text(json.dumps(metadata, indent=2))
+          print(json.dumps(metadata, indent=2))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f"SIM_UDID={device['udid']}\nSIM_ARCH={platform.machine()}\n")
+          PY
+      - name: Build Release app for the simulator
+        timeout-minutes: 75
+        run: |
           project="$(find ios -maxdepth 1 -name '*.xcodeproj' -print -quit)"
           scheme="$(basename "$project" .xcodeproj)"
           xcodebuild -workspace "ios/$scheme.xcworkspace" -scheme "$scheme" \
             -configuration Release -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build > artifacts/sim-build.log 2>&1 || { tail -80 artifacts/sim-build.log; exit 1; }
+            -destination "platform=iOS Simulator,id=$SIM_UDID,arch=$SIM_ARCH" \
+            -derivedDataPath ios/build ARCHS="$SIM_ARCH" ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO build > artifacts/sim-build.log 2>&1 || { tail -80 artifacts/sim-build.log; exit 1; }
           echo "APP=$PWD/ios/build/Build/Products/Release-iphonesimulator/$scheme.app" >> "$GITHUB_ENV"
       - name: Launch and watch for crashes
+        timeout-minutes: 8
         run: |
-          udid="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for k,v in d.items() if "iOS" in k for x in v if "iPhone" in x["name"]))')"
-          xcrun simctl boot "$udid"
+          udid="$SIM_UDID"
+          xcrun simctl boot "$udid" || true
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl install "$udid" "$APP"
           xcrun simctl spawn "$udid" log stream --level debug --style compact --predicate 'process == "HermesBot"' > artifacts/sim-app.log 2>&1 &
+          logger_pid=$!
+          trap 'kill "$logger_pid" 2>/dev/null || true' EXIT
           sleep 3
-          xcrun simctl launch "$udid" com.hermesbot.mobile || true
+          xcrun simctl launch "$udid" com.hermesbot.mobile > artifacts/sim-launch.txt 2>&1 || { cat artifacts/sim-launch.txt; exit 1; }
+          cat artifacts/sim-launch.txt
           sleep 40
           xcrun simctl io "$udid" screenshot artifacts/sim-launch.png || true
-          if xcrun simctl spawn "$udid" launchctl list | grep -q com.hermesbot.mobile; then echo ALIVE > artifacts/sim-result.txt; else echo CRASHED > artifacts/sim-result.txt; fi
-          kill %1 || true
+          xcrun simctl spawn "$udid" launchctl list > artifacts/sim-processes.txt
+          # A launchctl job can remain after its process dies. Require the
+          # original launch PID, not just the bundle identifier in the job list.
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          match = re.search(r'com\.hermesbot\.mobile: (\d+)', Path('artifacts/sim-launch.txt').read_text())
+          alive = bool(match and any(row.split()[0] == match[1] and 'com.hermesbot.mobile' in row
+                                    for row in Path('artifacts/sim-processes.txt').read_text().splitlines() if row.split()))
+          Path('artifacts/sim-result.txt').write_text('ALIVE\n' if alive else 'CRASHED\n')
+          if not alive:
+              raise SystemExit('Simulator launch smoke test detected a crashed app')
+          PY
+      - name: Collect launch diagnostics
+        if: always()
+        run: |
+          mkdir -p artifacts
           cp ~/Library/Logs/DiagnosticReports/HermesBot* artifacts/ 2>/dev/null || true
-          cat artifacts/sim-result.txt
-          grep -iE 'fatal|exception|Unhandled|terminat|Hermes error' artifacts/sim-app.log | tail -80 || true
-          if grep -q '^CRASHED$' artifacts/sim-result.txt; then
-            echo 'Simulator launch smoke test detected a crashed app.' >&2
-            exit 1
+          if [ -n "${SIM_UDID:-}" ]; then
+            cp "$HOME/Library/Developer/CoreSimulator/Devices/$SIM_UDID/data/Library/Logs/CrashReporter/"HermesBot* artifacts/ 2>/dev/null || true
           fi
+          cat artifacts/sim-result.txt 2>/dev/null || true
+          grep -iE 'fatal|exception|Unhandled|terminat|Hermes error' artifacts/sim-app.log | tail -80 || true
       - if: always()
         uses: actions/upload-artifact@v4
         with:
