@@ -19,12 +19,13 @@ concurrency:
 jobs:
   build-ios:
     name: Build TrollStore IPA
-    # macOS 26 jobs have exhausted runner allocation; use the macOS 15 Intel pool.
-    runs-on: macos-15-intel
+    # Expo SDK 58's native Swift package requires the Xcode 26.4 toolchain;
+    # this Intel pool previously completed the same ARM64 device build.
+    runs-on: macos-26-intel
     timeout-minutes: 60
     env:
       CI: '1'
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
     defaults:
       run:
         working-directory: mobile
