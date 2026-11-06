@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hermesbot.mobile",
-      "buildNumber": "21",
+      "buildNumber": "22",
       "deploymentTarget": "17.0",
       "infoPlist": {
         "CFBundleDevelopmentRegion": "en",
@@ -18,7 +18,12 @@
           "en",
           "zh-Hans",
           "zh-Hant"
-        ]
+        ],
+        "NSPhotoLibraryUsageDescription": "允许选择照片发送给智能体",
+        "NSCameraUsageDescription": "允许拍照发送给智能体",
+        "NSMicrophoneUsageDescription": "允许语音输入",
+        "NSSpeechRecognitionUsageDescription": "允许语音识别",
+        "UIBackgroundModes": ["audio", "remote-notification"]
       }
     },
     "android": {
