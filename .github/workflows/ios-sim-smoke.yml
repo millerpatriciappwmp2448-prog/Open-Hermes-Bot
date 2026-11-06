@@ -30,6 +30,7 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci --fetch-retries=5
+      - run: node scripts/test-ios-build-config.cjs
       - run: npx expo prebuild --platform ios --clean --no-install
       - run: pod install --project-directory=ios
       - name: Build Release app for the simulator

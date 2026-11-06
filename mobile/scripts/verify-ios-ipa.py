@@ -26,7 +26,11 @@ def inspect_macho(data, name):
         raise ValueError(f'{name}: not ARM64')
     offset = 32
     minimum = None
+    libraries = []
+    symtab = None
     for _ in range(commands):
+        if offset + 8 > len(data):
+            raise ValueError(f'{name}: malformed load command')
         command, size = struct.unpack_from('<II', data, offset)
         if size < 8 or offset + size > len(data):
             raise ValueError(f'{name}: malformed load command')
@@ -37,11 +41,61 @@ def inspect_macho(data, name):
             minimum = version(packed)
         elif command == 0x25:  # LC_VERSION_MIN_IPHONEOS
             minimum = version(struct.unpack_from('<I', data, offset + 8)[0])
+        elif command in (0xc, 0x80000018, 0x8000001f, 0x80000023, 0x20):
+            # LOAD_DYLIB, LOAD_WEAK_DYLIB, REEXPORT_DYLIB, LOAD_UPWARD_DYLIB,
+            # LAZY_LOAD_DYLIB. Their order is the nlist library ordinal.
+            if size < 24:
+                raise ValueError(f'{name}: malformed dylib command')
+            start = struct.unpack_from('<I', data, offset + 8)[0]
+            end = data.find(b'\0', offset + start, offset + size)
+            if not 24 <= start < size or end < 0:
+                raise ValueError(f'{name}: malformed dylib name')
+            libraries.append(data[offset + start:end].decode('utf-8'))
+        elif command == 2:  # LC_SYMTAB
+            if size < 24:
+                raise ValueError(f'{name}: malformed symbol table command')
+            symtab = struct.unpack_from('<4I', data, offset + 8)
         offset += size
     if minimum is None or minimum > (17, 0, 0):
         raise ValueError(f'{name}: requires {minimum}, incompatible with iOS 17.0')
+    check_ios17_imports(data, name, libraries, symtab)
     return {'path': name, 'architecture': 'arm64',
             'minimum_ios': version_text(minimum), 'mach_o_type': file_type}
+
+
+def check_ios17_imports(data, name, libraries, symtab):
+    """Reject the RN prebuilt library's known iOS 17 dyld incompatibility.
+
+    These symbols exist in iOS 17's libc++abi, but libc++ does not reexport
+    them until a later OS. A low LC_BUILD_VERSION does not make that import
+    valid. Check the owning library, including lazy imports, not just names.
+    This is a targeted regression gate, not a complete system-symbol audit.
+    """
+    if symtab is None:
+        return
+    symoff, count, stroff, strsize = symtab
+    if symoff + count * 16 > len(data) or stroff + strsize > len(data):
+        raise ValueError(f'{name}: malformed symbol table')
+    incompatible = {'___cxa_increment_exception_refcount',
+                    '___cxa_decrement_exception_refcount'}
+    for index in range(count):
+        string, kind, _, desc, _ = struct.unpack_from('<IBBHQ', data, symoff + index * 16)
+        if kind & 0xe0 or kind & 0x0e or desc & 0x40:
+            continue  # Debug/local definition or optional weak import.
+        ordinal = desc >> 8
+        if not 0 < ordinal <= len(libraries):
+            continue
+        if libraries[ordinal - 1] != '/usr/lib/libc++.1.dylib':
+            continue
+        if string >= strsize:
+            raise ValueError(f'{name}: malformed symbol table string')
+        end = data.find(b'\0', stroff + string, stroff + strsize)
+        if end < 0:
+            raise ValueError(f'{name}: malformed symbol table string')
+        symbol = data[stroff + string:end].decode('utf-8')
+        if symbol in incompatible:
+            raise ValueError(f'{name}: iOS 17 cannot resolve {symbol} from libc++.1; '
+                             'build RN dependencies from source to link libc++abi')
 
 
 def verify(path):
@@ -101,6 +155,7 @@ def verify(path):
             'microphone_permission': microphone_permission,
             'speech_permission': speech_permission,
             'javascript_bundled': True,
+            'ios17_libcxx_imports_checked': True,
             'binaries': binaries,
         }
 

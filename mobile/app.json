@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hermes Bot",
     "slug": "hermes-bot-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hermesbot.mobile",
-      "buildNumber": "23",
+      "buildNumber": "24",
       "deploymentTarget": "17.0",
       "infoPlist": {
         "CFBundleDevelopmentRegion": "en",
@@ -39,6 +39,15 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "buildReactNativeFromSource": true,
+            "usePrecompiledModules": false
+          }
+        }
+      ],
       "expo-secure-store",
       [
         "expo-notifications",

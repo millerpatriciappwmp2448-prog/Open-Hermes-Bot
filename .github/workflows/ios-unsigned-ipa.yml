@@ -46,6 +46,11 @@ jobs:
       - name: Typecheck the mobile app
         run: npx tsc --noEmit
 
+      - name: Check iOS 17 native dependency configuration and IPA verifier
+        run: |
+          node scripts/test-ios-build-config.cjs
+          python3 scripts/test-ios-ipa.py
+
       - name: Check interface translations
         run: node scripts/test-localization.cjs
 
