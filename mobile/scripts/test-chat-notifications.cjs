@@ -54,7 +54,7 @@ test('read aloud defaults off and saves only the current agent; failed saves kee
   await act(async () => { await control().props.onValueChange(true); });
   assert.deepEqual(changes, [['atlas', { readAloud: true }]]);
   store.chatPreferences = { atlas: { readAloud: true } };
-  store.saveChatPreferences = async () => { throw new Error('offline'); };
+  store.saveChatPreferences = async () => { throw new Error(''); };
   await act(async () => tree.update(element()));
   await act(async () => { await control().props.onValueChange(false); });
   assert.equal(control().props.value, true);
