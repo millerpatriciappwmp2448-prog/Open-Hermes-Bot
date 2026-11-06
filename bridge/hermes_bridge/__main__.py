@@ -72,6 +72,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "" if len(bots) == 1 else "s",
     )
     try:
+        server.start_background()
         server.serve_forever(poll_interval=0.5)
     finally:
         server.server_close()

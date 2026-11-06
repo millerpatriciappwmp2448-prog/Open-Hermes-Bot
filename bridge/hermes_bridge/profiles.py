@@ -14,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -21,9 +22,15 @@ from typing import Callable
 
 import yaml
 
+from . import prefs
 from .config import Config
 
 PRIMARY = "default"
+
+# profile.yaml is read, changed and written back by more than one thread
+# (the phone, the labeler, an agent tool), and the primary's copy also holds
+# the picker preferences. Sharing the preferences lock keeps every write whole.
+_meta_lock: threading.RLock = prefs._lock
 
 # Names Hermes itself reserves, plus the primary profile's id.
 RESERVED = {"default", "hermes", "test", "tmp", "root", "sudo"}
@@ -169,15 +176,24 @@ def read_meta(config: Config, profile: str) -> dict:
         data = {}
     ui = data.get("ui_meta") if isinstance(data.get("ui_meta"), dict) else {}
     bots = ui.get("hermes-bots") if isinstance(ui.get("hermes-bots"), dict) else {}
+    granted = bots.get("permissions") if isinstance(bots.get("permissions"), dict) else {}
     return {
         "title": str(bots.get("title") or "").strip(),
         "color": str(bots.get("color") or "").strip(),
         "shape": str(bots.get("shape") or "").strip(),
         "tag": str(bots.get("tag") or "").strip()[:40],
+        # A tag written before this flag existed was typed by a person.
+        "tag_auto": bots.get("tag_auto") is True,
+        "tag_source": str(bots.get("tag_source") or ""),
         "description": str(data.get("description") or "").strip(),
         "capabilities": bots.get("capabilities") if isinstance(bots.get("capabilities"), list) else [],
         "managed": str(bots.get("managed") or ""),
         "internal": bots.get("internal") is True,
+        "created_by": str(bots.get("created_by") or ""),
+        "permissions": {
+            "crossSpace": granted.get("crossSpace") is True,
+            "manageCreated": granted.get("manageCreated") is True,
+        },
     }
 
 
@@ -188,6 +204,11 @@ def write_meta(config: Config, profile: str, fields: dict) -> dict:
     overwritten by a guess from here.
     """
 
+    with _meta_lock:
+        return _write_meta(config, profile, fields)
+
+
+def _write_meta(config: Config, profile: str, fields: dict) -> dict:
     path = _meta_path(config, profile)
     data: dict = {}
     try:
@@ -212,6 +233,22 @@ def write_meta(config: Config, profile: str, fields: dict) -> dict:
             bots["tag"] = tag
         else:
             bots.pop("tag", None)
+            bots.pop("tag_auto", None)
+            bots.pop("tag_source", None)
+    if "tag_auto" in fields and bots.get("tag"):
+        bots["tag_auto"] = fields["tag_auto"] is True
+    if "tag_source" in fields and bots.get("tag"):
+        if fields["tag_source"]:
+            bots["tag_source"] = str(fields["tag_source"])
+        else:
+            bots.pop("tag_source", None)
+    if "permissions" in fields and isinstance(fields["permissions"], dict):
+        bots["permissions"] = {
+            "crossSpace": fields["permissions"].get("crossSpace") is True,
+            "manageCreated": fields["permissions"].get("manageCreated") is True,
+        }
+    if "created_by" in fields and fields["created_by"]:
+        bots["created_by"] = str(fields["created_by"])
     if "description" in fields:
         data["description"] = fields["description"]
         data["description_auto"] = False
@@ -236,12 +273,15 @@ def list_bots(config: Config) -> list[dict]:
             "name": primary["title"] or "Hermes",
             "title": primary["title"],
             "tag": primary["tag"],
+            "tagAuto": primary["tag_auto"],
             "description": primary["description"],
             "role": read_role(config, PRIMARY),
             "color": primary["color"] or color,
             "shape": primary["shape"] or shape,
             "primary": True,
             "hasKey": bool(_env_key(config, PRIMARY)),
+            "permissions": primary["permissions"],
+            "createdBy": "",
         }
     ]
 
@@ -267,6 +307,7 @@ def list_bots(config: Config) -> list[dict]:
                 "name": meta["title"] or name.replace("-", " ").title(),
                 "title": meta["title"],
                 "tag": meta["tag"],
+                "tagAuto": meta["tag_auto"],
                 "description": meta["description"],
                 "role": read_role(config, name),
                 "color": meta["color"] or color,
@@ -274,6 +315,8 @@ def list_bots(config: Config) -> list[dict]:
                 "primary": False,
                 "hasKey": bool(_env_key(config, name)),
                 "capabilities": meta["capabilities"],
+                "permissions": meta["permissions"],
+                "createdBy": meta["created_by"],
             }
         )
     return bots
@@ -308,6 +351,33 @@ def _link_or_copy(source: str, target: str) -> str:
         return shutil.copy2(source, target)
 
 
+AGENT_TOOLS = "hermes_agents"
+
+
+def _strip_agent_tools(path: Path) -> None:
+    """Drop the bridge's agent-tool server from a copied config."""
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return
+    if not isinstance(data, dict):
+        return
+    changed = False
+    servers = data.get("mcp_servers")
+    if isinstance(servers, dict) and AGENT_TOOLS in servers:
+        servers.pop(AGENT_TOOLS)
+        changed = True
+    toolsets = data.get("platform_toolsets")
+    if isinstance(toolsets, dict) and isinstance(toolsets.get("api_server"), list):
+        kept = [item for item in toolsets["api_server"] if item != AGENT_TOOLS]
+        if kept != toolsets["api_server"]:
+            toolsets["api_server"] = kept
+            changed = True
+    if changed:
+        path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
 def create_bot(
     config: Config,
     name: str,
@@ -318,6 +388,7 @@ def create_bot(
     soul_role: bool = False,
     tag: str = "",
     prepare: Callable[[Path], None] | None = None,
+    created_by: str = "",
 ) -> dict:
     """Lay a new profile out, publish it in one rename, and ask the gateway.
 
@@ -446,6 +517,7 @@ def create_bot(
                     "color": color,
                     "shape": shape,
                     **({"tag": tag} if tag else {}),
+                    **({"created_by": created_by} if created_by else {}),
                 }
             },
             **({"description": description, "description_auto": False} if description else {}),
@@ -464,6 +536,9 @@ def create_bot(
             if updated != existing:
                 soul.write_text(updated, encoding="utf-8")
 
+        # The copied config may carry the primary bot's agent tools, which
+        # point at the primary's token. A new bot starts without them.
+        _strip_agent_tools(staging / "config.yaml")
         if prepare is not None:
             prepare(staging)
         os.replace(staging, final)
@@ -486,6 +561,9 @@ def update_bot(config: Config, bot_id: str, fields: dict) -> dict:
         cleaned["description"] = str(fields.get("description") or "").strip()[:600]
     if "tag" in fields:
         cleaned["tag"] = str(fields.get("tag") or "").strip()[:40]
+        if cleaned["tag"]:
+            cleaned["tag_auto"] = False
+            cleaned["tag_source"] = ""
     if "color" in fields:
         color = clean_color(str(fields.get("color") or ""))
         if not color:
@@ -545,7 +623,12 @@ def control(config: Config, name: str, function: str) -> None:
         "import sys\n"
         "from pathlib import Path\n"
         "root = Path(sys.argv[1])\n"
-        "sys.path.insert(0, str(root / 'hermes-agent'))\n"
+        "exe = Path(sys.executable)\n"
+        # Hermes lives next to its home on a desktop install, and beside the
+        # venv the bridge runs from on a server install (/opt/hermes/.venv).
+        "for source in (root / 'hermes-agent', exe.parent.parent.parent):\n"
+        "    if (source / 'gateway').is_dir() and str(source) not in sys.path:\n"
+        "        sys.path.insert(0, str(source))\n"
         "try:\n"
         "    module = __import__('gateway.control_socket', fromlist=[sys.argv[3]])\n"
         "    getattr(module, sys.argv[3])(root, sys.argv[2])\n"

@@ -45,6 +45,9 @@ test('read aloud defaults off and saves only the current agent; failed saves kee
   const element = () => React.createElement(ChatSettingsScreen, { route: { params: { threadId: thread.id } }, navigation: harness.navigation });
   let tree;
   await act(async () => { tree = create(element()); }); trees.add(tree);
+  const advanced = tree.root.findAll(node => node.props.accessibilityLabel === t('高级') && typeof node.props.onPress === 'function')[0];
+  assert.ok(advanced, 'advanced section toggle must be present');
+  await act(async () => { advanced.props.onPress(); });
   const control = () => tree.root.findAllByType('Switch').find(node => node.props.accessibilityLabel === t('朗读回复'));
   assert.ok(control(), 'read aloud control must be present');
   assert.equal(control().props.value, false);

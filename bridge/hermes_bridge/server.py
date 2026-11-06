@@ -28,6 +28,8 @@ from .monitor import Monitor, gateway_stats
 from .turns import Turns
 from .codex import CodexCompanion, parse_review, review_prompt, require_analysis_profile
 from .codex_agent import CodexAgent
+from .agent_permissions import AgentPermissions
+from .labeler import Labeler
 
 log = logging.getLogger("hermes_bridge")
 
@@ -63,6 +65,17 @@ class Bridge:
         self.codex = CodexCompanion(config)
         self.codex_agent = CodexAgent(config, self.hermes, self.codex)
         self.codex_review_lock = threading.Lock()
+        self.permissions = AgentPermissions(config, self.hermes)
+        self.labeler = Labeler(config, self.hermes)
+        self.permissions.on_created = lambda profile: self.label_later(profile)
+
+    def label_later(self, profile: str, only_if_auto: bool = True) -> None:
+        def work():
+            try:
+                self.labeler.auto(profile, only_if_auto)
+            except Exception:  # noqa: BLE001 - a tag is a nicety
+                log.info("tag generation skipped for %s", profile)
+        threading.Thread(target=work, daemon=True).start()
 
 
 ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
@@ -75,6 +88,9 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("POST", re.compile(r"^/v1/bots$"), "_bot_create", False),
     ("PATCH", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_update", False),
     ("DELETE", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_delete", False),
+    ("PUT", re.compile(r"^/v1/bots/(?P<bot>[^/]+)/permissions$"), "_bot_permissions", False),
+    ("POST", re.compile(r"^/v1/bots/(?P<bot>[^/]+)/tag$"), "_bot_tag", False),
+    ("POST", re.compile(r"^/v1/agents/tool$"), "_agent_tool", False),
     ("GET", re.compile(r"^/v1/models$"), "_models", False),
     ("PUT", re.compile(r"^/v1/bots/(?P<bot>[^/]+)/pin$"), "_pin", False),
     ("GET", re.compile(r"^/v1/active-turns$"), "_active_turns", False),
@@ -149,6 +165,18 @@ class BridgeServer(ThreadingHTTPServer):
         self._pair_lock = threading.Lock()
         self._pair_tries: dict[str, list[float]] = {}
         super().__init__((config.host, config.port), Handler)
+
+    def start_background(self) -> None:
+        def work():
+            try:
+                self.bridge.permissions.refresh(self.server_address[1])
+            except Exception:  # noqa: BLE001 - startup chores never stop serving
+                log.info("agent permission refresh skipped\n%s", traceback.format_exc())
+            try:
+                self.bridge.labeler.backfill()
+            except Exception:  # noqa: BLE001
+                log.info("tag backfill skipped\n%s", traceback.format_exc())
+        threading.Thread(target=work, daemon=True).start()
 
     def allowed_to_pair(self, address: str) -> bool:
         now = time.monotonic()
@@ -231,7 +259,14 @@ class Handler(BaseHTTPRequestHandler):
                     continue
                 if not public:
                     token = self._bearer()
-                    authorized = self.bridge.codex_agent.authorized(token) if name == "_codex_agent_tool" else self.bridge.devices.verify(token)
+                    self.agent_caller = ""
+                    if name == "_codex_agent_tool":
+                        authorized = self.bridge.codex_agent.authorized(token)
+                    elif name == "_agent_tool":
+                        self.agent_caller = self.bridge.permissions.caller(token) if token else ""
+                        authorized = bool(self.agent_caller)
+                    else:
+                        authorized = self.bridge.devices.verify(token)
                     if not token or not authorized:
                         raise ApiError(
                             401,
@@ -481,15 +516,57 @@ class Handler(BaseHTTPRequestHandler):
             picks[bot["profile"]] = {"model": model_name, "provider": provider}
             current_prefs["picks"] = picks
             prefs.write(self.config, current_prefs)
+        if not bot.get("tag") and (str(body.get("description") or "").strip()):
+            self.bridge.label_later(profiles.profile_of(bot["id"]))
         return self._json(201, {"bot": bot})
 
     def _bot_update(self, match, query) -> int:
-        bot = profiles.update_bot(self.config, param(match, "bot"), self._json_body())
+        body = self._json_body()
+        bot = profiles.update_bot(self.config, param(match, "bot"), body)
+        if "description" in body and "tag" not in body:
+            profile = profiles.profile_of(bot["id"])
+            meta = profiles.read_meta(self.config, profile)
+            if not meta["tag"] or meta["tag_auto"]:
+                if str(body.get("description") or "").strip():
+                    self.bridge.label_later(profile)
+                elif meta["tag"]:
+                    profiles.write_meta(self.config, profile, {"tag": ""})
+                    bot = profiles.get_bot(self.config, bot["id"])
         return self._json(200, {"bot": bot})
 
     def _bot_delete(self, match, query) -> int:
-        gone = profiles.delete_bot(self.config, param(match, "bot"))
+        bot_id = param(match, "bot")
+        gone = profiles.delete_bot(self.config, bot_id)
+        self.bridge.permissions.forget(profiles.profile_of(bot_id))
         return self._json(200, gone)
+
+    def _bot_permissions(self, match, query) -> int:
+        bot = profiles.get_bot(self.config, param(match, "bot"))
+        body = self._json_body()
+        values = {key: body[key] for key in ("crossSpace", "manageCreated") if key in body}
+        if not values or any(not isinstance(value, bool) for value in values.values()):
+            raise ApiError(400, "bad_permissions", "Send crossSpace or manageCreated as true or false.")
+        granted = self.bridge.permissions.set(profiles.profile_of(bot["id"]), values, self.server.server_address[1])
+        return self._json(200, {"permissions": granted, "bot": profiles.get_bot(self.config, bot["id"])})
+
+    def _bot_tag(self, match, query) -> int:
+        bot = profiles.get_bot(self.config, param(match, "bot"))
+        profile = profiles.profile_of(bot["id"])
+        body = self._json_body()
+        if body.get("auto") is True:
+            self.bridge.labeler.auto(profile, body.get("onlyIfAuto") is True)
+        elif "tag" in body:
+            profiles.update_bot(self.config, bot["id"], {"tag": str(body.get("tag") or "")})
+        else:
+            raise ApiError(400, "bad_tag", "Send a tag, or auto: true.")
+        return self._json(200, {"bot": profiles.get_bot(self.config, bot["id"])})
+
+    def _agent_tool(self, match, query) -> int:
+        body = self._json_body()
+        name, args = body.get("name"), body.get("arguments")
+        if not isinstance(name, str):
+            raise ApiError(400, "bad_tool", "A tool call needs a name.")
+        return self._json(200, {"result": self.bridge.permissions.tool(self.agent_caller, name, args or {})})
 
     # ------------------------------------------------------------- models
 
@@ -779,6 +856,7 @@ class Handler(BaseHTTPRequestHandler):
         model, provider = str(body.get("model") or "")[:200], str(body.get("provider") or "")[:80]
         directive = self.bridge.codex_agent.accept(bot, session, request, message, model, provider)
         instructions = self.bridge.codex_agent.instructions(directive) if directive else ""
+        instructions = "\n\n".join(part for part in (instructions, self.bridge.permissions.instructions(profiles.profile_of(bot))) if part)
         run = self.bridge.turns.start(bot, session, request, message, model, provider, instructions=instructions)
         return self._json(202, {"run": run})
 
@@ -816,6 +894,7 @@ class Handler(BaseHTTPRequestHandler):
         provider = str(body.get("provider") or "").strip()[:80]
         directive = self.bridge.codex_agent.accept(bot_id, session_id, "legacy-" + secrets.token_hex(16), message, model, provider)
         instructions = self.bridge.codex_agent.instructions(directive) if directive else ""
+        instructions = "\n\n".join(part for part in (instructions, self.bridge.permissions.instructions(profile)) if part)
         if not self.bridge.hermes.key_for(profile):
             raise ApiError(
                 409,

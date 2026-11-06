@@ -19,6 +19,9 @@ export type Bot = {
   description?: string;
   primary?: boolean;
   capabilities?: string[];
+  tagAuto?: boolean;
+  createdBy?: string;
+  permissions?: { crossSpace: boolean; manageCreated: boolean };
 };
 
 export type Reaction = { emoji: string; count: number };

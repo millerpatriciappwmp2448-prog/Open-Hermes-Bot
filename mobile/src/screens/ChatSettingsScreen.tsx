@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
+import { AppState, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Share, Switch, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bloub } from '../components/Bloub';
@@ -17,10 +17,15 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ChatSettings'>;
 
 export function ChatSettingsScreen({ route, navigation }: Props) {
   useTranslation();
-  const { styles, C } = useStyles();
+  const { styles, C, scheme } = useStyles();
   const insets = useSafeAreaInsets();
-  const { threadById, botById, messages, togglePin, clearThread, removeBot, connection } = useStore();
+  const { threadById, botById, messages, togglePin, clearThread, removeBot, connection, updateBot, setBotPermissions, autoTagBot } = useStore();
   const { chatPreferences, saveChatPreferences } = useStore();
+  const [tagDraft, setTagDraft] = useState<string | null>(null);
+  const [tagBusy, setTagBusy] = useState(false);
+  const [tagError, setTagError] = useState('');
+  const [savingPermissions, setSavingPermissions] = useState(false);
+  const [permissionsError, setPermissionsError] = useState('');
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [preferencesError, setPreferencesError] = useState('');
   const [access, setAccess] = useState<NotificationAccess>('undetermined');
@@ -28,6 +33,7 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [jobsOpen, setJobsOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [confirming, setConfirming] = useState<'clear' | 'delete' | null>(null);
   const afterDismiss = useRef<'back' | 'home' | null>(null);
   const [exportError, setExportError] = useState('');
@@ -39,6 +45,35 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
   const tapbacks = thread ? chatPreferences[thread.botId]?.tapbacks !== false : true;
   const notifications = thread ? chatPreferences[thread.botId]?.notifications !== false : true;
   const readAloud = thread ? chatPreferences[thread.botId]?.readAloud === true : false;
+  const crossSpace = bot?.permissions?.crossSpace === true;
+  const manageCreated = bot?.permissions?.manageCreated === true;
+  const tagValue = tagDraft ?? bot?.tag ?? thread?.tag ?? '';
+
+  async function saveTag() {
+    if (!thread || tagDraft === null || tagBusy) return;
+    const wanted = tagDraft.trim();
+    if (wanted === (bot?.tag ?? thread.tag ?? '')) { setTagDraft(null); return; }
+    setTagBusy(true); setTagError('');
+    try { await updateBot(thread.botId, { tag: wanted }); setTagDraft(null); }
+    catch { setTagError(t('设置未保存，请重试。')); }
+    finally { setTagBusy(false); }
+  }
+
+  async function generateTag() {
+    if (!thread || tagBusy) return;
+    setTagBusy(true); setTagError('');
+    try { await autoTagBot(thread.botId); setTagDraft(null); }
+    catch (error) { setTagError(error instanceof Error && error.message ? error.message : t('操作失败，请重试。')); }
+    finally { setTagBusy(false); }
+  }
+
+  async function changePermission(key: 'crossSpace' | 'manageCreated', value: boolean) {
+    if (!thread || savingPermissions) return;
+    setSavingPermissions(true); setPermissionsError('');
+    try { await setBotPermissions(thread.botId, { [key]: value }); }
+    catch { setPermissionsError(t('设置未保存，请重试。')); }
+    finally { setSavingPermissions(false); }
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -107,7 +142,40 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
                 <Text style={styles.meta}>{serverBot ? t('Hermes 服务器') : t('演示模式')}</Text>
               </View>
             </View>
+            {serverBot && !online ? <Text accessibilityRole="alert" style={styles.offlineNote}>{t('无法连接服务器')}</Text> : null}
 
+            {thread.kind === 'bot' ? (
+              <View style={styles.section}>
+                <Text style={styles.label}>{t('标签')}</Text>
+                <View style={[styles.card, styles.row]}>
+                  <TextInput value={tagValue} onChangeText={value => setTagDraft(value.slice(0, 24))}
+                    onBlur={() => void saveTag()} onSubmitEditing={() => void saveTag()} returnKeyType="done"
+                    editable={!tagBusy && (!serverBot || online)} placeholder={t('添加标签')} placeholderTextColor={C.text2}
+                    keyboardAppearance={scheme}
+                    accessibilityLabel={t('标签')} style={[styles.rowText, styles.flex, styles.input]} />
+                  <Pressable accessibilityRole="button" disabled={tagBusy || !serverBot || !online}
+                    onPress={() => void generateTag()} hitSlop={8}>
+                    <Text style={[styles.link, (tagBusy || !serverBot || !online) && styles.meta]}>{tagBusy ? t('生成中…') : t('自动生成')}</Text>
+                  </Pressable>
+                </View>
+                {tagError ? <Text accessibilityRole="alert" style={styles.dangerSmall}>{tagError}</Text> : null}
+              </View>
+            ) : null}
+
+            {thread.kind === 'bot' ? (
+              <View style={styles.section}>
+                <Text style={styles.label}>{t('描述')}</Text>
+                <DescriptionEditor key={thread.botId} botId={thread.botId} embedded />
+              </View>
+            ) : null}
+
+            <Pressable accessibilityRole="button" accessibilityLabel={t('高级')} accessibilityState={{ expanded: advancedOpen }}
+              onPress={() => setAdvancedOpen(value => !value)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+              <Text style={[styles.label, styles.flex]}>{t('高级')}</Text>
+              <View style={advancedOpen ? styles.expanded : undefined}><ChevronIcon size={11} color={C.text2} /></View>
+            </Pressable>
+
+            {advancedOpen ? <>
             <View style={styles.section}>
               <Text style={styles.label}>{t('模型')}</Text>
               <Pressable accessibilityRole="button" accessibilityLabel={t('选择模型')}
@@ -116,14 +184,19 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
                 <Text style={[styles.rowText, styles.flex]} numberOfLines={2}>{thread.threadModel || t('跟随服务器')}</Text>
                 <ChevronIcon size={11} color={C.text2} />
               </Pressable>
-              {serverBot && !online ? <Text style={styles.meta}>{t('请先连接服务器。')}</Text> : null}
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.label}>{t('语音')}</Text>
+              <View style={[styles.card, styles.row]}>
+                <Text style={[styles.rowText, styles.flex]}>{t('朗读回复')}</Text>
+                <Switch accessibilityLabel={t('朗读回复')} value={readAloud}
+                  disabled={savingPreferences || (serverBot && !online)} onValueChange={value => void changePreference('readAloud', value)}
+                  trackColor={{ false: C.field2, true: C.green }} ios_backgroundColor={C.field2} />
+              </View>
             </View>
 
             {thread.kind === 'bot' ? <>
-              <View style={styles.section}>
-                <Text style={styles.label}>{t('描述')}</Text>
-                <DescriptionEditor key={thread.botId} botId={thread.botId} embedded />
-              </View>
               <View style={styles.section}>
                 <Text style={styles.label}>{t('定时任务')}</Text>
                 <View style={styles.card}>
@@ -146,29 +219,34 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
                 <Text style={styles.label}>{t('权限')}</Text>
                 <View style={styles.card}>
                   <View style={[styles.row]}>
-                    <Text style={[styles.rowText, styles.flex]}>{t('允许跨空间机器人通信')}</Text>
+                    <Text style={[styles.rowText, styles.flex]}>{t('允许跨空间智能体通信')}</Text>
                     <Switch
-                      accessibilityLabel={t('允许跨空间机器人通信')}
-                      value={false}
-                      disabled
+                      accessibilityLabel={t('允许跨空间智能体通信')}
+                      value={crossSpace}
+                      disabled={savingPermissions || !serverBot || !online}
+                      onValueChange={value => void changePermission('crossSpace', value)}
                       trackColor={{ false: C.field2, true: C.green }}
                       ios_backgroundColor={C.field2}
                     />
                   </View>
                   <View style={styles.divider} />
                   <View style={[styles.row]}>
-                    <Text style={[styles.rowText, styles.flex]}>{t('管理它创建的机器人')}</Text>
+                    <Text style={[styles.rowText, styles.flex]}>{t('管理它创建的智能体')}</Text>
                     <Switch
-                      accessibilityLabel={t('管理它创建的机器人')}
-                      value={false}
-                      disabled
+                      accessibilityLabel={t('管理它创建的智能体')}
+                      value={manageCreated}
+                      disabled={savingPermissions || !serverBot || !online}
+                      onValueChange={value => void changePermission('manageCreated', value)}
                       trackColor={{ false: C.field2, true: C.green }}
                       ios_backgroundColor={C.field2}
                     />
                   </View>
                 </View>
+                {permissionsError ? <Text accessibilityRole="alert" style={styles.dangerSmall}>{permissionsError}</Text>
+                  : <Text style={styles.meta}>{t('新对话生效')}</Text>}
               </View>
             ) : null}
+            </> : null}
 
             <View style={styles.section}>
               <Text style={styles.label}>{t('会话')}</Text>
@@ -204,15 +282,6 @@ export function ChatSettingsScreen({ route, navigation }: Props) {
                   <Text style={styles.link}>{access === 'denied' ? t('打开系统设置') : t('允许通知')}</Text>
                 </Pressable> : null}
               </View> : null}
-            </View>
-            <View style={styles.section}>
-              <Text style={styles.label}>{t('语音')}</Text>
-              <View style={[styles.card, styles.row]}>
-                <Text style={[styles.rowText, styles.flex]}>{t('朗读回复')}</Text>
-                <Switch accessibilityLabel={t('朗读回复')} value={readAloud}
-                  disabled={savingPreferences || (serverBot && !online)} onValueChange={value => void changePreference('readAloud', value)}
-                  trackColor={{ false: C.field2, true: C.green }} ios_backgroundColor={C.field2} />
-              </View>
             </View>
             {preferencesError ? <Text accessibilityRole="alert" style={styles.danger}>{preferencesError}</Text> : null}
             <View style={styles.section}>
@@ -280,6 +349,9 @@ const useStyles = themedStyles(({ C }) => ({
   rowText: { color: C.text, fontSize: 15, lineHeight: 21 },
   meta: { color: C.text2, fontSize: 12, lineHeight: 18 },
   offline: { padding: 16, gap: 10 },
+  offlineNote: { color: C.red, fontSize: 13, lineHeight: 18, paddingHorizontal: 2 },
+  input: { paddingVertical: 0 },
+  dangerSmall: { color: C.red, fontSize: 12, lineHeight: 18, paddingHorizontal: 2 },
   expanded: { transform: [{ rotate: '90deg' }] },
   divider: { height: 1, backgroundColor: C.hairline, marginHorizontal: 16 },
   notificationAccess: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 2 },

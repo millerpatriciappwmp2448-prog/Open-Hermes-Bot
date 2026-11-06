@@ -136,6 +136,9 @@ type Store = {
   removeBot: (id: string) => Promise<void>;
   /** Write what the bot is for into its SOUL.md; it applies from its next session. */
   saveDescription: (botId: string, text: string) => Promise<void>;
+  setBotPermissions: (botId: string, values: { crossSpace?: boolean; manageCreated?: boolean }) => Promise<void>;
+  /** Ask the server to summarise the description into a short role tag. */
+  autoTagBot: (botId: string) => Promise<void>;
   loadJobs: (botId: string) => Promise<Schedule[]>;
   createJob: (botId: string, input: JobInput) => Promise<void>;
   jobAction: (botId: string, jobId: string, action: JobAction) => Promise<void>;
@@ -253,6 +256,12 @@ function toBot(raw: BridgeBot): Bot {
     tag: raw.tag || '',
     primary: raw.primary,
     capabilities: raw.capabilities || [],
+    tagAuto: raw.tagAuto === true,
+    createdBy: raw.createdBy || '',
+    permissions: {
+      crossSpace: raw.permissions?.crossSpace === true,
+      manageCreated: raw.permissions?.manageCreated === true,
+    },
   };
 }
 
@@ -984,6 +993,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const description = typeof saved?.role === 'string' ? saved.role : wanted;
     setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, description } : bot)));
     setThreads((current) => current.map((thread) => (thread.botId === botId ? { ...thread, description } : thread)));
+    if (wanted) {
+      void active.autoTag(botId, true).then((raw) => {
+        if (client.current !== active) return;
+        const next = toBot(raw);
+        setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, tag: next.tag, tagAuto: next.tagAuto } : bot)));
+        setThreads((current) => current.map((thread) => (thread.botId === botId ? { ...thread, tag: next.tag } : thread)));
+      }).catch(() => undefined);
+    }
+  }, []);
+
+  const setBotPermissions = useCallback<Store['setBotPermissions']>(async (botId, values) => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const raw = await active.setPermissions(botId, values);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    const next = toBot(raw);
+    setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, permissions: next.permissions } : bot)));
+  }, []);
+
+  const autoTagBot = useCallback<Store['autoTagBot']>(async (botId) => {
+    const active = client.current;
+    if (!active || connectionRef.current.status !== 'connected') throw new BridgeError(t('请先连接服务器。'));
+    const raw = await active.autoTag(botId, false);
+    if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    const next = toBot(raw);
+    setBots((current) => current.map((bot) => (bot.id === botId ? { ...bot, tag: next.tag, tagAuto: next.tagAuto } : bot)));
+    setThreads((current) => current.map((thread) => (thread.botId === botId ? { ...thread, tag: next.tag } : thread)));
   }, []);
 
   const loadJobs = useCallback<Store['loadJobs']>(async (botId) => {
@@ -1411,6 +1447,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateBot,
       removeBot,
       saveDescription,
+      setBotPermissions,
+      autoTagBot,
       loadJobs,
       createJob,
       jobAction,
@@ -1481,6 +1519,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       pauseCodexWatch,
       loadTodos,
       saveDescription,
+      setBotPermissions,
+      autoTagBot,
       loadJobs,
       createJob,
       jobAction,

@@ -28,6 +28,9 @@ export type BridgeBot = {
   /** The app's block in the bot's SOUL.md: what the bot is for. */
   role?: string;
   capabilities?: string[];
+  tagAuto?: boolean;
+  createdBy?: string;
+  permissions?: { crossSpace?: boolean; manageCreated?: boolean };
 };
 
 export type BridgeSession = {
@@ -417,6 +420,24 @@ export function createBridgeClient(rawBase: string, token: string) {
 
     deleteBot: (botId: string) =>
       request<{ ok: boolean }>(`/v1/bots/${bot(botId)}`, { method: 'DELETE' }, 45000),
+
+    setPermissions: async (botId: string, values: { crossSpace?: boolean; manageCreated?: boolean }): Promise<BridgeBot> =>
+      (
+        await request<{ bot: BridgeBot }>(`/v1/bots/${bot(botId)}/permissions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(values),
+        })
+      ).bot,
+
+    autoTag: async (botId: string, onlyIfAuto = false): Promise<BridgeBot> =>
+      (
+        await request<{ bot: BridgeBot }>(`/v1/bots/${bot(botId)}/tag`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto: true, onlyIfAuto }),
+        }, 180000)
+      ).bot,
 
     /** The raw `{ jobs }` answer; `readSchedules` reads it defensively. */
     jobs: (botId: string): Promise<unknown> => request<unknown>(`/v1/jobs?bot=${bot(botId)}`),
