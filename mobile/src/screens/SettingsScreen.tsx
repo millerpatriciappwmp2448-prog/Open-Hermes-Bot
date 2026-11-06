@@ -10,6 +10,7 @@ import appConfig from '../../app.json';
 import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
 import { themedStyles } from '../theme';
+import { readLastError } from '../components/CrashGuard';
 
 /**
  * Where the host, the conversation and the app are set. Every row opens the
@@ -30,6 +31,14 @@ export function SettingsScreen() {
   const [languagePopup, setLanguagePopup] = useState<{ left: number; top: number } | null>(null);
   const navigation = useAppNavigation();
   const { toggles, toggle, prefs, connection } = useStore();
+  const [lastError, setLastError] = useState('');
+  const [errorOpen, setErrorOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void readLastError().then((text) => { if (mounted) setLastError(text); });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (!languageOpen) {
@@ -224,6 +233,12 @@ export function SettingsScreen() {
         <View style={styles.group}>
           <Row name={t("版本")} value={`${appConfig.expo.version} (${appConfig.expo.ios.buildNumber})`} chevron={false} />
           <Row name={t("服务器")} value={prefs.host || t('未连接')} line chevron={false} />
+          {lastError ? (
+            <Row name={t("上次错误")} value={errorOpen ? t("收起") : t("查看")} line onPress={() => setErrorOpen((v) => !v)} />
+          ) : null}
+          {lastError && errorOpen ? (
+            <Text selectable style={[styles.foot, { textAlign: 'left', paddingHorizontal: 16, paddingBottom: 12 }]}>{lastError}</Text>
+          ) : null}
         </View>
 
         <Text style={styles.foot}>{t("Hermes Bot · 随时连接你的服务器")}</Text>

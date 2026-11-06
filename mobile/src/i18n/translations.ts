@@ -89,6 +89,8 @@ export const english: Readonly<Record<string, string>> = {
   "标签": "Tag",
   "新对话生效": "Applies to new chats",
   "高级": "Advanced",
+  "上次错误": "Last error",
+  "收起": "Hide",
   "无法连接服务器": "Can't reach the server",
   "这个智能体的用途": "What this agent is for",
   "查看定时任务": "View scheduled tasks",
