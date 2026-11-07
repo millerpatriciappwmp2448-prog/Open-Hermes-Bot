@@ -74,6 +74,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as env:
               env.write(f'SIM_UDID={udid}\n')
           PY
+      # GITHUB_ENV is applied by the runner between steps, not within the
+      # process that writes it. Boot only after SIM_UDID has been exported.
+      - name: Boot the selected iOS 17.0 simulator
+        timeout-minutes: 10
+        run: |
+          test -n "$SIM_UDID"
           xcrun simctl boot "$SIM_UDID"
           xcrun simctl bootstatus "$SIM_UDID" -b > diagnostics/sim-boot.txt 2>&1
       - name: Find the existing compiled simulator artifact
