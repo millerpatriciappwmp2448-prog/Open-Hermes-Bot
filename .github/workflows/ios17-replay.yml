@@ -1,0 +1,166 @@
+name: Replay simulator app on iOS 17
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Simulator build run to reuse
+        required: true
+        default: '42318128075'
+  push:
+    branches:
+      - codex/ios17-trollstore-ipa
+    paths:
+      - '.github/workflows/ios17-replay.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay:
+    runs-on: macos-26-intel
+    timeout-minutes: 55
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
+      SOURCE_RUN: ${{ inputs.source_run || '42318128075' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the official iOS 17.0 runtime
+        timeout-minutes: 22
+        run: |
+          mkdir -p diagnostics
+          python3 - <<'PY'
+          import http.cookiejar, os, urllib.parse, urllib.request
+          from pathlib import Path
+          path = '/Developer_Tools/iOS_17_Simulator_Runtime/iOS_17_Simulator_Runtime.dmg'
+          jar = http.cookiejar.MozillaCookieJar(os.environ['RUNNER_TEMP'] + '/apple-download-cookies')
+          opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+          auth = 'https://developerservices2.apple.com/services/download?' + urllib.parse.urlencode({'path': path})
+          with opener.open(auth, timeout=30) as response:
+              if response.status != 200:
+                  raise SystemExit('Apple runtime download authorization failed')
+          jar.save(ignore_discard=True)
+          os.chmod(jar.filename, 0o600)
+          # Check for a disk image, not an HTML sign-in redirect, before a large download.
+          request = urllib.request.Request('https://download.developer.apple.com' + path,
+                                          headers={'Range': 'bytes=0-7'})
+          with opener.open(request, timeout=30) as response:
+              if response.status != 206 or response.headers.get('Content-Range') != 'bytes 0-7/7559529352':
+                  raise SystemExit('Apple did not return the expected iOS 17.0 disk image')
+          print('Official iOS 17.0 runtime download authorized')
+          PY
+          curl --fail --location --retry 3 --max-time 1200 \
+            --cookie "$RUNNER_TEMP/apple-download-cookies" \
+            --output "$RUNNER_TEMP/ios17.dmg" \
+            https://download.developer.apple.com/Developer_Tools/iOS_17_Simulator_Runtime/iOS_17_Simulator_Runtime.dmg
+          test "$(stat -f %z "$RUNNER_TEMP/ios17.dmg")" = 7559529352
+          hdiutil verify "$RUNNER_TEMP/ios17.dmg" > diagnostics/runtime-verify.txt 2>&1
+      - name: Install and select exactly iOS 17.0
+        timeout-minutes: 10
+        run: |
+          xcrun simctl runtime add "$RUNNER_TEMP/ios17.dmg" > diagnostics/runtime-install.txt 2>&1
+          xcrun simctl list runtimes -j > diagnostics/runtimes.json
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          rows = json.loads(Path('diagnostics/runtimes.json').read_text())['runtimes']
+          runtime = next((r for r in rows if r.get('version') == '17.0' and r.get('isAvailable')), None)
+          if not runtime:
+              raise SystemExit('iOS 17.0 runtime is not available on this runner; refusing a newer substitute')
+          udid = subprocess.check_output(['xcrun', 'simctl', 'create', 'Hermes iOS 17',
+                  'com.apple.CoreSimulator.SimDeviceType.iPhone-14-Pro', runtime['identifier']], text=True).strip()
+          Path('diagnostics/runtime-selected.json').write_text(json.dumps(runtime, indent=2))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'SIM_UDID={udid}\n')
+          PY
+          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl bootstatus "$SIM_UDID" -b > diagnostics/sim-boot.txt 2>&1
+      - name: Find the existing compiled simulator artifact
+        timeout-minutes: 17
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          from pathlib import Path
+          repo, run = os.environ['GITHUB_REPOSITORY'], os.environ['SOURCE_RUN']
+          if not run.isdecimal():
+              raise SystemExit('Invalid source run')
+          def request(path):
+              req = urllib.request.Request(f'https://api.github.com/repos/{repo}' + path,
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+          deadline = time.monotonic() + 900
+          while True:
+              source = request('/actions/runs/' + run)
+              if source['head_repository']['full_name'] != repo or source['head_branch'] != 'codex/ios17-trollstore-ipa':
+                  raise SystemExit('Source artifact must belong to the trusted working branch')
+              artifacts = request(f'/actions/runs/{run}/artifacts')['artifacts']
+              artifact = next((a for a in artifacts if a['name'] == 'ios-sim-smoke' and not a['expired']), None)
+              if artifact:
+                  Path('diagnostics/source-build.json').write_text(json.dumps({
+                      'run': run, 'commit': source['head_sha'], 'artifact': artifact['id'],
+                      'digest': artifact.get('digest'), 'source_conclusion': source['conclusion']}, indent=2))
+                  break
+              if source['status'] == 'completed' or time.monotonic() >= deadline:
+                  raise SystemExit('The source build did not provide a simulator artifact')
+              print('Waiting for the existing simulator build artifact', flush=True)
+              time.sleep(30)
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-sim-smoke
+          path: source-artifact
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - name: Extract the same app and record its version
+        run: |
+          mkdir -p replay-app
+          tar -xzf source-artifact/sim-app.tar.gz -C replay-app
+          python3 - <<'PY'
+          import json, os, platform, plistlib
+          from pathlib import Path
+          app = Path('replay-app/HermesBot.app').resolve()
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          source = json.loads(Path('source-artifact/sim-environment.json').read_text())
+          evidence = json.loads(Path('diagnostics/source-build.json').read_text())
+          if source['commit'] != evidence['commit'] or source['architecture'] != platform.machine():
+              raise SystemExit('Source build metadata or architecture mismatch')
+          evidence.update(version=info['CFBundleShortVersionString'], build=info['CFBundleVersion'],
+                          architecture=platform.machine(), runtime='iOS 17.0', udid=os.environ['SIM_UDID'])
+          Path('diagnostics/sim-environment.json').write_text(json.dumps(evidence, indent=2))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'APP={app}\n')
+          PY
+      - name: Launch on iOS 17 and retain the native result
+        timeout-minutes: 7
+        run: |
+          xcrun simctl spawn "$SIM_UDID" log stream --level debug --style compact \
+            --predicate 'process == "HermesBot"' > diagnostics/sim-app.log 2>&1 &
+          logger_pid=$!
+          trap 'kill "$logger_pid" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import importlib.util, os
+          spec = importlib.util.spec_from_file_location('smoke', '.github/scripts/ios_sim_smoke.py')
+          smoke = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(smoke)
+          result = smoke.launch(os.environ['SIM_UDID'], os.environ['APP'], 'diagnostics')
+          raise SystemExit(0 if result['status'] == 'alive' else 1)
+          PY
+      - name: Collect crash reports
+        if: always()
+        run: |
+          mkdir -p diagnostics
+          cp ~/Library/Logs/DiagnosticReports/HermesBot* diagnostics/ 2>/dev/null || true
+          if [ -n "${SIM_UDID:-}" ]; then
+            cp "$HOME/Library/Developer/CoreSimulator/Devices/$SIM_UDID/data/Library/Logs/CrashReporter/"HermesBot* diagnostics/ 2>/dev/null || true
+          fi
+          cat diagnostics/sim-result.json 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios17-replay-diagnostics
+          path: diagnostics/
+          retention-days: 7
