@@ -98,3 +98,124 @@ test('rapid start presses and unchanged saved settings cannot submit duplicate w
   await act(async () => { tree.root.findByType('TextInput').props.onChangeText('Finish and run the integration checks'); });
   assert.equal(tree.root.findAllByType(PrimaryButton).find(node => node.props.label === t('保存监督设置')).props.disabled, false);
 });
+
+test('chat polling recovers after the first failure without discarding the edited watch', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  let reads = 0;
+  fixture({
+    loadCodexStatus: async () => ({ enabled: false, state: 'paused',
+      spec: { threadId: 'chat', goal: 'Original goal', profile: 'codex-supervisor', reviewEnabled: true } }),
+    loadCodexChats: async () => {
+      if (++reads === 1) throw new Error('Temporary tunnel failure');
+      return [{ id: 'chat', title: 'Recovered Codex task' }];
+    },
+  });
+  const tree = await mount();
+  assert.ok(textOf(tree).includes('Temporary tunnel failure'));
+  await act(async () => { tree.root.findByType('TextInput').props.onChangeText('Keep my edited goal'); });
+  await act(async () => { context.mock.timers.tick(10000); });
+  assert.equal(reads, 2);
+  assert.ok(textOf(tree).includes('Recovered Codex task'));
+  assert.ok(!textOf(tree).includes('Temporary tunnel failure'));
+  assert.equal(tree.root.findByType('TextInput').props.value, 'Keep my edited goal');
+  const choice = tree.root.findAllByType('Pressable').find(node => node.props.accessibilityRole === 'radio');
+  assert.equal(choice.props.accessibilityState.selected, true);
+  assert.deepEqual(calls, [], 'recovering the list must not start supervision');
+});
+
+test('a slow status request does not block the chat list or its later refresh', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  let finishStatus;
+  let reads = 0;
+  fixture({
+    loadCodexStatus: () => new Promise(resolve => { finishStatus = resolve; }),
+    loadCodexChats: async () => [{ id: 'chat', title: `Codex task ${++reads}` }],
+  });
+  const tree = await mount();
+  assert.ok(textOf(tree).includes('Codex task 1'));
+  await act(async () => { context.mock.timers.tick(10000); });
+  assert.ok(textOf(tree).includes('Codex task 2'));
+  await act(async () => { finishStatus({ enabled: false, state: 'stopped' }); });
+  assert.deepEqual(calls, []);
+});
+
+test('a slow chat read does not block status polling or the pause control', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  let finishChats;
+  let statusReads = 0, chatReads = 0;
+  fixture({
+    loadCodexStatus: async () => ({ enabled: true, state: 'watching', attempts: ++statusReads }),
+    loadCodexChats: () => { chatReads++; return new Promise(resolve => { finishChats = resolve; }); },
+  });
+  const tree = await mount();
+  await act(async () => { context.mock.timers.tick(10000); });
+  assert.equal(statusReads, 2);
+  assert.equal(chatReads, 1, 'polls must not duplicate a pending list request');
+  const pause = tree.root.findAllByType(PrimaryButton).find(node => node.props.label === t('暂停监督'));
+  await act(async () => { await pause.props.onPress(); });
+  assert.deepEqual(calls, ['pause']);
+  await act(async () => { finishChats([{ id: 'stale', title: 'Old pending chat' }]); });
+  assert.ok(!textOf(tree).includes('Old pending chat'), 'a read started before the action must not replace the new state');
+});
+
+test('switching servers loads immediately and ignores replies from the old connection', async () => {
+  let finishOldStatus, finishOldChats;
+  fixture({
+    loadCodexStatus: () => new Promise(resolve => { finishOldStatus = resolve; }),
+    loadCodexChats: () => new Promise(resolve => { finishOldChats = resolve; }),
+  });
+  const tree = await mount();
+  fixture({ connection: { status: 'connected', url: 'http://new-bridge' },
+    loadCodexChats: async () => [{ id: 'new', title: 'New server task' }],
+  });
+  await act(async () => { tree.update(React.createElement(CodexSupervisorScreen)); });
+  assert.ok(textOf(tree).includes('New server task'));
+  await act(async () => {
+    finishOldStatus({ enabled: true, state: 'watching', spec: {
+      threadId: 'old', goal: 'Old server goal', profile: 'codex-supervisor', reviewEnabled: true,
+    } });
+    finishOldChats([{ id: 'old', title: 'Old server task' }]);
+  });
+  assert.ok(textOf(tree).includes('New server task'));
+  assert.ok(!textOf(tree).includes('Old server task'));
+  assert.equal(tree.root.findByType('TextInput').props.value, '');
+});
+
+test('a late saved status cannot overwrite a chat and goal the user already edited', async () => {
+  let finishStatus;
+  fixture({ loadCodexStatus: () => new Promise(resolve => { finishStatus = resolve; }) });
+  const tree = await mount();
+  await act(async () => {
+    tree.root.findAllByType('Pressable').find(node => node.props.accessibilityRole === 'radio').props.onPress();
+    tree.root.findByType('TextInput').props.onChangeText('New goal');
+  });
+  await act(async () => { finishStatus({ enabled: false, state: 'paused', spec: {
+    threadId: 'old', goal: 'Saved old goal', profile: 'codex-supervisor', reviewEnabled: false,
+  } }); });
+  assert.equal(tree.root.findByType('TextInput').props.value, 'New goal');
+  assert.equal(tree.root.findAllByType('Pressable').find(node => node.props.accessibilityRole === 'radio').props.accessibilityState.selected, true);
+  assert.deepEqual(calls, []);
+});
+
+test('polling pauses offscreen and in background, and refreshes on return', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  let reads = 0;
+  fixture({ loadCodexChats: async () => { reads++; return []; } });
+  const tree = await mount();
+  assert.equal(reads, 1);
+  await act(async () => {
+    harness.setFocused(false); tree.update(React.createElement(CodexSupervisorScreen));
+  });
+  await act(async () => { context.mock.timers.tick(20000); });
+  assert.equal(reads, 1);
+  await act(async () => {
+    harness.setFocused(true); tree.update(React.createElement(CodexSupervisorScreen));
+  });
+  assert.equal(reads, 2);
+  await act(async () => { harness.appStateEvents.emit('change', 'background'); });
+  await act(async () => { context.mock.timers.tick(20000); });
+  assert.equal(reads, 2);
+  await act(async () => { harness.appStateEvents.emit('change', 'active'); });
+  assert.equal(reads, 3);
+  assert.deepEqual(calls, []);
+});

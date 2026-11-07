@@ -41,8 +41,10 @@ export function CodexSupervisorScreen() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const initialized = useRef(false);
+  const edited = useRef(false);
   const mounted = useRef(true);
-  const pending = useRef(false);
+  const statusPending = useRef<symbol | null>(null);
+  const chatsPending = useRef<symbol | null>(null);
   const acting = useRef(false);
   const generation = useRef(0);
   const focused = useIsFocused();
@@ -59,66 +61,88 @@ export function CodexSupervisorScreen() {
     return () => listener.remove();
   }, []);
 
-  const refresh = useCallback(async (withChats = false) => {
-    if (pending.current || !connected || busy) return;
-    pending.current = true;
+  const refresh = useCallback(async () => {
+    if (!connected || busy || acting.current) return;
     const version = generation.current;
-    if (withChats) setLoading(true);
-    try {
-      const value = await loadCodexStatus();
-      if (!mounted.current || version !== generation.current) return;
-      setStatus(value); setError('');
-      if (!initialized.current) {
-        initialized.current = true;
-        if (value.spec) {
-          setThreadId(value.spec.threadId); setGoal(value.spec.goal);
-          setReviewEnabled(value.spec.reviewEnabled);
-          if (value.spec.profile === profile) {
-            setPick(value.spec.model ? { model: value.spec.model, provider: value.spec.provider || '' } : null);
+    const current = () => mounted.current && version === generation.current;
+    const reads: Promise<void>[] = [];
+    // Each endpoint has its own lock: a slow companion/status read must not
+    // hide healthy chat results, and a slow list must not block pause/status.
+    if (!statusPending.current) {
+      const request = Symbol(); statusPending.current = request;
+      reads.push((async () => {
+        try {
+          const value = await loadCodexStatus();
+          if (!current()) return;
+          setStatus(value); setError('');
+          if (!initialized.current) {
+            initialized.current = true;
+            if (value.spec && !edited.current) {
+              setThreadId(value.spec.threadId); setGoal(value.spec.goal);
+              setReviewEnabled(value.spec.reviewEnabled);
+              if (value.spec.profile === profile) {
+                setPick(value.spec.model ? { model: value.spec.model, provider: value.spec.provider || '' } : null);
+              }
+            }
+          }
+        } catch (e) {
+          if (current()) setError(e instanceof Error ? e.message : t('无法读取监督状态。'));
+        } finally {
+          if (statusPending.current === request) statusPending.current = null;
+        }
+      })());
+    }
+    if (!chatsPending.current) {
+      const request = Symbol(); chatsPending.current = request; setLoading(true);
+      reads.push((async () => {
+        try {
+          const rows = await loadCodexChats();
+          if (current()) {
+            setChats(rows); setChatsError(''); setChatsLoaded(true);
+          }
+        } catch (e) {
+          if (current()) setChatsError(e instanceof Error ? e.message : t('无法读取 Codex 会话。'));
+        } finally {
+          if (chatsPending.current === request) {
+            chatsPending.current = null;
+            if (current()) setLoading(false);
           }
         }
-      }
-    } catch (e) {
-      if (mounted.current && version === generation.current) setError(e instanceof Error ? e.message : t('无法读取监督状态。'));
+      })());
     }
-    try {
-      if (withChats) {
-        const rows = await loadCodexChats();
-        if (mounted.current && version === generation.current) {
-          setChats(rows); setChatsError(''); setChatsLoaded(true);
-        }
-      }
-    } catch (e) {
-      if (mounted.current && version === generation.current) {
-        setChatsError(e instanceof Error ? e.message : t('无法读取 Codex 会话。'));
-      }
-    } finally {
-      pending.current = false;
-      if (mounted.current) setLoading(false);
-    }
-  }, [busy, connected, loadCodexChats, loadCodexStatus, profile]);
+    await Promise.all(reads);
+  }, [busy, connected, connection.url, loadCodexChats, loadCodexStatus, profile]);
 
   useEffect(() => {
-    generation.current++; initialized.current = false; setStatus(null); setChats([]); setThreadId(''); setGoal('');
+    generation.current++; initialized.current = false; edited.current = false;
+    statusPending.current = null; chatsPending.current = null; setLoading(false);
+    setStatus(null); setChats([]); setThreadId(''); setGoal('');
     setChatsError(''); setChatsLoaded(false); setPick(undefined);
   }, [connection.url]);
   useEffect(() => {
+    if (!connected) {
+      generation.current++; statusPending.current = null; chatsPending.current = null; setLoading(false);
+    }
+  }, [connected]);
+  useEffect(() => {
     if (!connected || !focused || !appActive) return;
-    void refresh(true);
+    void refresh();
     const timer = setInterval(() => { void refresh(); }, 10000);
     return () => clearInterval(timer);
   }, [appActive, connected, focused, refresh]);
 
   async function act(pause: boolean) {
-    if (acting.current || pending.current || (!pause && (unchanged || !profile))) return;
+    if (acting.current || (!pause && (unchanged || !profile))) return;
     acting.current = true;
-    generation.current++; setBusy(true); setError('');
+    const version = ++generation.current;
+    statusPending.current = null; chatsPending.current = null; setLoading(false);
+    setBusy(true); setError('');
     try {
       const value = pause ? await pauseCodexWatch() : await startCodexWatch({ threadId, hostId: 'local', goal: goal.trim(), profile,
         model: pick?.model || '', provider: pick?.provider || '', reviewEnabled });
-      if (mounted.current) setStatus(value);
+      if (mounted.current && version === generation.current) setStatus(value);
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : t('无法更新监督任务。'));
+      if (mounted.current && version === generation.current) setError(e instanceof Error ? e.message : t('无法更新监督任务。'));
     } finally { acting.current = false; if (mounted.current) setBusy(false); }
   }
 
@@ -129,11 +153,11 @@ export function CodexSupervisorScreen() {
 
   if (modelOpen) return <Page title={t('监督模型')} right={<Pressable accessibilityRole="button" onPress={() => setModelOpen(false)} style={styles.refresh}>
     <Text style={styles.link}>{t('完成')}</Text></Pressable>}>
-    <ServerModelPicker botId={profile} draftPick={pick} onDraftPick={setPick} onPicked={() => setModelOpen(false)} />
+    <ServerModelPicker botId={profile} draftPick={pick} onDraftPick={value => { edited.current = true; setPick(value); }} onPicked={() => setModelOpen(false)} />
   </Page>;
 
   return <Page title={t('Codex 监督')} right={<Pressable accessibilityRole="button" accessibilityLabel={t('刷新监督状态')}
-    disabled={loading || busy} onPress={() => void refresh(true)} style={styles.refresh}><Text style={styles.link}>{t('刷新')}</Text></Pressable>}>
+    disabled={loading || busy} onPress={() => void refresh()} style={styles.refresh}><Text style={styles.link}>{t('刷新')}</Text></Pressable>}>
     <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <Text style={styles.heading}>{t('让工作持续进行')}</Text>
       <Text style={styles.caption}>{t('临时 429 或连接错误会自动等待并续做；监督任务在电脑上运行，关闭手机也会继续。')}</Text>
@@ -154,17 +178,17 @@ export function CodexSupervisorScreen() {
       <Text style={styles.label}>{t('监督哪个 Codex 会话')}</Text>
       {chatsError ? <Text accessibilityRole="alert" style={styles.error}>{chatsError}</Text> : null}
       {chats.length ? <View style={styles.list}>{chats.map(chat => <Pressable key={chat.id} accessibilityRole="radio"
-        accessibilityState={{ selected: threadId === chat.id }} disabled={busy} onPress={() => setThreadId(chat.id)}
+        accessibilityState={{ selected: threadId === chat.id }} disabled={busy} onPress={() => { edited.current = true; setThreadId(chat.id); }}
         style={[styles.choice, threadId === chat.id && styles.selected]}>
         <Text style={styles.choiceTitle}>{chat.title || chat.id}</Text>
         <Text style={styles.caption}>{chat.status?.type === 'active' ? t('正在运行') : t('已有会话')}{threadId === chat.id ? ` · ${t('已选择')}` : ''}</Text>
       </Pressable>)}</View> : !chatsError ? <Text style={styles.caption}>{loading || !chatsLoaded ? t('读取中') : t('电脑上暂无可用的 Codex 会话。')}</Text> : null}
       <Text style={styles.label}>{t('目标与监督指令')}</Text>
-      <TextInput accessibilityLabel={t('目标与监督指令')} value={goal} onChangeText={setGoal} multiline maxLength={8000}
+      <TextInput accessibilityLabel={t('目标与监督指令')} value={goal} onChangeText={value => { edited.current = true; setGoal(value); }} multiline maxLength={8000}
         editable={!busy} keyboardAppearance={scheme} textAlignVertical="top" style={styles.input}
         placeholder={t('说明任务完成标准、要检查的问题和允许自动纠正的范围。')} placeholderTextColor={C.text2} />
 
-      <View style={styles.between}><Text style={styles.label}>{t('分析与自动纠偏')}</Text><Toggle on={reviewEnabled} onChange={() => setReviewEnabled(value => !value)} label={t('分析与自动纠偏')} /></View>
+      <View style={styles.between}><Text style={styles.label}>{t('分析与自动纠偏')}</Text><Toggle on={reviewEnabled} onChange={() => { edited.current = true; setReviewEnabled(value => !value); }} label={t('分析与自动纠偏')} /></View>
       <Text style={styles.caption}>{t('由 Codex 监督员分析证据并提出纠偏建议。')}</Text>
       {reviewEnabled ? <>
         <Pressable accessibilityRole="button" disabled={!profile || busy} onPress={() => setModelOpen(true)} style={styles.card}>
