@@ -7,6 +7,7 @@ on:
       - codex/ios17-trollstore-ipa
     paths:
       - '.github/workflows/ios-sim-smoke.yml'
+      - '.github/scripts/*ios_sim_smoke.py'
       - 'mobile/**'
 
 permissions:
@@ -15,7 +16,7 @@ permissions:
 jobs:
   smoke:
     runs-on: macos-26-intel
-    timeout-minutes: 90
+    timeout-minutes: 105
     env:
       CI: '1'
       DEVELOPER_DIR: /Applications/Xcode_26.4.app/Contents/Developer
@@ -30,6 +31,7 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci --fetch-retries=5
+      - run: python3 ../.github/scripts/test_ios_sim_smoke.py
       - run: node scripts/test-ios-build-config.cjs
       - run: npx expo prebuild --platform ios --clean --no-install
       - run: pod install --project-directory=ios
@@ -59,6 +61,11 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as env:
               env.write(f"SIM_UDID={device['udid']}\nSIM_ARCH={platform.machine()}\n")
           PY
+      - name: Boot simulator before compiling
+        timeout-minutes: 12
+        run: |
+          xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b 2>&1 | tee artifacts/sim-boot.txt
       - name: Build Release app for the simulator
         timeout-minutes: 75
         run: |
@@ -70,43 +77,39 @@ jobs:
             -derivedDataPath ios/build ARCHS="$SIM_ARCH" ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build > artifacts/sim-build.log 2>&1 || { tail -80 artifacts/sim-build.log; exit 1; }
           echo "APP=$PWD/ios/build/Build/Products/Release-iphonesimulator/$scheme.app" >> "$GITHUB_ENV"
+      - name: Preserve simulator app for diagnostic retries
+        run: tar -czf artifacts/sim-app.tar.gz -C "$(dirname "$APP")" "$(basename "$APP")"
       - name: Launch and watch for crashes
         timeout-minutes: 8
         run: |
-          udid="$SIM_UDID"
-          xcrun simctl boot "$udid" || true
-          xcrun simctl bootstatus "$udid" -b
-          xcrun simctl install "$udid" "$APP"
-          xcrun simctl spawn "$udid" log stream --level debug --style compact --predicate 'process == "HermesBot"' > artifacts/sim-app.log 2>&1 &
+          xcrun simctl spawn "$SIM_UDID" log stream --level debug --style compact --predicate 'process == "HermesBot"' > artifacts/sim-app.log 2>&1 &
           logger_pid=$!
           trap 'kill "$logger_pid" 2>/dev/null || true' EXIT
-          sleep 3
-          xcrun simctl launch "$udid" com.hermesbot.mobile > artifacts/sim-launch.txt 2>&1 || { cat artifacts/sim-launch.txt; exit 1; }
-          cat artifacts/sim-launch.txt
-          sleep 40
-          xcrun simctl io "$udid" screenshot artifacts/sim-launch.png || true
-          xcrun simctl spawn "$udid" launchctl list > artifacts/sim-processes.txt
-          # A launchctl job can remain after its process dies. Require the
-          # original launch PID, not just the bundle identifier in the job list.
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          match = re.search(r'com\.hermesbot\.mobile: (\d+)', Path('artifacts/sim-launch.txt').read_text())
-          alive = bool(match and any(row.split()[0] == match[1] and 'com.hermesbot.mobile' in row
-                                    for row in Path('artifacts/sim-processes.txt').read_text().splitlines() if row.split()))
-          Path('artifacts/sim-result.txt').write_text('ALIVE\n' if alive else 'CRASHED\n')
-          if not alive:
-              raise SystemExit('Simulator launch smoke test detected a crashed app')
-          PY
+          python3 ../.github/scripts/ios_sim_smoke.py
       - name: Collect launch diagnostics
         if: always()
+        timeout-minutes: 3
         run: |
           mkdir -p artifacts
+          python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          udid = os.environ.get('SIM_UDID')
+          if udid:
+              with Path('artifacts/sim-history.log').open('w') as log:
+                  try:
+                      subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'log', 'show',
+                          '--last', '5m', '--style', 'compact', '--predicate',
+                          'process == "HermesBot" OR eventMessage CONTAINS "com.hermesbot.mobile"'],
+                          stdout=log, stderr=subprocess.STDOUT, timeout=60)
+                  except subprocess.TimeoutExpired:
+                      log.write('\nDiagnostic log query timed out\n')
+          PY
           cp ~/Library/Logs/DiagnosticReports/HermesBot* artifacts/ 2>/dev/null || true
           if [ -n "${SIM_UDID:-}" ]; then
             cp "$HOME/Library/Developer/CoreSimulator/Devices/$SIM_UDID/data/Library/Logs/CrashReporter/"HermesBot* artifacts/ 2>/dev/null || true
           fi
-          cat artifacts/sim-result.txt 2>/dev/null || true
+          cat artifacts/sim-result.json 2>/dev/null || true
           grep -iE 'fatal|exception|Unhandled|terminat|Hermes error' artifacts/sim-app.log | tail -80 || true
       - if: always()
         uses: actions/upload-artifact@v4

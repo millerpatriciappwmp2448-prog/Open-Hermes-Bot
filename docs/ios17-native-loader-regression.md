@@ -36,3 +36,22 @@ the original build 23 IPA even though all its deployment targets pass.
 
 This is a targeted compatibility gate, not an exhaustive audit of all
 system symbols or proof of a crash-free app. A new device IPA must pass it.
+
+## Build 24 follow-up
+
+The build 24 IPA (`1f9d2c664b009de43681a28bda3e671e4b64504dd3c90f07f8a648d104a3110a`)
+passes the loader gate, but the user still reports an immediate device exit.
+That report remains unresolved; the gate is not a device acceptance test.
+
+Simulator run `42310828739` compiled successfully for x86_64/iOS 26.2.
+The eight-minute launch step included more than four minutes of first-boot
+migration. `simctl launch` wrote a PID, but the job timed out before recording
+process survival or a screenshot. No HermesBot crash report was collected.
+It is an inconclusive launch test, not evidence of either a crash or success.
+
+The diagnostic workflow now boots separately, records each launch stage,
+bounds install/launch/process/screenshot queries, checks the original PID and
+executable, and retains the compiled simulator app for retries. None of these
+changes modifies the shipped application or resolves the reported device
+failure. A current device `.ips` or a reproduced native exception is still
+needed to identify the remaining cause.
