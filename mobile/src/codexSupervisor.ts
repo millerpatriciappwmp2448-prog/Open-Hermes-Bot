@@ -5,6 +5,7 @@ export type CodexChat = {
   title: string;
   status?: { type: string; activeFlags?: string[] };
   cwd?: string;
+  messages?: Array<{ role: string; content: string }>;
 };
 
 export type CodexWatchSpec = {

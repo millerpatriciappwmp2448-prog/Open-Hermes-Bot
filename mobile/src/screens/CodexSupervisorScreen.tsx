@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Page } from '../components/Page';
+import Markdown from 'react-native-markdown-display';
 import { Hint, PrimaryButton } from '../components/UI';
 import { Toggle } from '../components/Toggle';
 import { ServerModelPicker } from '../components/ServerModelPicker';
@@ -177,11 +178,22 @@ export function CodexSupervisorScreen() {
 
       <Text style={styles.label}>{t('监督哪个 Codex 会话')}</Text>
       {chatsError ? <Text accessibilityRole="alert" style={styles.error}>{chatsError}</Text> : null}
-      {chats.length ? <View style={styles.list}>{chats.map(chat => <Pressable key={chat.id} accessibilityRole="radio"
+     {chatsError && chatsError.toLowerCase().includes('companion') ? <View style={styles.card}>
+       <Text style={styles.cardTitle}>{t('需要 Codex companion')}</Text>
+       <Text style={styles.copy}>{t('监督功能需要在 Hermes 服务器上运行 Codex companion。')}</Text>
+       <Text style={styles.caption}>{t('• 在服务器运行: node companion/desktop.cjs')}</Text>
+       <Text style={styles.caption}>{t('• 配置环境变量或 companion 配置文件')}</Text>
+       <Text style={styles.caption}>{t('• 详见仓库 companion/README.md')}</Text>
+     </View> : chats.length ? <View style={styles.list}>{chats.map(chat => <Pressable key={chat.id} accessibilityRole="radio"
         accessibilityState={{ selected: threadId === chat.id }} disabled={busy} onPress={() => { edited.current = true; setThreadId(chat.id); }}
         style={[styles.choice, threadId === chat.id && styles.selected]}>
         <Text style={styles.choiceTitle}>{chat.title || chat.id}</Text>
         <Text style={styles.caption}>{chat.status?.type === 'active' ? t('正在运行') : t('已有会话')}{threadId === chat.id ? ` · ${t('已选择')}` : ''}</Text>
+       {chat.messages && chat.messages.length > 0 && <View style={styles.messagePreview}>
+         {chat.messages.map((msg, idx) => msg.role === 'assistant' && <View key={idx} style={styles.assistantMessage}>
+           <Markdown style={markdownStyle({ C, scheme })}>{msg.content}</Markdown>
+         </View>)}
+       </View>}
       </Pressable>)}</View> : !chatsError ? <Text style={styles.caption}>{loading || !chatsLoaded ? t('读取中') : t('电脑上暂无可用的 Codex 会话。')}</Text> : null}
       <Text style={styles.label}>{t('目标与监督指令')}</Text>
       <TextInput accessibilityLabel={t('目标与监督指令')} value={goal} onChangeText={value => { edited.current = true; setGoal(value); }} multiline maxLength={8000}
@@ -234,4 +246,14 @@ const useStyles = themedStyles(({ C }) => ({
   refresh: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   link: { color: C.text, fontSize: 12 },
   event: { gap: 3, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.hairline },
+  messagePreview: { marginTop: 8, gap: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.hairline },
+  assistantMessage: { backgroundColor: C.field, borderRadius: 10, padding: 10 },
 }), false);
+
+const markdownStyle = ({ C, scheme }: { C: Record<string, string>; scheme: string }) => ({
+  body: { color: C.text, fontSize: 13, lineHeight: 20 },
+  paragraph: { marginVertical: 2 },
+  code_inline: { backgroundColor: C.cardRaised, color: C.text, fontSize: 12, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
+  fence: { backgroundColor: C.cardRaised, color: C.text, fontSize: 12, padding: 8, borderRadius: 6, marginVertical: 4 },
+  link: { color: scheme === 'dark' ? '#38BDF8' : '#0066CC' },
+});
