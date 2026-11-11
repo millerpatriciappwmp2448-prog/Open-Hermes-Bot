@@ -5,6 +5,7 @@
 
 import type { GroupMember, Message } from './data';
 import { extractReaction, stripReactionMarkers } from './reactions';
+import { encodeGroupRecord } from './groupWire';
 
 /** Reply with this alone to sit a turn out. */
 export const SILENT_MARKER = '[[silent]]';
@@ -159,19 +160,22 @@ const TRANSCRIPT_CHARS = 6000;
 export function formatTranscript(messages: Message[]): string {
   const recent = messages.slice(-TRANSCRIPT_MESSAGES);
   const lines = recent.map((message) => {
-    if (message.role === 'event') return `(note) ${message.text}`;
-    if (message.role === 'user') return `@You: ${message.text}`;
+    if (message.role === 'event') return encodeGroupRecord({ id: message.id, kind: 'note', name: '', text: message.text });
+    if (message.role === 'user') return encodeGroupRecord({ id: message.id, kind: 'user', name: '', text: message.text });
     const taps = (message.reactions ?? [])
       .map((reaction) => `${reaction.by ?? 'someone'} reacted ${reaction.emoji}`)
       .join(', ');
     const body = taps ? `${message.text} (${taps})` : message.text;
-    return `${message.authorId ? `@${message.authorName ?? 'Bot'}` : 'Bot'}: ${body}`;
+    return encodeGroupRecord({ id: message.id, kind: 'member', name: message.authorId ? message.authorName ?? 'Bot' : 'Bot', text: body });
   });
-  let text = lines.join('\n');
-  if (text.length > TRANSCRIPT_CHARS) {
-    text = `…\n${text.slice(-TRANSCRIPT_CHARS)}`;
+  const kept: string[] = [];
+  let size = 0;
+  for (const line of [...lines].reverse()) {
+    if (kept.length && size + line.length + 1 > TRANSCRIPT_CHARS) break;
+    kept.unshift(line);
+    size += line.length + 1;
   }
-  return text;
+  return kept.join('\n');
 }
 
 export type GroupTurn = {

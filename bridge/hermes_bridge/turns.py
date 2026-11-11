@@ -33,6 +33,15 @@ class Turns:
     def _save(self):
         _write_private(self.path, json.dumps(self.rows))
 
+    def has_attempt(self, bot, session, request):
+        """A saved submission intent may already have reached Hermes."""
+        with self.lock:
+            return self.key(bot, session, request) in self.rows
+
+    def has_accepted(self, bot, session, request):
+        with self.lock:
+            return bool(self.rows.get(self.key(bot, session, request), {}).get("id"))
+
     def start(self, bot, session, request, message, model="", provider="", instructions=""):
         key = self.key(bot, session, request)
         fingerprint = hashlib.sha256(json.dumps([message, model, provider]).encode()).hexdigest()
@@ -148,6 +157,9 @@ class Turns:
         return results
 
     def stop(self, bot, session, request):
-        row = self.get(bot, session, request)
-        self.hermes.stop_run(bot, row["id"])
+        with self.lock:
+            rid = self.rows.get(self.key(bot, session, request), {}).get("id")
+        if not rid:
+            raise HermesError(404, "no_run", "No accepted run with this request ID.")
+        self.hermes.stop_run(bot, rid)
         return self.get(bot, session, request)

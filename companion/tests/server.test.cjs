@@ -4,7 +4,12 @@ const { createServer } = require('../server.cjs');
 
 test('host API authenticates, keeps configuration secrets private and accepts only fixed operations', async t => {
   let starts = 0, pauses = 0;
-  const server = createServer({ token: 'test-only-secret', desktop: { list: async () => [{ id: 'chat', title: 'Work' }] },
+  const server = createServer({ token: 'test-only-secret', desktop: {
+    list: async () => [{ id: 'chat', title: 'Work', cwd: 'D:\\Code\\Atlas' }],
+    read: async () => ({ page: { order: 'newest_first' }, turns: [{ items: [
+      { type: 'commandExecution', command: 'ls' },
+      { type: 'agentMessage', phase: 'final_answer', text: 'Done.' },
+    ] }] }) },
     supervisor: { status: () => ({ enabled: false, state: 'stopped' }), start: async spec => { starts++; return { spec }; }, pause: () => { pauses++; return { enabled: false }; } } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
@@ -13,7 +18,10 @@ test('host API authenticates, keeps configuration secrets private and accepts on
   const headers = { Authorization: 'Bearer test-only-secret', 'Content-Type': 'application/json' };
   const status = await fetch(`${url}/status`, { headers });
   assert.equal(status.status, 200); assert.equal((await status.text()).includes('test-only-secret'), false);
-  assert.deepEqual((await (await fetch(`${url}/threads`, { headers })).json()).threads, [{ id: 'chat', title: 'Work' }]);
+  assert.deepEqual((await (await fetch(`${url}/threads`, { headers })).json()).threads, [{
+    id: 'chat', title: 'Work', cwd: 'D:\\Code\\Atlas', project: 'Atlas',
+    messages: [{ role: 'assistant', phase: 'final', content: 'Done.' }],
+  }]);
   await fetch(`${url}/watch`, { method: 'POST', headers, body: JSON.stringify({ threadId: 'chat' }) });
   await fetch(`${url}/pause`, { method: 'POST', headers, body: '{}' });
   assert.equal(starts, 1); assert.equal(pauses, 1);

@@ -7,6 +7,7 @@ import type { GroupMember, Message } from './data';
 import type { HermesMessage, HermesSession } from './hermes';
 import { cleanProtocol, readGroupTurn, silentReaction } from './group';
 import { extractReaction } from './reactions';
+import { decodeGroupRecord } from './groupWire';
 
 /** The prefix that keeps a group conversation apart from a private one. */
 export const GROUP_TITLE_PREFIX = 'Group · ';
@@ -173,7 +174,7 @@ export function parseGroupWire(content: string): GroupWire | null {
   const start = content.indexOf(TRANSCRIPT_MARKER);
   if (start < 0) return null;
   const after = start + TRANSCRIPT_MARKER.length;
-  const turn = content.indexOf(TURN_MARKER, after);
+  const turn = content.lastIndexOf(TURN_MARKER);
   if (turn < 0) return null;
   const tail = content.slice(turn + 2);
   const speaker = /^You are @(.+?)\.\s*/.exec(tail);
@@ -187,10 +188,10 @@ export function parseGroupWire(content: string): GroupWire | null {
 }
 
 /** A line of a group transcript, read back. */
-type Line =
+type Line = { id?: string } & (
   | { kind: 'person'; text: string }
   | { kind: 'member'; name: string; text: string }
-  | { kind: 'note'; text: string };
+  | { kind: 'note'; text: string });
 
 const PERSON_LINE = /^@You:\s?(.*)$/;
 const MEMBER_LINE = /^@([^:]+):\s?(.*)$/;
@@ -202,7 +203,16 @@ const NOTE_LINE = /^\(note\)\s?(.*)$/;
  */
 export function readTranscript(lines: string[]): Line[] {
   const read: Line[] = [];
-  for (const raw of lines) {
+  for (let index = 0; index < lines.length; index++) {
+    const decoded = decodeGroupRecord(lines, index);
+    if (decoded) {
+      const record = decoded.record;
+      read.push(record.kind === 'user' ? { kind: 'person', id: record.id, text: record.text }
+        : { ...record, kind: record.kind });
+      index += decoded.count - 1;
+      continue;
+    }
+    const raw = lines[index];
     const person = PERSON_LINE.exec(raw);
     if (person) {
       read.push({ kind: 'person', text: person[1] });
@@ -234,6 +244,7 @@ function lastSpokenKey(lines: string[]): string {
   for (let index = read.length - 1; index >= 0; index -= 1) {
     const line = read[index];
     if (line.kind === 'note') continue;
+    if (line.id) return `id:${line.id}`;
     if (line.kind === 'person') return `person:${line.text}`;
     return `member:${line.name}:${line.text}`;
   }
@@ -241,7 +252,7 @@ function lastSpokenKey(lines: string[]): string {
 }
 
 type GroupEvent =
-  | { kind: 'person'; ts: number; text: string }
+  | { kind: 'person'; ts: number; text: string; id?: string }
   | {
       kind: 'member';
       ts: number;
@@ -270,7 +281,7 @@ export function groupTranscript(
   const events: GroupEvent[] = [];
   // The person spoke in every member's transcript: the first mention is the
   // moment the line was sent.
-  const personAt = new Map<string, number>();
+  const personAt = new Map<string, { ts: number; text: string; id?: string }>();
 
   for (const member of members) {
     const rows = transcripts.get(member.id) ?? [];
@@ -287,8 +298,10 @@ export function groupTranscript(
         wire = parsed;
         for (const line of readTranscript(parsed.transcript)) {
           if (line.kind !== 'person') continue;
-          if (personAt.has(line.text)) continue;
-          personAt.set(line.text, row.timestamp);
+          const key = line.id ? `id:${line.id}` : `text:${line.text}`;
+          const previous = personAt.get(key);
+          if (previous && previous.ts <= row.timestamp) continue;
+          personAt.set(key, { ts: row.timestamp, text: line.text, id: line.id });
         }
         target = lastSpokenKey(parsed.transcript);
         continue;
@@ -308,8 +321,15 @@ export function groupTranscript(
     }
   }
 
-  for (const [text, ts] of personAt) {
-    events.push({ kind: 'person', ts, text });
+  for (const person of personAt.values()) {
+    const legacy = personAt.get(`text:${person.text}`);
+    if (person.id && legacy && person.id.startsWith(`hp-${legacy.ts}-`)) {
+      person.ts = Math.min(person.ts, legacy.ts);
+      personAt.delete(`text:${person.text}`);
+    }
+  }
+  for (const person of personAt.values()) {
+    events.push({ kind: 'person', ...person });
   }
   events.sort((left, right) => left.ts - right.ts);
 
@@ -328,9 +348,11 @@ export function groupTranscript(
 
   for (const event of events) {
     if (event.kind === 'person') {
+      const id = event.id || `hp-${event.ts}-${messages.length}`;
+      keys.set(`id:${id}`, messages.length);
       keys.set(`person:${event.text}`, messages.length);
       messages.push({
-        id: `hp-${event.ts}-${messages.length}`,
+        id,
         role: 'user',
         text: event.text,
       });
@@ -371,12 +393,14 @@ export function groupTranscript(
       };
     }
     if (turn.text) {
+      const id = `hm-${event.ts}-${messages.length}`;
+      keys.set(`id:${id}`, messages.length);
       keys.set(
         `member:${event.member.name}:${turn.text}`,
         messages.length,
       );
       messages.push({
-        id: `hm-${event.ts}-${messages.length}`,
+        id,
         role: 'assistant',
         text: turn.text,
         authorId: event.member.id,

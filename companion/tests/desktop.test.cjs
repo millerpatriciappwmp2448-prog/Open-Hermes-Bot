@@ -93,6 +93,59 @@ test('desktop listing normalizes live string statuses and preserves detailed att
   assert.equal(chats[0].title, 'Running task');
 });
 
+test('desktop listing includes pinned chats absent from history and keeps current metadata', async t => {
+  const { DesktopClient } = require('../desktop.cjs');
+  const pipePath = await peer(t, request => {
+    if (request.method === 'tools/list') return catalog;
+    assert.equal(request.params.tool, 'list_threads');
+    if (request.params.arguments.mode === 'recent') return text({
+      pinnedThreads: [{ id: 'pin', kind: 'codex', hostId: 'local', title: 'Pinned task', status: 'notLoaded' }],
+      threads: [
+        { id: 'running', kind: 'codex', hostId: 'local', title: 'Current title', status: 'active' },
+        { id: 'remote', kind: 'codex', hostId: 'another-host', title: 'Remote task' },
+        { id: 'chatgpt', kind: 'chatgpt', hostId: 'local', title: 'Other source' },
+      ],
+    });
+    assert.equal(request.params.arguments.mode, 'history');
+    return text({ threads: [
+      { id: 'running', kind: 'codex', hostId: 'local', title: 'Old title', status: 'idle' },
+      { id: 'older', kind: 'codex', hostId: 'local', title: 'Older task' },
+    ] });
+  });
+  const client = new DesktopClient({ pipePath, callerThreadId: 'authorizing-chat' });
+  t.after(() => client.close());
+  const chats = await client.list();
+  assert.deepEqual(chats.map(row => row.id), ['pin', 'running', 'older']);
+  assert.equal(chats[1].title, 'Current title');
+  assert.equal(chats[1].status.type, 'active');
+});
+
+for (const failedMode of ['recent', 'history']) {
+  test(`desktop listing retains available chats when ${failedMode} fails`, async t => {
+    const { DesktopClient } = require('../desktop.cjs');
+    const pipePath = await peer(t, request => {
+      if (request.method === 'tools/list') return catalog;
+      if (request.params.arguments.mode === failedMode) return { result: {
+        success: false, contentItems: [{ type: 'inputText', text: 'Temporary list failure' }],
+      } };
+      return text({ threads: [{ id: 'available', kind: 'codex', title: 'Available task' }] });
+    });
+    const client = new DesktopClient({ pipePath, callerThreadId: 'authorizing-chat' });
+    t.after(() => client.close());
+    assert.deepEqual((await client.list()).map(row => row.id), ['available']);
+  });
+}
+
+test('desktop listing reports an error when neither source can be read', async t => {
+  const { DesktopClient } = require('../desktop.cjs');
+  const pipePath = await peer(t, request => request.method === 'tools/list' ? catalog : {
+    result: { success: false, contentItems: [{ type: 'inputText', text: 'Desktop list unavailable' }] },
+  });
+  const client = new DesktopClient({ pipePath, callerThreadId: 'authorizing-chat' });
+  t.after(() => client.close());
+  await assert.rejects(client.list(), /Desktop list unavailable/);
+});
+
 test('missing required tools fail before sending anything', async t => {
   const { DesktopClient } = require('../desktop.cjs');
   const pipePath = await peer(t, request => {

@@ -183,7 +183,7 @@ class Hermes:
 
     # --------------------------------------------------------- the sessions
 
-    def sessions(self, profile: str, limit: int = 100, pages: int = 5) -> list[dict]:
+    def sessions(self, profile: str, limit: int = 100, pages: int | None = 5) -> list[dict]:
         """The conversations a bot holds, newest first, without duplicates."""
 
         return self._session_rows(profile, "&source=api_server", limit, pages)
@@ -231,11 +231,13 @@ class Hermes:
         rows = self._session_rows(profile, "", limit, pages)
         return [row for row in rows if CRON_SESSION_RE.match(row["id"])]
 
-    def _session_rows(self, profile: str, extra: str, limit: int, pages: int) -> list[dict]:
+    def _session_rows(self, profile: str, extra: str, limit: int, pages: int | None) -> list[dict]:
         rows: list[dict] = []
         seen: set[str] = set()
         offset = 0
-        for _ in range(pages):
+        page = 0
+        while pages is None or page < pages:
+            page += 1
             payload = self._call(
                 profile,
                 "GET",
@@ -244,6 +246,7 @@ class Hermes:
             batch = payload.get("data") or payload.get("sessions") or []
             if not isinstance(batch, list) or not batch:
                 break
+            previous_count = len(seen)
             for row in batch:
                 if not isinstance(row, dict):
                     continue
@@ -254,6 +257,8 @@ class Hermes:
                 rows.append(self._session_row(profile, row))
             if payload.get("has_more") is False or len(batch) < limit:
                 break
+            if len(seen) == previous_count:
+                raise HermesError(502, "session_pagination", "The host repeated a session page without advancing its cursor.")
             offset += limit
         return rows
 
@@ -308,14 +313,14 @@ class Hermes:
         rows = payload.get("data") or payload.get("messages") or []
         return todos.latest(rows if isinstance(rows, list) else [])
 
-    def create_session(self, profile: str, title: str) -> dict:
+    def create_session(self, profile: str, title: str, *, exact: bool = False) -> dict:
         """Open a conversation. A taken title gets a suffix, not a failure."""
 
         attempted = title
         try:
             payload = self._call(profile, "POST", "/api/sessions", {"title": attempted})
         except HermesError as exc:
-            if exc.status != 409:
+            if exc.status != 409 or exact:
                 raise
             attempted = f"{title} · {int(time.time()) % 100000}"
             payload = self._call(profile, "POST", "/api/sessions", {"title": attempted})

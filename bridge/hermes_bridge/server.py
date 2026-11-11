@@ -30,6 +30,8 @@ from .codex import CodexCompanion, parse_review, review_prompt, require_analysis
 from .codex_agent import CodexAgent
 from .agent_permissions import AgentPermissions
 from .labeler import Labeler
+from .groups import Groups
+from .group_rounds import GroupRounds
 
 log = logging.getLogger("hermes_bridge")
 
@@ -61,11 +63,14 @@ class Bridge:
         self.pairing = Pairing(config)
         self.hermes = Hermes(config)
         self.turns = Turns(config, self.hermes)
+        self.groups = Groups(config, self.hermes)
         self.monitor = Monitor(config.hermes_home)
         self.codex = CodexCompanion(config)
         self.codex_agent = CodexAgent(config, self.hermes, self.codex)
         self.codex_review_lock = threading.Lock()
         self.permissions = AgentPermissions(config, self.hermes)
+        self.group_rounds = GroupRounds(config, self.groups, self.turns,
+            instructions=lambda bot: self.permissions.instructions(profiles.profile_of(bot)))
         self.labeler = Labeler(config, self.hermes)
         self.permissions.on_created = lambda profile: self.label_later(profile)
 
@@ -84,6 +89,15 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("GET", re.compile(r"^/$"), "_root", True),
     ("GET", re.compile(r"^/v1/health$"), "_health", True),
     ("POST", re.compile(r"^/v1/pair$"), "_pair", True),
+    ("GET", re.compile(r"^/v1/groups$"), "_groups", False),
+    ("POST", re.compile(r"^/v1/groups$"), "_group_create", False),
+    ("PATCH", re.compile(r"^/v1/groups/(?P<group>[^/]+)$"), "_group_update", False),
+    ("DELETE", re.compile(r"^/v1/groups/(?P<group>[^/]+)$"), "_group_delete", False),
+    ("GET", re.compile(r"^/v1/groups/(?P<group>[^/]+)/messages$"), "_group_messages", False),
+    ("GET", re.compile(r"^/v1/active-group-rounds$"), "_active_group_rounds", False),
+    ("PUT", re.compile(r"^/v1/groups/(?P<group>[^/]+)/rounds/(?P<request>[A-Za-z0-9_-]{1,100})$"), "_group_round_start", False),
+    ("GET", re.compile(r"^/v1/groups/(?P<group>[^/]+)/rounds/(?P<request>[A-Za-z0-9_-]{1,100})$"), "_group_round_read", False),
+    ("POST", re.compile(r"^/v1/groups/(?P<group>[^/]+)/rounds/(?P<request>[A-Za-z0-9_-]{1,100})/stop$"), "_group_round_stop", False),
     ("GET", re.compile(r"^/v1/bots$"), "_bots", False),
     ("POST", re.compile(r"^/v1/bots$"), "_bot_create", False),
     ("PATCH", re.compile(r"^/v1/bots/(?P<bot>[^/]+)$"), "_bot_update", False),
@@ -167,6 +181,7 @@ class BridgeServer(ThreadingHTTPServer):
         super().__init__((config.host, config.port), Handler)
 
     def start_background(self) -> None:
+        self.bridge.group_rounds.resume()
         def work():
             try:
                 self.bridge.permissions.refresh(self.server_address[1])
@@ -177,6 +192,10 @@ class BridgeServer(ThreadingHTTPServer):
             except Exception:  # noqa: BLE001
                 log.info("tag backfill skipped\n%s", traceback.format_exc())
         threading.Thread(target=work, daemon=True).start()
+
+    def server_close(self) -> None:
+        self.bridge.group_rounds.close()
+        super().server_close()
 
     def allowed_to_pair(self, address: str) -> bool:
         now = time.monotonic()
@@ -745,6 +764,41 @@ class Handler(BaseHTTPRequestHandler):
         rows.sort(key=lambda row: row["lastActive"], reverse=True)
         return self._json(200, {"bot": bot_id, "runs": rows[:100]})
 
+    # ----------------------------------------------------------- groups
+
+    def _groups(self, match, query) -> int:
+        return self._json(200, {"groups": self.bridge.groups.list()})
+
+    def _group_create(self, match, query) -> int:
+        body = self._json_body()
+        group = self.bridge.groups.create(body.get("name"), body.get("members"))
+        return self._json(201, {"group": group})
+
+    def _group_update(self, match, query) -> int:
+        group = self.bridge.groups.update(param(match, "group"), self._json_body())
+        return self._json(200, {"group": group})
+
+    def _group_delete(self, match, query) -> int:
+        self.bridge.groups.delete(param(match, "group"))
+        return self._json(200, {"ok": True})
+
+    def _group_messages(self, match, query) -> int:
+        return self._json(200, {"messages": self.bridge.groups.messages(param(match, "group"))})
+
+    def _active_group_rounds(self, match, query) -> int:
+        return self._json(200, {"runs": self.bridge.group_rounds.active()})
+
+    def _group_round_start(self, match, query) -> int:
+        body = self._json_body()
+        run = self.bridge.group_rounds.start(param(match, "group"), param(match, "request"), body.get("message"))
+        return self._json(202, {"run": run})
+
+    def _group_round_read(self, match, query) -> int:
+        return self._json(200, {"run": self.bridge.group_rounds.get(param(match, "group"), param(match, "request"))})
+
+    def _group_round_stop(self, match, query) -> int:
+        return self._json(200, {"run": self.bridge.group_rounds.stop(param(match, "group"), param(match, "request"))})
+
     # ----------------------------------------------------------- sessions
 
     @staticmethod
@@ -871,7 +925,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(200, {"run": self.bridge.turns.get(bot, param(match, "session"), param(match, "request"))})
 
     def _active_turns(self, match, query):
-        return self._json(200, {"runs": self.bridge.turns.active()})
+        # Member runs belong to their group, never to the bot's private chat.
+        runs = [run for run in self.bridge.turns.active() if not run["requestId"].startswith("group-")]
+        return self._json(200, {"runs": runs})
 
     def _stop_turn(self, match, query):
         bot = param(match, "bot")

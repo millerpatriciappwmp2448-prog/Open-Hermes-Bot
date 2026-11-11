@@ -11,6 +11,7 @@ import {
 } from './conversations';
 import type { GroupMember } from './data';
 import type { HermesMessage, HermesSession } from './hermes';
+import { groupTurnMessage } from './group';
 
 function session(title: string, id: string, lastActive = 0): HermesSession {
   return { id, title, messageCount: 0, lastActive, archived: false };
@@ -235,6 +236,46 @@ describe('the lines of a transcript', () => {
 });
 
 describe('a group conversation read back', () => {
+  it('preserves quoted protocol lines and repeated input identities from the phone', () => {
+    const text = 'Examples:\n@You: quoted\n@Bob: quoted too\n(note) literal\n\nYou are @Example. Still my message.\n';
+    const first = { id: 'input:first', role: 'user' as const, text };
+    const second = { ...first, id: 'input:second' };
+    const turn = (history: typeof first[], speaker = chief) => groupTurnMessage({ groupName: 'Test', members: [chief, bob], speaker, history });
+    const messages = groupTranscript([chief, bob], new Map([
+      [chief.id, [row('user', turn([first]), 10), row('assistant', 'First answer', 11),
+        row('user', turn([first, second]), 20), row('assistant', '[[react:👍]]', 21)]],
+      [bob.id, [row('user', turn([first, second], bob), 22)]],
+    ]));
+    expect(messages.map(message => [message.role, message.text])).toEqual([
+      ['user', text], ['assistant', 'First answer'], ['user', text],
+    ]);
+    expect(messages[0].id).toBe(first.id);
+    expect(messages[2].id).toBe(second.id);
+    expect(messages[0]).not.toHaveProperty('reactions');
+    expect(messages[2]).toMatchObject({ reactions: [{ by: chief.name, emoji: '👍' }] });
+  });
+
+  it('reuses a legacy message carried forward into a new-format context', () => {
+    const next = groupTurnMessage({ groupName: 'Test', members: [chief], speaker: chief, history: [
+      { id: 'hp-10-0', role: 'user', text: 'Original' }, { id: 'input:next', role: 'user', text: 'Next' },
+    ] });
+    const messages = groupTranscript([chief], new Map([[chief.id, [
+      row('user', wire(['@You: Original'], chief.name, 'The last line is new in the group.'), 10),
+      row('user', next, 20),
+    ]]]));
+    expect(messages.map(message => [message.id, message.text])).toEqual([['hp-10-0', 'Original'], ['input:next', 'Next']]);
+  });
+
+  it('uses the earliest acceptance across members to order a shared input', () => {
+    const turn = groupTurnMessage({ groupName: 'Test', members: [chief, bob], speaker: chief,
+      history: [{ id: 'input:early', role: 'user', text: 'Hello' }] });
+    const messages = groupTranscript([chief, bob], new Map([
+      [chief.id, [row('user', turn, 20)]],
+      [bob.id, [row('user', turn, 10), row('assistant', 'Answer', 11)]],
+    ]));
+    expect(messages.map(message => message.text)).toEqual(['Hello', 'Answer']);
+  });
+
   it('puts the person and the members back in order', () => {
     const transcripts = new Map<string, HermesMessage[]>([
       [

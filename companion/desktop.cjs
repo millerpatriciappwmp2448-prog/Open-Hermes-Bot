@@ -129,9 +129,21 @@ class DesktopClient {
   }
 
   async list() {
-    const result = await this.call('list_threads', { mode: 'history', source: 'codex', hostId: 'local', limit: 50 });
-    return [...(result.pinnedThreads || []), ...(result.threads || [])]
-      .filter((row, index, rows) => row.kind === 'codex' && rows.findIndex(other => other.id === row.id) === index)
+    // History omits some pinned chats. The current sidebar includes them and
+    // carries fresher titles/statuses; history adds older local conversations.
+    const results = await Promise.allSettled([
+      this.call('list_threads', { mode: 'recent', limit: 50 }),
+      this.call('list_threads', { mode: 'history', source: 'codex', hostId: 'local', limit: 50 }),
+    ]);
+    if (results.every(result => result.status === 'rejected')) throw results[0].reason;
+    const rows = results.flatMap(result => result.status === 'fulfilled'
+      ? [...(result.value.pinnedThreads || []), ...(result.value.threads || [])] : []);
+    const seen = new Set();
+    return rows.filter(row => {
+      if (!row || row.kind !== 'codex' || (row.hostId && row.hostId !== 'local') ||
+          typeof row.id !== 'string' || !row.id || seen.has(row.id)) return false;
+      seen.add(row.id); return true;
+    })
       .map(({ id, kind, hostId, title, status, cwd }) => ({
         id, kind, hostId, title, cwd,
         status: typeof status === 'string' ? { type: status } : status,

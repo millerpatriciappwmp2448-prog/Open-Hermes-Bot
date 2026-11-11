@@ -16,6 +16,7 @@ import {
   stripSilentMarkers,
 } from './group';
 import type { GroupMember, Message } from './data';
+import { readTranscript } from './conversations';
 
 const chief: GroupMember = {
   id: 'bot:chief',
@@ -200,8 +201,17 @@ describe('the room as the model reads it', () => {
       text: 'x'.repeat(400),
     }));
     const text = formatTranscript(long);
-    expect(text.startsWith('…')).toBe(true);
+    const read = readTranscript(text.split('\n'));
+    expect(read.length).toBeLessThan(16);
+    expect(read.every(line => line.text === 'x'.repeat(400))).toBe(true);
+    expect(read.at(-1)?.id).toBe('39');
     expect(text.length).toBeLessThan(6100);
+  });
+
+  it('keeps the latest oversized message whole instead of cutting its identity or text', () => {
+    const text = 'Start\n@You: quoted\n' + '长'.repeat(7000);
+    const formatted = formatTranscript([{ id: 'old', role: 'user', text: 'Old' }, { id: 'new', role: 'user', text }]);
+    expect(readTranscript(formatted.split('\n'))).toEqual([{ kind: 'person', id: 'new', text }]);
   });
 });
 
@@ -296,6 +306,6 @@ describe('a line without an author', () => {
     const text = formatTranscript([
       { id: '1', role: 'assistant', text: 'Hi', authorId: 'bot:1' },
     ]);
-    expect(text).toBe('@Bot: Hi');
+    expect(readTranscript(text.split('\n'))).toEqual([{ kind: 'member', name: 'Bot', id: '1', text: 'Hi' }]);
   });
 });

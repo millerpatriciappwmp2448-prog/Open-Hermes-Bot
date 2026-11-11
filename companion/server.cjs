@@ -7,27 +7,10 @@ const { DesktopClient } = require('./desktop.cjs');
 const { Supervisor, observation } = require('./supervisor.cjs');
 const { JsonStore } = require('./store.cjs');
 const { createReviewer } = require('./reviewer.cjs');
+const { extractMessages, projectName } = require('./messages.cjs');
 
-
-// Extract assistant messages from a thread
-function extractMessages(thread) {
-  if (!thread || !thread.turns || !Array.isArray(thread.turns)) return [];
-  const messages = [];
-  // Keep only the most recent 3 assistant turns
-  const recentTurns = thread.turns.slice(-3);
-  for (const turn of recentTurns) {
-    if (!turn || !turn.response || !Array.isArray(turn.response.items)) continue;
-    for (const item of turn.response.items) {
-      if (item.type === 'text' && typeof item.text === 'string' && item.text.trim()) {
-        // Skip tool-use outputs; keep only narrative text
-        if (!item.text.startsWith('```') && !item.text.match(/^<[a-z_]+>/)) {
-          messages.push({ role: 'assistant', content: item.text.slice(0, 2000) });
-        }
-      }
-    }
-  }
-  return messages;
-}
+// Only the newest chats are read in full so the phone list stays fast.
+const ENRICHED_THREADS = 12;
 
 const MAX_BODY = 64 * 1024;
 const authorized = (actual, expected) => {
@@ -49,14 +32,14 @@ function createServer({ token, desktop, supervisor }) {
       if (route === 'GET /status') { json(200, supervisor.status()); return; }
       if (route === 'GET /threads') {
         const threads = await desktop.list();
-        // Enrich each thread with recent messages (limit to 8 threads to avoid long waits)
-        const enriched = await Promise.all(threads.slice(0, 8).map(async (thread) => {
+        const enriched = await Promise.all(threads.map(async (thread, index) => {
+          const base = { ...thread, project: projectName(thread.cwd) };
+          if (index >= ENRICHED_THREADS) return { ...base, messages: [] };
           try {
             const full = await desktop.read(thread.id, thread.hostId || 'local');
-            return { ...thread, messages: extractMessages(full) };
+            return { ...base, messages: extractMessages(full) };
           } catch {
-            // If read fails, return thread without messages
-            return { ...thread, messages: [] };
+            return { ...base, messages: [] };
           }
         }));
         json(200, { threads: enriched });
