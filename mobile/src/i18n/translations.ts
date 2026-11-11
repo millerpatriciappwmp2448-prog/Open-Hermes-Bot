@@ -58,6 +58,7 @@ export const english: Readonly<Record<string, string>> = {
   "有新内容": "New content",
   "读取会话内容中": "Loading chat",
   "输入消息，直接发送到 Codex": "Type a message to send to Codex",
+  "查看并控制这个 Codex 会话": "View and control this Codex chat",
   "发送中": "Sending",
   "消息可能已经送达，请刷新确认，不要重复发送。": "The message may have been delivered. Refresh to confirm before sending again.",
   "无法发送到 Codex。": "Could not send to Codex.",
