@@ -72,6 +72,7 @@ export function ChatScreen({ route, navigation }: Props) {
     loadTodos,
     connection,
     setViewingThread,
+    modelPicks,
   } = useStore();
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -113,8 +114,8 @@ export function ChatScreen({ route, navigation }: Props) {
           <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
             <BackIcon size={17} color={C.text} />
           </Pressable>
-          <View style={styles.navCenter}>
-            <View style={styles.chatId}>
+          <View style={styles.navCenterGrok}>
+            <View style={styles.chatIdGrok}>
               <Text style={styles.chatName} numberOfLines={1}>{t("此会话已不存在")}</Text>
             </View>
           </View>
@@ -142,7 +143,7 @@ export function ChatScreen({ route, navigation }: Props) {
     const seen = new Set<string>();
     for (let index = turns.length - 1; index >= 0; index--) {
       const turn = turns[index];
-      if (turn.from === 'user' || seen.has(turn.from)) continue;
+      if (turn.from === 'user' || turn.notice || seen.has(turn.from)) continue;
       seen.add(turn.from);
       liveFaces.add(turn.id);
     }
@@ -154,6 +155,11 @@ export function ChatScreen({ route, navigation }: Props) {
   }
 
   function renderMessage(message: Message) {
+    if (message.notice) return <View key={message.id} testID="group-notice" style={styles.notice}>
+      <Text style={[styles.noticeText, message.failed && { color: C.red }]}>
+        {message.noticeKind === 'silent' ? t('{0} 未发言', { 0: botById(message.from)?.name || t('智能体') }) : message.text}
+      </Text>
+    </View>;
     const mine = message.from === 'user';
     const author = mine ? null : botById(message.from);
     const failed = !mine && message.failed;
@@ -240,23 +246,33 @@ export function ChatScreen({ route, navigation }: Props) {
             <BackIcon size={17} color={C.text} />
           </Pressable>
 
-          <View style={styles.navCenter}>
+          <View style={styles.navCenterGrok}>
             <Pressable
-              style={styles.chatId}
+              style={styles.chatIdGrok}
               onPress={() => (isGroup ? setDetailsOpen(true) : setBotOpen(true))}
               accessibilityRole="button"
               accessibilityLabel={t("打开 {0}", {"0": thread.name})}
               testID="chat-identity"
             >
               {isGroup ? (
-                <BloubGroup members={faces} size={23} active={thread.typing} />
+                <BloubGroup members={faces} size={32} active={thread.typing} />
               ) : (
-                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={23} animated active={thread.typing} />
+                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={32} animated active={thread.typing} />
               )}
               <View style={styles.chatTitles}>
                 <Text style={styles.chatName} numberOfLines={1}>
                   {thread.name}
-                </Text>
+                  {thread.tag ? <Text style={styles.chatTag}> {thread.tag}</Text> : null}
+                  </Text>
+                  <Text style={styles.chatSubtitle} numberOfLines={1}>
+                    {t('Hermes 主机')}
+                    {' · '}
+                    {(() => {
+                      const pick = modelPicks?.[thread.botId];
+                      const modelId = pick?.model || 'server-default';
+                      return modelId.length > 20 ? `${modelId.slice(0, 18)}…` : modelId;
+                    })()}
+                  </Text>
               </View>
             </Pressable>
           </View>
@@ -335,6 +351,7 @@ export function ChatScreen({ route, navigation }: Props) {
         threadId={thread.id}
         onLeave={() => navigation.goBack()}
         onModel={() => navigation.navigate('ChatModel', { threadId: thread.id })}
+        onUpdated={id => navigation.setParams({ threadId: id })}
       />
       <MessageSheet
         visible={active !== null}
@@ -364,15 +381,12 @@ const useStyles = themedStyles(({ C, INK }) => ({
     backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
     boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
   },
-  chatId: {
-    flexShrink: 1, minWidth: 0, maxWidth: '100%', minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 22,
-    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
-    boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
-  },
-  chatTitles: { flexShrink: 1, minWidth: 0 },
-  chatName: { color: C.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
-  navCenter: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
+  chatIdGrok: { flexDirection: 'column', alignItems: 'center', gap: 6, maxWidth: '100%' },
+  chatTitles: { alignItems: 'center', maxWidth: '100%' },
+  chatName: { color: C.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.22, textAlign: 'center' },
+  chatTag: { color: C.text2, fontSize: 12, fontWeight: '400', letterSpacing: -0.15 },
+  chatSubtitle: { color: C.text2, fontSize: 11.5, fontWeight: '400', letterSpacing: -0.12, marginTop: 1, textAlign: 'center' },
+  navCenterGrok: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   navPlaceholder: { width: 40, flexShrink: 0 },
 
   body: { flex: 1 },
@@ -386,6 +400,8 @@ const useStyles = themedStyles(({ C, INK }) => ({
   msgBot: { alignItems: 'flex-start' },
   msgGroup: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
   msgAvatar: { marginTop: 20 },
+  notice: { alignItems: 'center', paddingHorizontal: 18, paddingVertical: 5 },
+  noticeText: { color: C.text2, fontSize: 12, lineHeight: 18, textAlign: 'center' },
   bubbleWrap: { flexShrink: 1, maxWidth: '92%', alignItems: 'flex-start' },
   bubbleWrapUser: { alignItems: 'flex-end', maxWidth: '82%' },
 

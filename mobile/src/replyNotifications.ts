@@ -1,6 +1,7 @@
 /** A local reply alert carries routing IDs, never message text or credentials. */
 export type ReplyNotice = {
   host: string; botId: string; threadId: string; sessionId: string; requestId: string; name: string;
+  groupId?: string;
 };
 export type ReplyNotification = ReplyNotice & { kind: 'hermes-reply' };
 type NoticeState = { enabled: boolean; foreground: boolean; viewingThread: string | null };
@@ -12,7 +13,9 @@ export function notificationTarget(value: unknown): ReplyNotification | null {
   for (const key of ['host', 'botId', 'threadId', 'sessionId', 'requestId', 'name']) {
     if (typeof row[key] !== 'string' || !(row[key] as string).trim() || (row[key] as string).length > 2048) return null;
   }
-  if (row.threadId !== `bot:${row.botId}`) return null;
+  if (row.groupId !== undefined) {
+    if (typeof row.groupId !== 'string' || !/^g-[a-zA-Z0-9-]{1,100}$/.test(row.groupId) || row.threadId !== row.groupId) return null;
+  } else if (row.threadId !== `bot:${row.botId}`) return null;
   return row as ReplyNotification;
 }
 
@@ -30,7 +33,7 @@ export function createReplyNotifier(device: {
   };
   return {
     async complete(notice: ReplyNotice) {
-      const key = JSON.stringify([notice.host, notice.botId, notice.sessionId, notice.requestId]);
+      const key = JSON.stringify([notice.host, notice.botId, notice.threadId, notice.sessionId, notice.requestId]);
       if (handled.has(key)) return 'duplicate' as const;
       // Reserve before crossing the native boundary: concurrent recovery polls
       // must not notify twice. This ledger never stores conversation content.

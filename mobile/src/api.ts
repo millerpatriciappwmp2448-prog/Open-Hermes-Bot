@@ -1,5 +1,5 @@
 import { t } from './i18n';
-import type { Attachment } from './data';
+import type { Attachment, Message } from './data';
 import { parseTodos, type TodoItem } from './taskDock';
 import type { CodexChat, CodexSupervisorStatus, CodexWatchSpec } from './codexSupervisor';
 
@@ -81,6 +81,17 @@ export type BridgeDevice = {
 export type BridgeRun = {
   bot: string; sessionId: string; requestId: string; id: string;
   status: string; text: string; tool: string; error: string;
+};
+
+export type BridgeGroup = {
+  id: string; name: string; lastActive: number;
+  members: { bot: string; name: string; sessionId: string; lastActive?: number }[];
+};
+export type GroupRunRef = { groupId: string; requestId: string; status: string };
+export type BridgeGroupRun = GroupRunRef & {
+  messages: Message[]; error?: string; failures?: { bot: string; wave: number; status: string }[];
+  /** Speakers with a non-silent reply in this round, not in the full history. */
+  responded?: string[];
 };
 
 export type BridgeModels = {
@@ -278,6 +289,29 @@ export function createBridgeClient(rawBase: string, token: string) {
     token,
 
     health: () => bridgeHealth(root),
+
+    groups: async (): Promise<BridgeGroup[]> => (await request<{ groups: BridgeGroup[] }>('/v1/groups')).groups,
+    groupMessages: async (id: string): Promise<Message[]> =>
+      (await request<{ messages: Message[] }>(`/v1/groups/${session(id)}/messages`)).messages,
+    createGroup: async (input: { name: string; members: string[] }): Promise<BridgeGroup> =>
+      (await request<{ group: BridgeGroup }>('/v1/groups', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      })).group,
+    updateGroup: async (id: string, input: { name?: string; members?: string[] }): Promise<BridgeGroup> =>
+      (await request<{ group: BridgeGroup }>(`/v1/groups/${session(id)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      })).group,
+    deleteGroup: (id: string) => request<void>(`/v1/groups/${session(id)}`, { method: 'DELETE' }),
+    activeGroupRounds: async (): Promise<GroupRunRef[]> =>
+      (await request<{ runs: GroupRunRef[] }>('/v1/active-group-rounds')).runs,
+    startGroupRound: async (id: string, requestId: string, message: string): Promise<BridgeGroupRun> =>
+      (await request<{ run: BridgeGroupRun }>(`/v1/groups/${session(id)}/rounds/${session(requestId)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message }),
+      })).run,
+    readGroupRound: async (id: string, requestId: string): Promise<BridgeGroupRun> =>
+      (await request<{ run: BridgeGroupRun }>(`/v1/groups/${session(id)}/rounds/${session(requestId)}`)).run,
+    stopGroupRound: async (id: string, requestId: string): Promise<BridgeGroupRun> =>
+      (await request<{ run: BridgeGroupRun }>(`/v1/groups/${session(id)}/rounds/${session(requestId)}/stop`, { method: 'POST' })).run,
 
     codexStatus: () => request<CodexSupervisorStatus>('/v1/codex/status'),
     ensureCodexAgent: async (): Promise<BridgeBot> =>
@@ -506,11 +540,10 @@ export function createBridgeClient(rawBase: string, token: string) {
     readTurn: async (botId: string, sessionId: string, requestId: string): Promise<BridgeRun> =>
       (await request<{ run: BridgeRun }>(`/v1/sessions/${bot(botId)}/${session(sessionId)}/turns/${encodeURIComponent(requestId)}`)).run,
 
-    stopTurn: async (botId: string, sessionId: string, requestId: string): Promise<void> => {
-      await request(`/v1/sessions/${bot(botId)}/${session(sessionId)}/turns/${encodeURIComponent(requestId)}/stop`, {
+    stopTurn: async (botId: string, sessionId: string, requestId: string): Promise<BridgeRun> =>
+      (await request<{ run: BridgeRun }>(`/v1/sessions/${bot(botId)}/${session(sessionId)}/turns/${encodeURIComponent(requestId)}/stop`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-      });
-    },
+      })).run,
 
     /**
      * One turn. Streams over XHR because a phone's fetch does not hand out a

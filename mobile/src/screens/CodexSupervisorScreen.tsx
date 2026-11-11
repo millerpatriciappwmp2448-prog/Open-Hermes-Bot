@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Page } from '../components/Page';
-import Markdown from 'react-native-markdown-display';
 import { Hint, PrimaryButton } from '../components/UI';
 import { Toggle } from '../components/Toggle';
 import { ServerModelPicker } from '../components/ServerModelPicker';
+import { chatProject, groupChatsByProject, modelOutput } from '../codexSupervisor';
 import type { CodexChat, CodexSupervisorStatus } from '../codexSupervisor';
 import type { ModelRef } from '../modelSelection';
 import { localeTag, t, useTranslation } from '../i18n';
@@ -41,6 +41,8 @@ export function CodexSupervisorScreen() {
   const [chatsLoaded, setChatsLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({});
+  const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
   const initialized = useRef(false);
   const edited = useRef(false);
   const mounted = useRef(true);
@@ -157,6 +159,37 @@ export function CodexSupervisorScreen() {
     <ServerModelPicker botId={profile} draftPick={pick} onDraftPick={value => { edited.current = true; setPick(value); }} onPicked={() => setModelOpen(false)} />
   </Page>;
 
+  const projects = groupChatsByProject(chats);
+  const selectedProject = chats.find(chat => chat.id === threadId);
+  const projectOpen = (name: string, index: number) => openProjects[name] ??
+    (selectedProject ? chatProject(selectedProject) === name : index === 0);
+  const companionMissing = Boolean(chatsError && chatsError.toLowerCase().includes('companion'));
+
+  function renderChat(chat: CodexChat) {
+    const output = modelOutput(chat);
+    const finals = output.filter(message => message.phase !== 'progress');
+    const expanded = Boolean(expandedChats[chat.id]);
+    const shown = expanded ? output : (finals.length ? finals : output).slice(-2);
+    const hidden = output.length - shown.length;
+    const long = shown.some(message => message.content.length > 360 || message.content.split('\n').length > 8);
+    const selected = threadId === chat.id;
+    return <View key={chat.id} style={[styles.choice, selected && styles.selected]}>
+      <Pressable accessibilityRole="radio" accessibilityState={{ selected }} aria-checked={selected} disabled={busy}
+        onPress={() => { edited.current = true; setThreadId(chat.id); }} style={styles.choiceHead}>
+        <Text style={styles.choiceTitle} numberOfLines={2}>{chat.title || chat.id}</Text>
+        <Text style={styles.caption}>{chat.status?.type === 'active' ? t('正在运行') : t('已有会话')}{selected ? ` · ${t('已选择')}` : ''}</Text>
+      </Pressable>
+      {shown.length ? <View style={styles.messagePreview}>
+        {shown.map((message, index) => <Text key={`${chat.id}:${index}`} selectable numberOfLines={expanded ? undefined : 8}
+          style={[styles.output, message.phase === 'progress' && styles.progress]}>{message.content}</Text>)}
+      </View> : null}
+      {expanded || hidden > 0 || long ? <Pressable accessibilityRole="button" hitSlop={8}
+        onPress={() => setExpandedChats(value => ({ ...value, [chat.id]: !expanded }))}>
+        <Text style={styles.more}>{expanded ? t('收起') : hidden > 0 ? t('展开全部输出（{0}）', { 0: output.length }) : t('展开全文')}</Text>
+      </Pressable> : null}
+    </View>;
+  }
+
   return <Page title={t('Codex 监督')} right={<Pressable accessibilityRole="button" accessibilityLabel={t('刷新监督状态')}
     disabled={loading || busy} onPress={() => void refresh()} style={styles.refresh}><Text style={styles.link}>{t('刷新')}</Text></Pressable>}>
     <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
@@ -178,23 +211,22 @@ export function CodexSupervisorScreen() {
 
       <Text style={styles.label}>{t('监督哪个 Codex 会话')}</Text>
       {chatsError ? <Text accessibilityRole="alert" style={styles.error}>{chatsError}</Text> : null}
-     {chatsError && chatsError.toLowerCase().includes('companion') ? <View style={styles.card}>
-       <Text style={styles.cardTitle}>{t('需要 Codex companion')}</Text>
-       <Text style={styles.copy}>{t('监督功能需要在 Hermes 服务器上运行 Codex companion。')}</Text>
-       <Text style={styles.caption}>{t('• 在服务器运行: node companion/desktop.cjs')}</Text>
-       <Text style={styles.caption}>{t('• 配置环境变量或 companion 配置文件')}</Text>
-       <Text style={styles.caption}>{t('• 详见仓库 companion/README.md')}</Text>
-     </View> : chats.length ? <View style={styles.list}>{chats.map(chat => <Pressable key={chat.id} accessibilityRole="radio"
-        accessibilityState={{ selected: threadId === chat.id }} disabled={busy} onPress={() => { edited.current = true; setThreadId(chat.id); }}
-        style={[styles.choice, threadId === chat.id && styles.selected]}>
-        <Text style={styles.choiceTitle}>{chat.title || chat.id}</Text>
-        <Text style={styles.caption}>{chat.status?.type === 'active' ? t('正在运行') : t('已有会话')}{threadId === chat.id ? ` · ${t('已选择')}` : ''}</Text>
-       {chat.messages && chat.messages.length > 0 && <View style={styles.messagePreview}>
-         {chat.messages.map((msg, idx) => msg.role === 'assistant' && <View key={idx} style={styles.assistantMessage}>
-           <Markdown style={markdownStyle({ C, scheme })}>{msg.content}</Markdown>
-         </View>)}
-       </View>}
-      </Pressable>)}</View> : !chatsError ? <Text style={styles.caption}>{loading || !chatsLoaded ? t('读取中') : t('电脑上暂无可用的 Codex 会话。')}</Text> : null}
+      {companionMissing ? <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t('需要 Codex companion')}</Text>
+        <Text style={styles.copy}>{t('在运行 Codex 的 Windows 电脑上启动 companion，并保持 SSH 反向隧道连接到服务器。')}</Text>
+        <Text selectable style={styles.code}>{'companion\\windows.ps1 -Action Start'}</Text>
+      </View> : projects.length ? projects.map((project, index) => {
+        const open = projectOpen(project.name, index);
+        return <View key={project.name || '-'} style={styles.project}>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }}
+            onPress={() => setOpenProjects(value => ({ ...value, [project.name]: !open }))} style={styles.projectHead}>
+            <Text style={styles.projectName} numberOfLines={1}>{project.name || t('未归类项目')}</Text>
+            <Text style={styles.caption}>{project.chats.length}</Text>
+            <Text style={styles.chevron}>{open ? '⌄' : '›'}</Text>
+          </Pressable>
+          {open ? <View style={styles.list}>{project.chats.map(renderChat)}</View> : null}
+        </View>;
+      }) : !chatsError ? <Text style={styles.caption}>{loading || !chatsLoaded ? t('读取中') : t('电脑上暂无可用的 Codex 会话。')}</Text> : null}
       <Text style={styles.label}>{t('目标与监督指令')}</Text>
       <TextInput accessibilityLabel={t('目标与监督指令')} value={goal} onChangeText={value => { edited.current = true; setGoal(value); }} multiline maxLength={8000}
         editable={!busy} keyboardAppearance={scheme} textAlignVertical="top" style={styles.input}
@@ -238,7 +270,8 @@ const useStyles = themedStyles(({ C }) => ({
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   dot: { height: 8, width: 8, borderRadius: 4 },
   list: { borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: C.line },
-  choice: { padding: 13, gap: 4, backgroundColor: C.cardRaised, borderBottomWidth: 1, borderBottomColor: C.hairline },
+  choice: { padding: 13, gap: 6, backgroundColor: C.cardRaised, borderBottomWidth: 1, borderBottomColor: C.hairline },
+  choiceHead: { gap: 4 },
   choiceTitle: { color: C.text, fontSize: 14, fontWeight: '500' },
   selected: { backgroundColor: C.selected, borderLeftWidth: 3, borderLeftColor: C.green },
   input: { color: C.text, backgroundColor: C.field, borderRadius: 14, padding: 14, minHeight: 120, fontSize: 14, lineHeight: 21 },
@@ -246,14 +279,13 @@ const useStyles = themedStyles(({ C }) => ({
   refresh: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   link: { color: C.text, fontSize: 12 },
   event: { gap: 3, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.hairline },
-  messagePreview: { marginTop: 8, gap: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.hairline },
-  assistantMessage: { backgroundColor: C.field, borderRadius: 10, padding: 10 },
+  messagePreview: { gap: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.hairline },
+  output: { color: C.text, fontSize: 13, lineHeight: 20, backgroundColor: C.field, borderRadius: 10, padding: 10, overflow: 'hidden' },
+  progress: { color: C.text2 },
+  more: { color: C.text2, fontSize: 12, fontWeight: '600' },
+  project: { gap: 6 },
+  projectHead: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
+  projectName: { color: C.text, fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  chevron: { color: C.text2, fontSize: 14, marginLeft: 'auto' },
+  code: { color: C.text, backgroundColor: C.field, borderRadius: 8, padding: 8, fontSize: 12, fontFamily: 'Menlo' },
 }), false);
-
-const markdownStyle = ({ C, scheme }: { C: Record<string, string>; scheme: string }) => ({
-  body: { color: C.text, fontSize: 13, lineHeight: 20 },
-  paragraph: { marginVertical: 2 },
-  code_inline: { backgroundColor: C.cardRaised, color: C.text, fontSize: 12, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
-  fence: { backgroundColor: C.cardRaised, color: C.text, fontSize: 12, padding: 8, borderRadius: 6, marginVertical: 4 },
-  link: { color: scheme === 'dark' ? '#38BDF8' : '#0066CC' },
-});

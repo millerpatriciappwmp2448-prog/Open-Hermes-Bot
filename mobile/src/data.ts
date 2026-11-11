@@ -51,6 +51,9 @@ export type Message = {
   reaction?: Reaction;
   /** The turn failed; the text is the reason, drawn as a notice. */
   failed?: boolean;
+  /** A group protocol notice, shown outside a speaker's bubble. */
+  notice?: boolean;
+  noticeKind?: 'silent';
 };
 
 export type Thread = {
@@ -69,6 +72,8 @@ export type Thread = {
   threadModel: string;
   /** Kept at the top of the conversation list. */
   pinned?: boolean;
+  /** Optional grouping section name. */
+  section?: string;
   /** Set while a turn is being written. */
   typing?: boolean;
   /** The tool Hermes is running for the current turn, when it says so. */
@@ -79,6 +84,9 @@ export type Thread = {
   sessionId?: string;
   /** Group only: the bots in the round, in speaking order. */
   members?: string[];
+  /** Host group identity and each member's Hermes session. */
+  groupId?: string;
+  memberSessions?: Record<string, string>;
   /** Group only: the line under the name in the header. */
   subtitle?: string;
 };

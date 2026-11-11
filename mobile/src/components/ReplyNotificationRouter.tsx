@@ -16,11 +16,13 @@ export function ReplyNotificationRouter({ navigation, ready }: {
   useEffect(() => listenForReplyNotification(setPending), []);
   useEffect(() => {
     if (!pending || !ready || !navigation.isReady() || connection.status !== 'connected') return;
-    const key = JSON.stringify([pending.host, pending.sessionId, pending.requestId]);
-    const thread = threads.find(row => row.id === pending.threadId && row.botId === pending.botId);
+    const key = JSON.stringify([pending.host, pending.threadId, pending.botId, pending.sessionId, pending.requestId]);
+    const thread = threads.find(row => row.id === pending.threadId && (pending.groupId
+      ? row.kind === 'group' && row.groupId === pending.groupId && row.members?.includes(pending.botId) && row.memberSessions?.[pending.botId] === pending.sessionId
+      : row.kind !== 'group' && row.botId === pending.botId));
     if (!handled.current.has(key) && normalizeUrl(connection.url) === pending.host && thread) {
       handled.current.add(key);
-      if (thread.sessionId === pending.sessionId) navigation.navigate('Chat', { threadId: thread.id });
+      if (pending.groupId || thread.sessionId === pending.sessionId) navigation.navigate('Chat', { threadId: thread.id });
       else navigation.navigate('SessionTranscript', { botId: pending.botId, sessionId: pending.sessionId, title: thread.name });
     }
     setPending(null);

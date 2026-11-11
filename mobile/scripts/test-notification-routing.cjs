@@ -35,3 +35,20 @@ test('notification tap waits for connection restore and opens the matching sessi
   await act(async () => tree.unmount()); trees.delete(tree);
   assert.equal(harness.notificationCalls.listener, undefined, 'listener released on unmount');
 });
+
+test('group reply taps open only the matching host-owned member session', async () => {
+  const calls = [];
+  const group = { ...run, threadId: 'g-work', groupId: 'g-work' };
+  const store = { connection: { status: 'connected', url: run.host }, threads: [
+    { id: 'g-work', groupId: 'g-work', kind: 'group', botId: 'another', members: ['atlas', 'another'], memberSessions: { atlas: 's1', another: 's2' }, name: 'Work' },
+  ] };
+  harness.setStore(store);
+  let tree;
+  await act(async () => { tree = create(React.createElement(ReplyNotificationRouter, { navigation: { isReady: () => true, navigate: (...args) => calls.push(args) }, ready: true })); }); trees.add(tree);
+  const tap = async notice => { await act(async () => harness.notificationCalls.listener({ actionIdentifier: 'default', notification: { request: { content: { data: notice } } } })); };
+  await tap(group);
+  assert.deepEqual(calls, [['Chat', { threadId: 'g-work' }]]);
+  await tap({ ...group, sessionId: 'wrong-session', requestId: 'wrong' });
+  await tap({ ...group, botId: 'removed', requestId: 'removed' });
+  assert.equal(calls.length, 1);
+});

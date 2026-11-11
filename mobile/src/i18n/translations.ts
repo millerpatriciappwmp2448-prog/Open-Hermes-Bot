@@ -1,5 +1,7 @@
 // Interface copy only. Server messages and user input are never translation keys.
 export const english: Readonly<Record<string, string>> = {
+  "添加成员": "Add members",
+  "{0} 未发言": "{0} stayed silent",
   "正在联系其他智能体": "Contacting another agent",
   "正在查看其他智能体": "Checking other agents",
   "正在管理智能体": "Managing agents",
@@ -641,6 +643,11 @@ export const english: Readonly<Record<string, string>> = {
   "电脑上暂无可用的 Codex 会话。": "No Codex chats are available on this computer.",
   "由 Codex 监督员分析证据并提出纠偏建议。": "The Codex supervisor analyzes evidence and suggests corrections.",
   "未找到 Codex 监督员，请刷新智能体列表。": "Codex supervisor was not found. Refresh the agent list.",
+  "需要 Codex companion": "Codex companion required",
+  "在运行 Codex 的 Windows 电脑上启动 companion，并保持 SSH 反向隧道连接到服务器。": "Start the companion on the Windows computer running Codex and keep the SSH reverse tunnel to the server open.",
+  "展开全部输出（{0}）": "Show all output ({0})",
+  "展开全文": "Show full text",
+  "未归类项目": "Other",
   "智能体回复": "Agent replies",
   "回复已完成": "Reply ready",
   "系统通知已关闭": "System notifications are off",

@@ -166,6 +166,7 @@ const modules = {
   'expo-secure-store': {
     getItemAsync: async (key) => savedPreferences.get(key) ?? null,
     setItemAsync: async (key, value) => { savedPreferences.set(key, value); },
+    deleteItemAsync: async (key) => { savedPreferences.delete(key); },
   },
   'expo-haptics': { selectionAsync: async () => {} },
   'expo-clipboard': { setStringAsync: async () => {} },

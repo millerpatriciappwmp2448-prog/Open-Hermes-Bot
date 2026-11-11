@@ -14,6 +14,8 @@ import { useStore } from '../store';
 import { useAppNavigation } from '../nav';
 import { themedStyles } from '../theme';
 
+type SectionState = Record<string, boolean>; // section name -> collapsed
+
 /**
  * What a person opens the app on: the bots they keep close, and the
  * conversations that moved. A long press on a row is the way to pin it, to
@@ -33,6 +35,7 @@ export function ConversationsScreen() {
   const [confirmDelete, setConfirmDelete] = useState<Thread | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [collapsed, setCollapsed] = useState<SectionState>({});
 
   function closeMenu() {
     if (deleting) return;
@@ -61,6 +64,27 @@ export function ConversationsScreen() {
         ),
     [needle, threads],
   );
+
+  // Group recent threads by section
+  const sections = useMemo(() => {
+    const grouped: Record<string, Thread[]> = {};
+    const unsectioned: Thread[] = [];
+
+    for (const thread of recent) {
+      if (thread.section) {
+        if (!grouped[thread.section]) grouped[thread.section] = [];
+        grouped[thread.section].push(thread);
+      } else {
+        unsectioned.push(thread);
+      }
+    }
+
+    return { grouped, unsectioned, names: Object.keys(grouped).sort() };
+  }, [recent]);
+
+  function toggleSection(name: string) {
+    setCollapsed(prev => ({ ...prev, [name]: !prev[name] }));
+  }
 
   function faceOf(thread: Thread, size = 38) {
     if (thread.kind === 'group') {
@@ -94,53 +118,51 @@ export function ConversationsScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.head}>
-        <View style={styles.titleRow}>
+        <Pressable
+          style={styles.round}
+          accessibilityLabel={t("设置")}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <SettingsIcon />
+        </Pressable>
+        <View style={styles.actions}>
           <Pressable
-            style={styles.round}
-            accessibilityLabel={t("设置")}
-            onPress={() => navigation.navigate('Settings')}
+            style={({ pressed }) => [styles.round, styles.headerAction, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={t("搜索")}
+            accessibilityState={{ expanded: searchExpanded }}
+            onPress={toggleSearch}
           >
-            <SettingsIcon />
+            <SearchIcon size={21} color={C.text} />
           </Pressable>
-          <View style={styles.actions}>
-            <Pressable
-              style={({ pressed }) => [styles.round, styles.headerAction, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel={t("搜索")}
-              accessibilityState={{ expanded: searchExpanded }}
-              onPress={toggleSearch}
-            >
-              <SearchIcon size={21} color={C.text} />
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.round, styles.headerAction, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel={t("新建智能体")}
-              onPress={() => setCreating(true)}
-            >
-              <PlusIcon size={26} color={C.text} />
-            </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.round, styles.headerAction, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={t("新建智能体")}
+            onPress={() => setCreating(true)}
+          >
+            <PlusIcon size={26} color={C.text} />
+          </Pressable>
+        </View>
+      </View>
+      {searchExpanded && (
+        <View style={styles.searchBox}>
+          <View style={styles.search}>
+            <SearchIcon />
+            <TextInput
+              keyboardAppearance={scheme}
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t("搜索智能体")}
+              placeholderTextColor={INK.meta}
+              style={styles.searchInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+              autoFocus
+            />
           </View>
         </View>
-        {searchExpanded && (
-          <View style={styles.searchBox}>
-            <View style={styles.search}>
-              <SearchIcon />
-              <TextInput
-                keyboardAppearance={scheme}
-                value={query}
-                onChangeText={setQuery}
-                placeholder={t("搜索智能体")}
-                placeholderTextColor={INK.meta}
-                style={styles.searchInput}
-                autoCorrect={false}
-                autoCapitalize="none"
-                autoFocus
-              />
-            </View>
-          </View>
-        )}
-      </View>
+      )}
 
       {bots.length === 0 ? (
         <FirstRunBody
@@ -160,7 +182,7 @@ export function ConversationsScreen() {
                 onLongPress={() => setMenu(thread)}
                 delayLongPress={260}
               >
-                {faceOf(thread, 58)}
+                {faceOf(thread, 72)}
                 <Text style={styles.pinnedName} numberOfLines={1}>
                   {thread.kind === 'group' ? thread.name : thread.name.split(' ')[0]}
                 </Text>
@@ -171,53 +193,111 @@ export function ConversationsScreen() {
       ) : null}
 
       <ScrollView style={styles.recent} contentContainerStyle={styles.recentBody}>
-        <View style={styles.sectionLabel}>
-          <Text style={styles.sectionText}>{t("最近")}</Text>
-          <Text style={styles.sectionCount}>{recent.length}</Text>
-        </View>
-
-        {recent.map((thread) => (
-          <SwipeRow
-            key={thread.id}
-            left={{
-              label: thread.pinned ? t("取消置顶") : t("置顶"),
-              glyph: '⌖',
-              onPress: () => void changePin(thread.id),
-            }}
-            right={{
-              label: thread.unread ? t("已读") : t("未读"),
-              glyph: thread.unread ? '✓' : '●',
-              onPress: () => (thread.unread ? markRead(thread.id) : markUnread(thread.id)),
-            }}
-          >
+        {sections.names.map((sectionName) => (
+          <View key={sectionName} style={styles.section}>
             <Pressable
-              style={({ pressed }) => [styles.thread, pressed && styles.pressed]}
-              onPress={() => open(thread)}
-              onLongPress={() => setMenu(thread)}
-              delayLongPress={260}
+              style={({ pressed }) => [styles.sectionHeader, pressed && styles.sectionHeaderPressed]}
+              onPress={() => toggleSection(sectionName)}
             >
-              <View style={styles.avatarWrap}>
-                {faceOf(thread)}
-                {thread.unread ? <View style={styles.unread} /> : null}
-              </View>
-              <View style={styles.threadCopy}>
-                <View style={styles.threadTop}>
-                  <Text numberOfLines={1} style={{ flex: 1 }}>
-                    <Text style={styles.threadName}>{thread.name}</Text>
-                      {thread.tag ? <Text style={styles.threadTag}> {thread.tag}</Text> : null}
-                  </Text>
-                  <Text style={styles.threadTime}>{thread.time}</Text>
-                </View>
-                <Text
-                  style={[styles.threadPreview, thread.unread && styles.threadPreviewUnread]}
-                  numberOfLines={2}
-                >
-                  {thread.preview}
-                </Text>
-              </View>
+              <Text style={styles.sectionChevron}>{collapsed[sectionName] ? '›' : '⌄'}</Text>
+              <Text style={styles.sectionName}>{sectionName}</Text>
+              <Text style={styles.sectionCount}>{sections.grouped[sectionName].length}</Text>
             </Pressable>
-          </SwipeRow>
+            {!collapsed[sectionName] && sections.grouped[sectionName].map((thread) => (
+              <SwipeRow
+                key={thread.id}
+                left={{
+                  label: thread.pinned ? t("取消置顶") : t("置顶"),
+                  glyph: '⌖',
+                  onPress: () => void changePin(thread.id),
+                }}
+                right={{
+                  label: thread.unread ? t("已读") : t("未读"),
+                  glyph: thread.unread ? '✓' : '●',
+                  onPress: () => (thread.unread ? markRead(thread.id) : markUnread(thread.id)),
+                }}
+              >
+                <Pressable
+                  style={({ pressed }) => [styles.thread, pressed && styles.pressed]}
+                  onPress={() => open(thread)}
+                  onLongPress={() => setMenu(thread)}
+                  delayLongPress={260}
+                >
+                  <View style={styles.avatarWrap}>
+                    {faceOf(thread)}
+                    {thread.unread ? <View style={styles.unread} /> : null}
+                  </View>
+                  <View style={styles.threadCopy}>
+                    <View style={styles.threadTop}>
+                      <Text numberOfLines={1} style={{ flex: 1 }}>
+                        <Text style={styles.threadName}>{thread.name}</Text>
+                        {thread.tag ? <Text style={styles.threadTag}> {thread.tag}</Text> : null}
+                      </Text>
+                      <Text style={styles.threadTime}>{thread.time}</Text>
+                    </View>
+                    <Text
+                      style={[styles.threadPreview, thread.unread && styles.threadPreviewUnread]}
+                      numberOfLines={2}
+                    >
+                      {thread.preview}
+                    </Text>
+                  </View>
+                </Pressable>
+              </SwipeRow>
+            ))}
+          </View>
         ))}
+
+        {sections.unsectioned.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionName}>{t("最近")}</Text>
+              <Text style={styles.sectionCount}>{sections.unsectioned.length}</Text>
+            </View>
+            {sections.unsectioned.map((thread) => (
+              <SwipeRow
+                key={thread.id}
+                left={{
+                  label: thread.pinned ? t("取消置顶") : t("置顶"),
+                  glyph: '⌖',
+                  onPress: () => void changePin(thread.id),
+                }}
+                right={{
+                  label: thread.unread ? t("已读") : t("未读"),
+                  glyph: thread.unread ? '✓' : '●',
+                  onPress: () => (thread.unread ? markRead(thread.id) : markUnread(thread.id)),
+                }}
+              >
+                <Pressable
+                  style={({ pressed }) => [styles.thread, pressed && styles.pressed]}
+                  onPress={() => open(thread)}
+                  onLongPress={() => setMenu(thread)}
+                  delayLongPress={260}
+                >
+                  <View style={styles.avatarWrap}>
+                    {faceOf(thread)}
+                    {thread.unread ? <View style={styles.unread} /> : null}
+                  </View>
+                  <View style={styles.threadCopy}>
+                    <View style={styles.threadTop}>
+                      <Text numberOfLines={1} style={{ flex: 1 }}>
+                        <Text style={styles.threadName}>{thread.name}</Text>
+                        {thread.tag ? <Text style={styles.threadTag}> {thread.tag}</Text> : null}
+                      </Text>
+                      <Text style={styles.threadTime}>{thread.time}</Text>
+                    </View>
+                    <Text
+                      style={[styles.threadPreview, thread.unread && styles.threadPreviewUnread]}
+                      numberOfLines={2}
+                    >
+                      {thread.preview}
+                    </Text>
+                  </View>
+                </Pressable>
+              </SwipeRow>
+            ))}
+          </View>
+        )}
 
         {recent.length === 0 ? (
           <Text style={styles.none}>
@@ -326,7 +406,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
     lineHeight: 23,
   },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  
+
   round: {
     width: 40,
     height: 40,
@@ -370,12 +450,29 @@ const useStyles = themedStyles(({ C, INK }) => ({
     textTransform: 'uppercase',
   },
   sectionCount: { color: INK.quiet, fontSize: 10 },
-  pinnedGrid: { flexDirection: 'row', gap: 1 },
-  pinnedItem: { width: 82, flexShrink: 0, alignItems: 'center', gap: 4, paddingTop: 4, paddingBottom: 2 },
+  pinnedGrid: { flexDirection: 'row', gap: 12, paddingHorizontal: 7 },
+  pinnedItem: { width: 76, flexShrink: 0, alignItems: 'center', gap: 5, paddingVertical: 4 },
   pressed: { opacity: 0.6 },
   pinnedName: { color: INK.quiet, fontSize: 10, fontWeight: '500', textAlign: 'center' },
 
   recent: { flex: 1 },
+  section: { marginBottom: 8 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  sectionHeaderPressed: { opacity: 0.6 },
+  sectionChevron: { color: INK.quiet, fontSize: 14, fontWeight: '600', width: 16 },
+  sectionName: {
+    flex: 1,
+    color: INK.quiet,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
   recentBody: { paddingHorizontal: 7, paddingTop: 12 },
   thread: {
     flexDirection: 'row',

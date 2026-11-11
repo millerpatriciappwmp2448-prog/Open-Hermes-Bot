@@ -1,5 +1,5 @@
 import { t, useTranslation } from "../i18n";
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -35,7 +35,7 @@ export function NewAgentSheet({
 }) {
   const { styles, INK, scheme } = useStyles();
   useTranslation();
-  const { bots, prefs, connection, modelOptions, addBot, addGroup } = useStore();
+  const { bots, prefs, connection, modelOptions, modelPicks, addBot, addGroup } = useStore();
   const online = connection.status === 'connected';
   const window = useWindowDimensions();
   const [tab, setTab] = useState<'bot' | 'group'>('bot');
@@ -45,30 +45,53 @@ export function NewAgentSheet({
   const [model, setModel] = useState(prefs.defaultModel);
   const [selectedModel, setSelectedModel] = useState<ModelRef | null>(null);
   const [pickingModel, setPickingModel] = useState(false);
-  const [members, setMembers] = useState<string[]>(['atlas', 'june', 'chief']);
+  const [members, setMembers] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const creating = useRef(false);
+  const memberSource = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => {
+    if (!visible) { memberSource.current = null; return; }
+    const source = connection.url || '';
+    if (memberSource.current !== source && bots.length) {
+      memberSource.current = source;
+      setMembers(bots.slice(0, 20).map(bot => bot.id));
+    } else {
+      setMembers(current => current.filter(id => bots.some(bot => bot.id === id)));
+    }
+  }, [visible, bots, connection.url]);
 
   useEffect(() => {
     if (!visible) {
       setSelectedModel(null);
       setModel(prefs.defaultModel);
+      setError('');
     }
   }, [visible, prefs.defaultModel]);
 
   const ready = name.trim().length > 0 && (tab === 'bot' || members.length > 1);
 
-  function create() {
-    if (!ready) return;
-    const id =
-      tab === 'bot'
+  async function create() {
+    if (!ready || creating.current) return;
+    creating.current = true; setBusy(true); setError('');
+    try {
+      const id = await (tab === 'bot'
         ? addBot({ name, shape, color, model, selectedModel })
-        : addGroup({ name: name || t("团队"), members, model });
-    onClose();
-    onCreated?.(id);
-    setTab('bot');
+        : addGroup({ name, members, model }));
+      if (!mounted.current) return;
+      onClose(); onCreated?.(id); setTab('bot');
+    } catch (e) {
+      if (mounted.current) setError(e instanceof Error ? e.message : t('操作失败，请重试。'));
+    } finally {
+      creating.current = false;
+      if (mounted.current) setBusy(false);
+    }
   }
 
   return (
-    <Sheet visible={visible} onClose={onClose}>
+    <Sheet visible={visible} onClose={() => { if (!creating.current) onClose(); }}>
       <View style={styles.head}>
         <View style={styles.headCopy}>
           <Text style={styles.title}>{pickingModel ? t("模型") : t("新建智能体")}</Text>
@@ -82,6 +105,7 @@ export function NewAgentSheet({
         </View>
         <Pressable
           style={styles.close}
+          disabled={busy}
           onPress={() => (pickingModel ? setPickingModel(false) : onClose())}
           accessibilityLabel={pickingModel ? t("返回") : t("关闭")}
         >
@@ -115,6 +139,7 @@ export function NewAgentSheet({
               {(['bot', 'group'] as const).map((entry) => (
                 <Pressable
                   key={entry}
+                  disabled={busy}
                   style={[styles.segment, tab === entry && styles.segmentActive]}
                   onPress={() => setTab(entry)}
                 >
@@ -131,6 +156,7 @@ export function NewAgentSheet({
                 <Text style={styles.fieldLabel}>{tab === 'bot' ? t("智能体名称") : t("群组名称")}</Text>
                 <TextInput keyboardAppearance={scheme}
                   value={name}
+                  editable={!busy}
                   onChangeText={setName}
                   style={styles.fieldValue}
                   placeholder={t("名称")}
@@ -191,6 +217,7 @@ export function NewAgentSheet({
                     return (
                       <Pressable
                         key={bot.id}
+                        disabled={busy || (!on && members.length >= 20)}
                         style={[styles.row, index > 0 && styles.rowLine]}
                         onPress={() =>
                           setMembers((current) =>
@@ -203,7 +230,7 @@ export function NewAgentSheet({
                         <Bloub shape={bot.shape} color={bot.color} size={26} />
                         <View style={styles.rowCopy}>
                           <Text style={styles.rowName}>{bot.name}</Text>
-                          <Text style={styles.rowMeta}>{bot.role} {t("· 会话")} {bot.session}</Text>
+                          <Text style={styles.rowMeta} numberOfLines={1}>{modelPicks?.[bot.id]?.model || modelOptions[bot.id]?.current || t('跟随服务器')}</Text>
                         </View>
                         <View style={[styles.check, on && styles.checkOn]}>
                           {on ? <Text style={styles.checkMark}>✓</Text> : null}
@@ -215,7 +242,7 @@ export function NewAgentSheet({
               </View>
             )}
 
-            <View style={styles.section}>
+            {tab === 'bot' ? <View style={styles.section}>
               <Text style={styles.label}>{t("模型")}</Text>
               <View style={styles.card}>
                 <Pressable style={styles.row} onPress={() => setPickingModel(true)}>
@@ -230,7 +257,7 @@ export function NewAgentSheet({
                   <ChevronIcon />
                 </Pressable>
               </View>
-            </View>
+            </View> : null}
 
             <Text style={styles.hint}>
               {t("每个智能体都有独立的记忆、会话和你选择的外观。")}
@@ -238,12 +265,13 @@ export function NewAgentSheet({
           </ScrollView>
 
           <View style={styles.foot}>
+            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
             <Pressable
-              style={[styles.primary, !ready && styles.primaryOff]}
-              onPress={create}
-              disabled={!ready}
+              style={[styles.primary, (!ready || busy) && styles.primaryOff]}
+              onPress={() => void create()}
+              disabled={!ready || busy}
             >
-              <Text style={styles.primaryText}>{tab === 'bot' ? t("创建智能体") : t("创建群组")}</Text>
+              <Text style={styles.primaryText}>{busy ? t('正在处理…') : tab === 'bot' ? t("创建智能体") : t("创建群组")}</Text>
             </Pressable>
           </View>
         </>
@@ -307,6 +335,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
   checkMark: { color: INK.onPaper, fontSize: 11, fontWeight: '700' },
 
   foot: { paddingTop: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  error: { color: C.red, fontSize: 11, lineHeight: 16, marginBottom: 8 },
   primary: { height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: C.paper },
   primaryOff: { opacity: 0.4 },
   primaryText: { color: INK.onPaper, fontSize: 14, fontWeight: '600' },

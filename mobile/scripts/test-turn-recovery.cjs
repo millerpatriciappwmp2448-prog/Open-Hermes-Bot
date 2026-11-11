@@ -55,6 +55,7 @@ test('explicit stop calls host; permanent rejection is reported once', async () 
   await new Promise(setImmediate);
   handle.stop(); await new Promise(setImmediate);
   assert.equal(stopped, 1);
+  handle.detach();
   watchTurn({ start: async () => { throw { status: 401, code: 'unauthorized' }; }, read() {}, stop() {} },
     { snapshot() {}, done() {}, error() { errors++; } });
   await new Promise(setImmediate);
@@ -69,4 +70,61 @@ test('cancelled and completed runs keep distinct outcomes for reply notification
     await new Promise(setImmediate);
   }
   assert.deepEqual(outcomes, [['partial', 'cancelled'], ['partial', 'completed']]);
+});
+
+function recoveryClock() {
+  const timers = new Map(); let next = 0;
+  return {
+    later(fn) { timers.set(++next, fn); return next; }, cancel(id) { timers.delete(id); },
+    size: () => timers.size,
+    async tick() {
+      const [id, fn] = timers.entries().next().value || [];
+      assert.equal(typeof fn, 'function', 'pending work must keep its recovery timer');
+      timers.delete(id); fn(); await new Promise(setImmediate);
+    },
+  };
+}
+
+test('a lost stop response keeps recovering the accepted run until cancellation is confirmed', async () => {
+  let starts = 0, stopped = 0;
+  const snapshots = [], done = [], errors = [], clock = recoveryClock();
+  const handle = watchTurn({
+    start: async () => { starts++; return { status: 'running', text: 'Partial' }; },
+    read: async () => ({ status: 'running', text: 'Partial' }),
+    stop: async () => { if (++stopped === 1) throw { status: 503 }; return { status: 'cancelled', text: 'Saved partial' }; },
+  }, { snapshot: run => snapshots.push(run.status), done: (text, status) => done.push([text, status]), error: error => errors.push(error) }, clock);
+  await new Promise(setImmediate);
+  handle.stop(); await new Promise(setImmediate);
+  assert.deepEqual(done, [], 'a failed stop is not cancellation');
+  await clock.tick();
+  assert.deepEqual(done, [['Saved partial', 'cancelled']]);
+  assert.equal(starts, 1); assert.equal(stopped, 2); assert.deepEqual(errors, []);
+  assert.equal(snapshots.at(-1), 'cancelled'); assert.equal(clock.size(), 0);
+});
+
+test('stop during acceptance waits for the same run and accepts a completed race without sending stop', async () => {
+  let accept, stops = 0;
+  const done = [], clock = recoveryClock();
+  const handle = watchTurn({
+    start: () => new Promise(resolve => { accept = resolve; }),
+    read: async () => ({ status: 'running' }),
+    stop: async () => { stops++; return { status: 'cancelled' }; },
+  }, { snapshot() {}, done: (_, status) => done.push(status), error() { assert.fail(); } }, clock);
+  handle.stop(); handle.stop();
+  accept({ status: 'completed', text: 'Already finished' }); await new Promise(setImmediate);
+  assert.deepEqual(done, ['completed']); assert.equal(stops, 0); assert.equal(clock.size(), 0);
+});
+
+test('a nonterminal stop acknowledgement polls status without repeated stop requests', async () => {
+  let stopped = 0, reads = 0;
+  const done = [], clock = recoveryClock();
+  const handle = watchTurn({
+    start: async () => ({ status: 'running' }),
+    read: async () => ({ status: ++reads === 1 ? 'running' : 'cancelled' }),
+    stop: async () => { stopped++; return { status: 'running' }; },
+  }, { snapshot() {}, done: (_, status) => done.push(status), error() { assert.fail(); } }, clock);
+  await new Promise(setImmediate); handle.stop(); await new Promise(setImmediate);
+  assert.deepEqual(done, []);
+  await clock.tick();
+  assert.deepEqual(done, ['cancelled']); assert.equal(stopped, 1);
 });

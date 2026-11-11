@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
+const { test, beforeEach } = require('node:test');
 const React = require('react');
 const { act, create } = require('react-test-renderer');
 const Module = require('node:module');
@@ -37,8 +37,11 @@ const flush = async () => { await act(async () => { await new Promise(setImmedia
 const event = async value => { await act(async () => { harness.native.AppState.currentState = value; appEvents.emit('change', value); }); await flush(); };
 async function mount() { let tree; await act(async () => { tree = create(React.createElement(StoreProvider, null, React.createElement(Probe))); }); await flush(); return tree; }
 
-test('real StoreProvider persists pins; refresh/navigation/background cannot cancel or duplicate a Hermes run', async () => {
+beforeEach(() => {
   harness.savedPreferences.set('hermes.bridge', JSON.stringify({ url: fake.baseUrl, token: fake.token, device: 'test' }));
+});
+
+test('real StoreProvider persists pins; refresh/navigation/background cannot cancel or duplicate a Hermes run', async () => {
   const tree = await mount();
   try {
     assert.equal(latest.connection.status, 'connected');
@@ -187,4 +190,225 @@ test('unmounting StoreProvider stops any reply speech', async () => {
   const stopped = harness.speechCalls.stops;
   await act(async () => tree.unmount()); await flush();
   assert.ok(harness.speechCalls.stops > stopped);
+});
+
+test('accepted clear detaches an old run before its delayed reply and allows a new conversation', async () => {
+  pending = []; runStatus = 'running';
+  const previous = { startTurn: fake.startTurn, deleteSession: fake.deleteSession, createSession: fake.createSession };
+  let finishOld, submitted = 0, deleted = 0;
+  fake.startTurn = input => {
+    submitted++;
+    if (submitted === 1) return new Promise(resolve => { finishOld = () => resolve({ ...input, status: 'completed', text: 'Deleted reply' }); });
+    return Promise.resolve({ ...input, status: 'completed', text: 'New reply' });
+  };
+  fake.deleteSession = async () => { deleted++; };
+  fake.createSession = async () => ({ id: 'new-session' });
+  harness.notificationCalls.presented.length = 0;
+  const tree = await mount();
+  try {
+    await act(async () => latest.send('bot:default', { text: 'Old question' })); await flush();
+    await act(async () => latest.clearThread('bot:default'));
+    assert.equal(deleted, 1);
+    assert.equal(latest.threadById('bot:default').sessionId, undefined);
+    await act(async () => finishOld()); await flush();
+    assert.deepEqual(latest.messages['bot:default'], [], 'an accepted deletion must not resurrect a late reply');
+    assert.equal(latest.threadById('bot:default').sessionId, undefined);
+    assert.deepEqual(harness.notificationCalls.presented, [], 'deleted replies cannot notify');
+    await act(async () => latest.send('bot:default', { text: 'New question' })); await flush();
+    assert.equal(submitted, 2, 'the old watch must not block the next conversation');
+    assert.equal(latest.threadById('bot:default').sessionId, 'new-session');
+    assert.ok(latest.messages['bot:default'].some(row => row.text === 'New reply'));
+  } finally { await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('accepted agent deletion cannot be undone by a delayed run completion', async () => {
+  pending = []; runStatus = 'running';
+  const previous = { startTurn: fake.startTurn, deleteBot: fake.deleteBot, createSession: fake.createSession };
+  let finishOld;
+  fake.startTurn = input => new Promise(resolve => { finishOld = () => resolve({ ...input, status: 'completed', text: 'Removed agent reply' }); });
+  fake.deleteBot = async () => {};
+  fake.createSession = async () => ({ id: 'supervisor-session' });
+  harness.notificationCalls.presented.length = 0;
+  const tree = await mount();
+  try {
+    await act(async () => latest.send('bot:supervisor', { text: 'Old question' })); await flush();
+    await act(async () => latest.removeBot('supervisor'));
+    await act(async () => finishOld()); await flush();
+    assert.equal(latest.botById('supervisor'), undefined);
+    assert.equal(latest.threadById('bot:supervisor'), undefined);
+    assert.equal(latest.messages['bot:supervisor'], undefined, 'a removed agent cannot acquire orphan messages');
+    assert.deepEqual(harness.notificationCalls.presented, []);
+  } finally { await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('rejected clear preserves observation and the original conversation', async () => {
+  pending = []; runStatus = 'running';
+  const previous = { startTurn: fake.startTurn, deleteSession: fake.deleteSession };
+  let finishOld;
+  fake.startTurn = input => new Promise(resolve => { finishOld = () => resolve({ ...input, status: 'completed', text: 'Kept reply' }); });
+  fake.deleteSession = async () => { throw new Error('Host refused deletion'); };
+  const tree = await mount();
+  try {
+    await act(async () => latest.send('bot:default', { text: 'Kept question' })); await flush();
+    await assert.rejects(() => latest.clearThread('bot:default'), /refused/);
+    assert.equal(latest.threadById('bot:default').typing, true);
+    await act(async () => finishOld()); await flush();
+    assert.ok(latest.messages['bot:default'].some(row => row.text === 'Kept reply'));
+    assert.equal(latest.threadById('bot:default').sessionId, 's1');
+  } finally { await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('a refresh started before clear cannot restore the deleted session or resume its run', async () => {
+  pending = []; runStatus = 'running';
+  const previous = { messages: fake.messages, deleteSession: fake.deleteSession };
+  let releaseHistory;
+  const tree = await mount();
+  try {
+    fake.messages = () => new Promise(resolve => { releaseHistory = () => resolve([{ role: 'assistant', content: 'Stale history', timestamp: 1 }]); });
+    fake.deleteSession = async () => {};
+    let refreshing;
+    await act(async () => { refreshing = latest.refresh(); }); await flush();
+    assert.equal(typeof releaseHistory, 'function');
+    await act(async () => latest.clearThread('bot:default'));
+    await act(async () => { releaseHistory(); await refreshing; });
+    assert.equal(latest.threadById('bot:default').sessionId, undefined);
+    assert.deepEqual(latest.messages['bot:default'], []);
+  } finally { await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('clear during attachment preparation aborts the upload and cannot start a late run', async () => {
+  pending = [];
+  const previous = { uploadAttachment: fake.uploadAttachment, deleteSession: fake.deleteSession, startTurn: fake.startTurn };
+  let finishUpload, signal, submitted = 0;
+  fake.uploadAttachment = (_, value) => { signal = value; return new Promise(resolve => { finishUpload = () => resolve({ path: '/host/old.txt' }); }); };
+  fake.deleteSession = async () => {};
+  fake.startTurn = async () => { submitted++; return { status: 'running' }; };
+  const tree = await mount();
+  try {
+    await act(async () => latest.send('bot:default', { text: 'Read file', kind: 'attachment', attachment: { name: 'old.txt' } })); await flush();
+    assert.equal(signal.aborted, false);
+    await act(async () => latest.clearThread('bot:default'));
+    assert.equal(signal.aborted, true);
+    await act(async () => finishUpload()); await flush();
+    assert.equal(submitted, 0);
+    assert.deepEqual(latest.messages['bot:default'], []);
+    assert.equal(latest.threadById('bot:default').typing, false);
+  } finally { await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('a stale refresh cannot restore a removed agent or resume a deleted run', async () => {
+  pending = [];
+  const previous = { messages: fake.messages, activeTurns: fake.activeTurns, deleteBot: fake.deleteBot, readTurn: fake.readTurn };
+  let releaseHistory, observed = 0;
+  const tree = await mount();
+  try {
+    fake.activeTurns = async () => [{ bot: 'supervisor', sessionId: 'supervisor-session', requestId: 'old-run', status: 'running' }];
+    fake.messages = async bot => bot === 'supervisor' ? new Promise(resolve => { releaseHistory = () => resolve([]); }) : [];
+    fake.deleteBot = async () => {};
+    fake.readTurn = async () => { observed++; return { status: 'completed', text: 'Deleted reply' }; };
+    let refreshing;
+    await act(async () => { refreshing = latest.refresh(); }); await flush();
+    assert.equal(typeof releaseHistory, 'function');
+    await act(async () => latest.removeBot('supervisor'));
+    await act(async () => { releaseHistory(); await refreshing; }); await flush();
+    assert.equal(latest.botById('supervisor'), undefined);
+    assert.equal(latest.threadById('bot:supervisor'), undefined);
+    assert.equal(latest.messages['bot:supervisor'], undefined);
+    assert.equal(observed, 0);
+  } finally { await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('an accepted clear releases a pending refresh lock so fresh host state loads immediately', async () => {
+  pending = [];
+  const previous = { sessions: fake.sessions, messages: fake.messages, deleteSession: fake.deleteSession };
+  let releaseOld, cleared = false, freshCompleted = false;
+  const tree = await mount();
+  let oldRefresh;
+  try {
+    fake.sessions = async () => cleared ? [] : [{ bot: 'default', id: 's1', lastActive: 1, messageCount: 1 }];
+    fake.messages = () => new Promise(resolve => { releaseOld = () => resolve([{ role: 'assistant', content: 'Old snapshot' }]); });
+    fake.deleteSession = async () => { cleared = true; };
+    await act(async () => { oldRefresh = latest.refresh(); }); await flush();
+    assert.equal(typeof releaseOld, 'function');
+    await act(async () => latest.clearThread('bot:default'));
+    await act(async () => { void latest.refresh().then(() => { freshCompleted = true; }); }); await flush();
+    assert.equal(freshCompleted, true, 'the new refresh must not reuse the invalidated pending request');
+    await act(async () => { releaseOld(); await oldRefresh; });
+    assert.equal(latest.threadById('bot:default').sessionId, undefined);
+    assert.deepEqual(latest.messages['bot:default'], []);
+  } finally { releaseOld?.(); await oldRefresh; await act(async () => tree.unmount()); Object.assign(fake, previous); }
+});
+
+test('clear suppresses a completed reply whose native notification permission check is still pending', async () => {
+  pending = []; runStatus = 'completed';
+  const previous = { deleteSession: fake.deleteSession };
+  const permission = harness.notificationNative.getPermissionsAsync;
+  let releasePermission;
+  harness.notificationCalls.presented.length = 0;
+  harness.notificationNative.getPermissionsAsync = () => new Promise(resolve => {
+    releasePermission = () => resolve({ granted: true, ios: { status: 2 } });
+  });
+  fake.deleteSession = async () => {};
+  const tree = await mount();
+  try {
+    await act(async () => latest.send('bot:default', { text: 'Complete before clear' })); await flush();
+    assert.equal(typeof releasePermission, 'function', 'the completed reply reached the native permission boundary');
+    await act(async () => latest.clearThread('bot:default'));
+    await act(async () => releasePermission()); await flush();
+    assert.deepEqual(harness.notificationCalls.presented, []);
+    assert.deepEqual(latest.messages['bot:default'], []);
+  } finally {
+    releasePermission?.(); harness.notificationNative.getPermissionsAsync = permission;
+    await act(async () => tree.unmount()); Object.assign(fake, previous);
+  }
+});
+
+for (const trigger of ['refresh', 'foreground']) test(`a stale ${trigger} authentication error cannot revoke a newer successful sync`, async () => {
+  pending = [];
+  const previous = { ensureCodexAgent: fake.ensureCodexAgent, deleteSession: fake.deleteSession };
+  let rejectOld;
+  const tree = await mount();
+  let oldRefresh;
+  try {
+    fake.ensureCodexAgent = () => new Promise((_, reject) => { rejectOld = reject; });
+    fake.deleteSession = async () => {};
+    if (trigger === 'refresh') {
+      await act(async () => { oldRefresh = latest.refresh().catch(() => {}); });
+    } else {
+      await event('background'); await event('active');
+    }
+    await flush();
+    assert.equal(typeof rejectOld, 'function');
+    await act(async () => latest.clearThread('bot:default'));
+    fake.ensureCodexAgent = previous.ensureCodexAgent;
+    await act(async () => latest.refresh());
+    assert.equal(latest.connection.status, 'connected');
+    const saved = harness.savedPreferences.get('hermes.bridge');
+    assert.ok(saved, 'the phone starts with a saved pairing');
+    await act(async () => {
+      rejectOld(new api.BridgeError('Old token was rejected', 'unauthorized'));
+      await oldRefresh;
+    });
+    await flush();
+    assert.equal(latest.connection.status, 'connected', 'an obsolete failure must not disconnect the current host');
+    assert.equal(latest.connection.error, undefined);
+    assert.equal(harness.savedPreferences.get('hermes.bridge'), saved, 'the current pairing must remain saved');
+  } finally {
+    rejectOld?.(new Error('Test complete')); await oldRefresh;
+    await act(async () => tree.unmount()); Object.assign(fake, previous);
+  }
+});
+
+test('a current authentication rejection still disconnects and removes the revoked pairing', async () => {
+  pending = [];
+  const previous = fake.ensureCodexAgent;
+  const tree = await mount();
+  try {
+    fake.ensureCodexAgent = async () => { throw new api.BridgeError('Current token was rejected', 'unauthorized'); };
+    await act(async () => {
+      await assert.rejects(() => latest.refresh(), error => error.code === 'unauthorized');
+    });
+    assert.equal(latest.connection.status, 'error');
+    assert.equal(harness.savedPreferences.has('hermes.bridge'), false);
+  } finally { fake.ensureCodexAgent = previous; await act(async () => tree.unmount()); }
 });

@@ -70,6 +70,15 @@ not a claim that the reference applications have been fully reproduced.
   read-only connection verification, not proof of unattended supervision. Killing
   the tunnel's SSH child also verified automatic reconnection and a successful
   subsequent read of the same 12 chats.
+- Codex chat-list recovery was rechecked on 2026-11-08. Status and chat-list
+  requests have independent locks and errors, with polling on focus/foreground.
+  A browser using the live public HTTPS status/thread routes rendered all 12
+  returned chats and selected one, without starting or pausing supervision.
+  Status took 29 seconds in one probe and the list took 21 seconds in another;
+  neither slow read should hide the other result. Snapshot-based UI checks also
+  passed at 320/390 pixels with status deliberately held pending. Bootstrap
+  endpoints were mocked, and no physical iPhone was tested. The local build24
+  IPA predates this fix; these checks do not update an installed app.
 - Notifications: each agent now has its own working switch, default on, with no
   global switch. Completion alerts exclude the currently visible conversation,
   muted agents and cancelled runs; repeated recovery callbacks are deduplicated.

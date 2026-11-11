@@ -7,7 +7,7 @@ import { readChatPreferences, withChatPreferences, sessionsForBot, type ChatPref
 import { readSchedules, type Schedule } from './schedules';
 import { sameTodos, type TodoItem } from './taskDock';
 import { watchTurn, type TurnWatch, type RunSnapshot } from './turnRecovery';
-import { createReplyNotifier } from './replyNotifications';
+import { createReplyNotifier, type ReplyNotice } from './replyNotifications';
 import { createReplySpeaker } from './replySpeech';
 import { maxSpeechLength, speakReply, stopReplySpeech } from './speechDevice';
 import { installReplyNotificationHandler, notificationAccess, presentReplyNotification } from './notificationDevice';
@@ -54,6 +54,9 @@ import {
   type TranscriptPage,
   type ServerMonitor,
   type BridgeRun,
+  type BridgeGroup,
+  type BridgeGroupRun,
+  type GroupRunRef,
 } from './api';
 
 /**
@@ -146,9 +149,9 @@ type Store = {
   loadRuns: (botId: string) => Promise<BridgeSession[]>;
   loadRunMessages: (botId: string, sessionId: string) => Promise<Message[]>;
 
-  addGroup: (input: NewGroup) => string;
-  updateGroup: (id: string, patch: Partial<Pick<Thread, 'name' | 'members'>>) => void;
-  leaveGroup: (id: string) => void;
+  addGroup: (input: NewGroup) => Promise<string>;
+  updateGroup: (id: string, patch: Partial<Pick<Thread, 'name' | 'members'>>) => Promise<string>;
+  leaveGroup: (id: string) => Promise<void>;
 
   setModel: (threadId: string, model: string) => void;
   togglePin: (threadId: string) => Promise<void>;
@@ -193,6 +196,14 @@ function relativeTime(epoch: number): string {
     return [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")][date.getDay()];
   }
   return date.toLocaleDateString(localeTag(), { month: 'short', day: 'numeric' });
+}
+
+function groupThread(group: BridgeGroup, rows: Message[]): Thread {
+  return { id: group.id, groupId: group.id, kind: 'group', name: group.name,
+    botId: group.members[0]?.bot || '', members: group.members.map(member => member.bot),
+    memberSessions: Object.fromEntries(group.members.map(member => [member.bot, member.sessionId])),
+    preview: previewOf(rows, t('暂无会话')), time: relativeTime(group.lastActive), threadModel: '',
+    subtitle: t('{0} 个智能体 · 各自独立会话', { '0': group.members.length }) };
 }
 
 function hostOf(url: string): string {
@@ -331,9 +342,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const connectionRef = useRef(connection);
   /** The pairing this phone last synced with; a later failed refresh keeps it usable. */
   const syncedRef = useRef<string | null>(null);
+  const currentReply = useCallback((reply: Pick<ReplyNotice, 'host' | 'threadId' | 'botId' | 'sessionId'>) => {
+    if (client.current?.baseUrl !== reply.host) return false;
+    const thread = threadsRef.current.find(row => row.id === reply.threadId);
+    return !!thread && (thread.kind === 'group'
+      ? thread.members?.includes(reply.botId) === true && thread.memberSessions?.[reply.botId] === reply.sessionId
+      : thread.botId === reply.botId && thread.sessionId === reply.sessionId);
+  }, []);
   const [replySpeaker] = useState(() => createReplySpeaker({
     state: reply => ({ host: client.current?.baseUrl,
-      enabled: chatPreferencesRef.current[reply.botId]?.readAloud === true,
+      enabled: currentReply(reply) && chatPreferencesRef.current[reply.botId]?.readAloud === true,
       foreground: AppState.currentState === 'active', viewingThread: viewingThreadRef.current }),
     maxLength: maxSpeechLength, speak: speakReply, stop: stopReplySpeech,
   }));
@@ -344,7 +362,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => { replySpeaker.reconcile(); }, [chatPreferences, connection, replySpeaker]);
   const [replyNotifier] = useState(() => createReplyNotifier({
     state: notice => ({
-      enabled: client.current?.baseUrl === notice.host && chatPreferencesRef.current[notice.botId]?.notifications !== false,
+      enabled: currentReply(notice) && chatPreferencesRef.current[notice.botId]?.notifications !== false,
       foreground: !AppState.currentState || AppState.currentState === 'active',
       viewingThread: viewingThreadRef.current,
     }),
@@ -352,7 +370,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     present: presentReplyNotification,
   }));
   useEffect(() => installReplyNotificationHandler(notice =>
-    client.current?.baseUrl === notice.host && chatPreferencesRef.current[notice.botId]?.notifications !== false &&
+    currentReply(notice) && chatPreferencesRef.current[notice.botId]?.notifications !== false &&
     (AppState.currentState !== 'active' || viewingThreadRef.current !== notice.threadId)), []);
   useEffect(() => {
     threadsRef.current = threads;
@@ -381,6 +399,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   /* --------------------------------------------------------- the bridge */
+
+  // Called only after the host accepts a destructive change. A pending sync
+  // still describes the old host state and must neither restore it nor resume
+  // its runs. Release its lock so the next refresh can read the new state.
+  const invalidateSync = useCallback(() => {
+    syncGeneration.current++;
+    syncRef.current = null;
+  }, []);
+  const retireThread = useCallback((id: string) => {
+    const watch = watchesRef.current[id];
+    if (watch) watch.detach();
+    else turnsRef.current[id]?.(); // Cancel attachment/session preparation.
+    delete watchesRef.current[id];
+    delete turnsRef.current[id];
+    revisionsRef.current[id] = (revisionsRef.current[id] || 0) + 1;
+    if (viewingThreadRef.current === id) replySpeaker.cancel();
+  }, [replySpeaker]);
 
   const observeRun = useCallback((bridge: BridgeClient, threadId: string, botId: string,
     sessionId: string, requestId: string, start?: () => Promise<RunSnapshot>) => {
@@ -432,9 +467,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         : (error as { message?: string })?.message || t('无法连接智能体。'), true),
     });
     watchesRef.current[threadId] = watch;
-    turnsRef.current[threadId] = () => { watch.stop(); finish(answer || t('已停止')); };
+    turnsRef.current[threadId] = () => watch.stop();
     if (AppState.currentState && AppState.currentState !== 'active') watch.pause();
   }, [replyNotifier, replySpeaker]);
+
+  const observeGroup = useCallback((bridge: BridgeClient, thread: Thread, requestId: string,
+    start?: () => Promise<BridgeGroupRun>) => {
+    const threadId = thread.id, groupId = thread.groupId!;
+    if (watchesRef.current[threadId]) return;
+    let completed = false;
+    let responded: string[] = [];
+    const patch = (value: Partial<Thread>) => {
+      revisionsRef.current[threadId] = (revisionsRef.current[threadId] || 0) + 1;
+      setThreads(current => current.map(row => row.id === threadId ? { ...row, ...value } : row));
+    };
+    const finish = (error?: unknown, notify = false) => {
+      if (completed) return;
+      completed = true;
+      delete watchesRef.current[threadId]; delete turnsRef.current[threadId];
+      patch({ typing: false, tool: undefined });
+      if (error) {
+        const text = error instanceof Error ? error.message : (error as { message?: string })?.message || t('无法连接智能体。');
+        setMessages(current => ({ ...current, [threadId]: [...(current[threadId] || []),
+          { id: `group-error:${requestId}`, from: '', text, failed: true, notice: true }] }));
+        patch({ preview: text });
+      }
+      if (notify) for (const botId of new Set(responded)) {
+        const sessionId = thread.memberSessions?.[botId] || '';
+        if (!sessionId || !thread.members?.includes(botId)) continue;
+        void replyNotifier.complete({ host: bridge.baseUrl, botId, threadId, groupId, sessionId, requestId,
+          name: botsRef.current.find(bot => bot.id === botId)?.name || thread.name });
+      }
+    };
+    patch({ typing: true });
+    const watch = watchTurn({
+      start: start || (() => bridge.readGroupRound(groupId, requestId)),
+      read: () => bridge.readGroupRound(groupId, requestId),
+      stop: () => bridge.stopGroupRound(groupId, requestId),
+    }, {
+      snapshot: run => {
+        responded = run.responded || [];
+        // stop deliberately omits history when Hermes is unavailable.
+        if (run.messages.length || !['cancelled', 'interrupted'].includes(run.status)) {
+          setMessages(current => ({ ...current, [threadId]: run.messages }));
+          patch({ preview: previewOf(run.messages, t('暂无会话')), time: t('刚刚') });
+        }
+      },
+      done: (_, status) => finish(undefined, status === 'completed'),
+      error: error => finish(error),
+    });
+    watchesRef.current[threadId] = watch;
+    turnsRef.current[threadId] = () => watch.stop();
+    if (AppState.currentState && AppState.currentState !== 'active') watch.pause();
+  }, [replyNotifier]);
 
   const adopt = useCallback((url: string, token: string, device: string): Promise<void> => {
     const key = `${url}\n${token}`;
@@ -451,15 +536,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
     const [rawBots, sessions, savedPrefs] = await Promise.all([bridge.bots(), bridge.sessions(), bridge.prefs()]);
     // Recovering runs is best effort; a failure here is not "server offline".
-    const pending: BridgeRun[] = await bridge.activeTurns().catch(error => {
+    const pending: BridgeRun[] = (await bridge.activeTurns().catch(error => {
       if (error instanceof BridgeError && error.code === 'unauthorized') throw error;
       return [];
-    });
+    })).filter(run => !run.requestId.startsWith('group-'));
+    // Older bridges have no group endpoints. A transient group read retains
+    // the last host view rather than erasing it or showing demo conversations.
+    let hostGroups: { group: BridgeGroup; rows?: Message[] }[] | undefined;
+    let groupRuns: GroupRunRef[] = [];
+    try {
+      const groups = await bridge.groups();
+      hostGroups = await Promise.all(groups.map(async group => ({ group,
+        rows: await bridge.groupMessages(group.id).catch(() => undefined) })));
+      groupRuns = await bridge.activeGroupRounds();
+    } catch (error) {
+      if (error instanceof BridgeError && error.code === 'unauthorized') throw error;
+    }
 
     // A conversation another agent opened is listed in history, never used as the main chat.
     const newest = (botId: string): BridgeSession | undefined =>
       sessions
-        .filter((row) => row.bot === botId && !row.archived && !row.fromAgent)
+        .filter((row) => row.bot === botId && !row.archived && !row.fromAgent && !row.title?.startsWith('Group · '))
         .sort((left, right) => right.lastActive - left.lastActive)[0];
 
     const loaded = await Promise.all(
@@ -510,6 +607,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         entry.rows,
       );
     });
+    if (hostGroups) for (const { group, rows } of hostGroups) {
+      nextThreads.push(groupThread(group, rows || []));
+      if (rows) nextMessages[group.id] = rows;
+    }
 
     const nextOptions: Record<string, BridgeModels> = {};
     const nextPicks: Record<string, ModelRef> = {};
@@ -531,6 +632,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
 
     if (generation !== syncGeneration.current) return;
+    const sameHost = client.current?.baseUrl === bridge.baseUrl && client.current?.token === bridge.token;
+    if (!sameHost) {
+      Object.values(watchesRef.current).forEach(watch => watch.detach());
+      watchesRef.current = {}; turnsRef.current = {};
+    }
     client.current = bridge;
     profilesRef.current = profiles;
     optionsRef.current = nextOptions;
@@ -540,14 +646,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     chatPreferencesRef.current = Object.fromEntries(rawBots.map(raw => [raw.id, readChatPreferences(savedPrefs, raw.profile || 'default')]));
     setChatPreferences(chatPreferencesRef.current);
     setBots(nextBots);
-    const preserve = (id: string) => Boolean(turnsRef.current[id]) || revisionsRef.current[id] !== revisions[id];
-    setThreads(current => nextThreads.map(thread => {
+    const preserve = (id: string) => sameHost && (Boolean(turnsRef.current[id]) || revisionsRef.current[id] !== revisions[id]);
+    setThreads(current => [...nextThreads.map(thread => {
       const prior = current.find(row => row.id === thread.id);
       return prior && preserve(thread.id) ? { ...thread, sessionId: prior.sessionId,
         typing: prior.typing, tool: prior.tool, todos: prior.todos, preview: prior.preview, time: prior.time } : thread;
+    }), ...current.filter(thread => sameHost && thread.groupId && !nextThreads.some(row => row.id === thread.id) &&
+      (hostGroups === undefined || preserve(thread.id)))]);
+    setMessages(current => ({
+      ...Object.fromEntries(Object.entries(current).filter(([id]) =>
+        sameHost && threadsRef.current.some(thread => thread.id === id && thread.groupId) &&
+        (hostGroups === undefined || nextThreads.some(thread => thread.id === id) || preserve(id)))),
+      ...Object.fromEntries(Object.entries(nextMessages).map(([id, rows]) => [id, preserve(id) ? current[id] || rows : rows])),
     }));
-    setMessages(current => Object.fromEntries(Object.entries(nextMessages).map(([id, rows]) =>
-      [id, preserve(id) ? current[id] || rows : rows])));
     setConnection({ status: 'connected', url, device, health, model, provider });
     syncedRef.current = key;
     setPrefs((current) => ({
@@ -567,11 +678,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         observeRun(bridge, id, run.bot, run.sessionId, run.requestId);
       }
     });
-    })();
+    groupRuns.forEach(run => {
+      const thread = nextThreads.find(row => row.groupId === run.groupId);
+      if (thread && !turnsRef.current[thread.id]) observeGroup(bridge, thread, run.requestId);
+    });
+    })().catch(error => {
+      // Success and failure belong to the same snapshot. An invalidated read
+      // must not make refresh/retry/startup discard a newer valid pairing.
+      if (generation === syncGeneration.current) throw error;
+    });
     syncRef.current = { key, work };
     void work.finally(() => { if (syncRef.current?.work === work) syncRef.current = null; }).catch(() => {});
     return work;
-  }, [observeRun]);
+  }, [observeRun, observeGroup]);
 
   const refreshModels = useCallback(async (botId: string) => {
     const active = client.current;
@@ -1111,10 +1230,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       (thread.kind === 'bot' && thread.botId === id) ||
       (thread.kind === 'group' && (thread.members ?? []).filter(member => member !== id).length < 2)
     ).map(thread => thread.id));
-    for (const threadId of removed) { turnsRef.current[threadId]?.(); delete turnsRef.current[threadId]; }
+    invalidateSync();
+    for (const thread of threadsRef.current) {
+      if (removed.has(thread.id) || thread.kind === 'group' && thread.members?.includes(id)) retireThread(thread.id);
+    }
+    threadsRef.current = threadsRef.current.filter(thread => !removed.has(thread.id)).map(thread =>
+      thread.kind === 'group' && thread.members?.includes(id) ? { ...thread, typing: false, tool: undefined,
+        members: thread.members.filter(member => member !== id),
+        memberSessions: Object.fromEntries(Object.entries(thread.memberSessions || {}).filter(([member]) => member !== id)) } : thread);
     setBots(current => current.filter(bot => bot.id !== id));
-    setThreads(current => current.filter(thread => !removed.has(thread.id)).map(thread =>
-      thread.kind === 'group' ? { ...thread, members: thread.members?.filter(member => member !== id) } : thread));
+    setThreads(threadsRef.current);
     setMessages(current => Object.fromEntries(Object.entries(current).filter(([key]) => !removed.has(key))));
     const nextPicks = { ...picksRef.current }; delete nextPicks[id];
     picksRef.current = nextPicks; setModelPicks(nextPicks);
@@ -1123,28 +1248,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const nextChatPreferences = { ...chatPreferencesRef.current }; delete nextChatPreferences[id];
     chatPreferencesRef.current = nextChatPreferences; setChatPreferences(nextChatPreferences);
     delete profilesRef.current[id];
-  }, [botById]);
+  }, [botById, invalidateSync, retireThread]);
 
   /* ----------------------------------------------------------- the groups */
 
   const addGroup = useCallback<Store['addGroup']>(
-    ({ name, members, model }) => {
+    async ({ name, members, model }) => {
       const label = name.trim() || t("团队");
+      const active = client.current;
+      if (active || savedRef.current) {
+        if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
+        const group = await active.createGroup({ name: label, members });
+        if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+        invalidateSync();
+        revisionsRef.current[group.id] = (revisionsRef.current[group.id] || 0) + 1;
+        const revision = revisionsRef.current[group.id];
+        threadsRef.current = [groupThread(group, []), ...threadsRef.current.filter(row => row.id !== group.id)];
+        setThreads(threadsRef.current);
+        setMessages(current => ({ ...current, [group.id]: [] }));
+        // Acceptance is authoritative even if the follow-up history read is
+        // temporarily unavailable. Never invite a duplicate create after success.
+        const rows = await active.groupMessages(group.id).catch(() => undefined);
+        if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+        if (rows && revisionsRef.current[group.id] === revision && threadsRef.current.some(row => row.id === group.id)) {
+          setThreads(current => current.map(row => row.id === group.id ? { ...row, preview: previewOf(rows, t('暂无会话')) } : row));
+          setMessages(current => ({ ...current, [group.id]: rows }));
+        }
+        return group.id;
+      }
       const id = uniqueId(
         `${slug(label)}-group`,
         threads.map((thread) => thread.id),
       );
       const first = bots.find((bot) => bot.id === members[0]);
-      const online = syncedRef.current !== null;
       setThreads((current) => [
         {
           id,
           kind: 'group',
           botId: members[0] ?? '',
           name: label,
-          preview: online
-            ? t("群组功能尚未接入 Hermes。")
-            : t("{0} · 已创建演示群组。", {"0": first?.name ?? t("智能体")}),
+          preview: t("{0} · 已创建演示群组。", {"0": first?.name ?? t("智能体")}),
           time: t("刚刚"),
           threadModel: model,
           members,
@@ -1155,10 +1298,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setMessages((current) => ({ ...current, [id]: [] }));
       return id;
     },
-    [bots, threads],
+    [bots, threads, invalidateSync],
   );
 
-  const updateGroup = useCallback<Store['updateGroup']>((id, patch) => {
+  const updateGroup = useCallback<Store['updateGroup']>(async (id, patch) => {
+    const thread = threadsRef.current.find(row => row.id === id);
+    if (!thread) throw new BridgeError(t('此会话已不存在'));
+    if (thread.groupId) {
+      const active = client.current;
+      if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
+      const group = await active.updateGroup(thread.groupId, patch);
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      invalidateSync();
+      retireThread(id);
+      if (group.id !== id) retireThread(group.id);
+      const revision = revisionsRef.current[group.id];
+      threadsRef.current = threadsRef.current.map(row => row.id === id
+        ? { ...groupThread(group, []), pinned: row.pinned, preview: row.preview, time: row.time } : row);
+      setThreads(threadsRef.current);
+      setMessages(current => { const next = { ...current }; delete next[id]; next[group.id] = current[id] || []; return next; });
+      const rows = await active.groupMessages(group.id).catch(() => undefined);
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+      if (rows && revisionsRef.current[group.id] === revision && threadsRef.current.some(row => row.id === group.id)) {
+        setThreads(current => current.map(row => row.id === group.id ? { ...row, preview: previewOf(rows, t('暂无会话')) } : row));
+        setMessages(current => ({ ...current, [group.id]: rows }));
+      }
+      return group.id;
+    }
     setThreads((current) =>
       current.map((thread) =>
         thread.id === id
@@ -1173,16 +1339,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : thread,
       ),
     );
-  }, []);
+    return id;
+  }, [invalidateSync, retireThread]);
 
-  const leaveGroup = useCallback<Store['leaveGroup']>((id) => {
-    setThreads((current) => current.filter((thread) => thread.id !== id));
+  const leaveGroup = useCallback<Store['leaveGroup']>(async (id) => {
+    const thread = threadsRef.current.find(row => row.id === id);
+    if (thread?.groupId) {
+      const active = client.current;
+      if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
+      await active.deleteGroup(thread.groupId);
+      if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
+    }
+    invalidateSync();
+    retireThread(id);
+    threadsRef.current = threadsRef.current.filter(thread => thread.id !== id);
+    setThreads(threadsRef.current);
     setMessages((current) => {
       const next = { ...current };
       delete next[id];
       return next;
     });
-  }, []);
+  }, [invalidateSync, retireThread]);
 
   /* -------------------------------------------------------- the threads */
 
@@ -1229,19 +1406,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const removeThread = useCallback<Store['removeThread']>(async (threadId) => {
     const thread = threadsRef.current.find((entry) => entry.id === threadId);
     if (!thread) return;
+    if (thread.kind === 'group') { await leaveGroup(threadId); return; }
     const active = client.current;
     if (thread.kind === 'bot' && (thread.id.startsWith('bot:') || active || savedRef.current)) {
       if (!active || syncedRef.current === null) throw new BridgeError(t('请先连接服务器。'));
       if (thread.sessionId) await active.deleteSession(thread.botId, thread.sessionId);
       if (client.current !== active) throw new BridgeError(t('连接已改变，请重试。'));
     }
-    turnsRef.current[threadId]?.();
-    delete turnsRef.current[threadId];
+    invalidateSync();
+    retireThread(threadId);
     if (thread.kind === 'bot') {
       // A bot's row is the bot itself: deleting the conversation keeps the bot and
       // drops only its server session.
-      setThreads((current) =>
-        current.map((entry) =>
+      threadsRef.current = threadsRef.current.map((entry) =>
           entry.id === threadId
             ? {
                 ...entry,
@@ -1254,18 +1431,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 unread: false,
               }
             : entry,
-        ),
-      );
+        );
+      setThreads(threadsRef.current);
       setMessages((current) => ({ ...current, [threadId]: [] }));
     } else {
-      setThreads((current) => current.filter((entry) => entry.id !== threadId));
+      threadsRef.current = threadsRef.current.filter(entry => entry.id !== threadId);
+      setThreads(threadsRef.current);
       setMessages((current) => {
         const next = { ...current };
         delete next[threadId];
         return next;
       });
     }
-  }, []);
+  }, [leaveGroup, invalidateSync, retireThread]);
 
   const clearThread = removeThread;
 
@@ -1294,10 +1472,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }));
       patchThread(threadId, { preview: body, unread: false, time: t("刚刚") });
 
-      if (!online || !thread || thread.kind !== 'bot') {
-        if (online && thread?.kind === 'group') {
-          patchThread(threadId, { preview: t("群组功能尚未接入 Hermes。") });
-        }
+      if (!online || !thread) {
         return;
       }
       if (payload.kind === 'voice') {
@@ -1307,6 +1482,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       const active = client.current;
       if (!active) return;
+      if (thread.kind === 'group') {
+        if (!thread.groupId) return;
+        const controller = new AbortController();
+        let cancelled = false;
+        revisionsRef.current[threadId] = (revisionsRef.current[threadId] || 0) + 1;
+        patchThread(threadId, { typing: true });
+        turnsRef.current[threadId] = () => { cancelled = true; controller.abort(); delete turnsRef.current[threadId]; patchThread(threadId, { typing: false }); };
+        void (async () => {
+          try {
+            let outgoing = body;
+            if (payload.kind === 'attachment') {
+              if (!payload.attachment) throw new BridgeError(t('请选择要发送的附件。'), 'bad_attachment');
+              const uploaded = await active.uploadAttachment(payload.attachment, controller.signal);
+              outgoing += `\n\nAttached: ${uploaded.path}`;
+            }
+            if (cancelled || client.current !== active) return;
+            observeGroup(active, thread, userMessage.id,
+              () => active.startGroupRound(thread.groupId!, userMessage.id, outgoing));
+          } catch (error) {
+            if (cancelled || client.current !== active) return;
+            delete turnsRef.current[threadId];
+            const text = error instanceof Error ? error.message : t('无法连接智能体。');
+            setMessages(current => ({ ...current, [threadId]: [...(current[threadId] || []),
+              { id: `${userMessage.id}:error`, from: '', text, notice: true, failed: true }] }));
+            patchThread(threadId, { typing: false, preview: text });
+          }
+        })();
+        return;
+      }
       const botId = thread.botId;
       const assistantId = `a-${Date.now()}`;
       let answer = '';
@@ -1397,6 +1601,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!picksRef.current[botId]) {
             try {
               const options = await active.models(botId);
+              if (settled) return;
               if (client.current !== active) {
                 settle(t("连接已改变，请重新发送。"), true);
                 return;
@@ -1405,6 +1610,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               setModelOptions(optionsRef.current);
               patchThread(threadId, { threadModel: optionsRef.current[botId].current });
             } catch {
+              if (settled) return;
               const next = { ...optionsRef.current };
               delete next[botId];
               optionsRef.current = next;
@@ -1430,7 +1636,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       })();
     },
-    [patchThread, observeRun],
+    [patchThread, observeRun, observeGroup],
   );
 
   const stop = useCallback<Store['stop']>((threadId) => {

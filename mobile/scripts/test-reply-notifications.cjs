@@ -68,3 +68,11 @@ test('response routing accepts only Hermes reply notifications with valid identi
     assert.equal(notificationTarget(invalid), null);
   }
 });
+
+test('group notification targets carry an explicit group ID rather than impersonating a private chat', () => {
+  const group = { ...run, kind: 'hermes-reply', threadId: 'g-work', groupId: 'g-work' };
+  assert.equal(notificationTarget(group)?.groupId, 'g-work');
+  assert.equal(notificationTarget({ ...group, groupId: 'g-other' }), null);
+  assert.equal(notificationTarget({ ...group, groupId: 'bot:atlas', threadId: 'bot:atlas' }), null);
+  assert.equal(notificationTarget({ ...group, groupId: undefined }), null);
+});

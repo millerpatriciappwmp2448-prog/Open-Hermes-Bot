@@ -4,15 +4,23 @@ export type RunSnapshot = {
 };
 export type TurnWatch = { pause(): void; resume(): void; detach(): void; stop(): void };
 
-export function watchTurn(
-  transport: { start(): Promise<RunSnapshot>; read(): Promise<RunSnapshot>; stop(): Promise<unknown> },
-  handlers: { snapshot(run: RunSnapshot): void; done(text: string, status: 'completed' | 'cancelled'): void; error(error: unknown): void; reconnecting?(): void },
+export function watchTurn<T extends RunSnapshot = RunSnapshot>(
+  transport: { start(): Promise<T>; read(): Promise<T>; stop(): Promise<unknown> },
+  handlers: { snapshot(run: T): void; done(text: string, status: 'completed' | 'cancelled'): void; error(error: unknown): void; reconnecting?(): void },
   clock = { later: (fn: () => void, ms: number) => setTimeout(fn, ms), cancel: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) },
 ): TurnWatch {
   let accepted = false, ended = false, paused = false, busy = false, wake = false, failures = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let stopRequested = false;
+  let stopRequested = false, stopAcknowledged = false;
   const clear = () => { if (timer !== undefined) clock.cancel(timer); timer = undefined; };
+  const consume = (run: T) => {
+    if (ended) return;
+    handlers.snapshot(run);
+    if (run.status === 'completed') { ended = true; handlers.done(run.text || '', 'completed'); }
+    else if (['failed', 'interrupted', 'unknown'].includes(run.status)) {
+      ended = true; handlers.error({ code: 'turn_failed', message: run.error || run.status });
+    } else if (run.status === 'cancelled') { ended = true; handlers.done(run.text || '', 'cancelled'); }
+  };
   const tick = async () => {
     clear();
     if (ended || paused) return;
@@ -22,13 +30,15 @@ export function watchTurn(
       const run = await (accepted ? transport.read() : transport.start());
       accepted = true;
       failures = 0;
-      if (stopRequested) { void transport.stop().catch(() => {}); return; }
       if (ended) return;
-      handlers.snapshot(run);
-      if (run.status === 'completed') { ended = true; handlers.done(run.text || '', 'completed'); }
-      else if (['failed', 'interrupted', 'unknown'].includes(run.status)) {
-        ended = true; handlers.error({ code: 'turn_failed', message: run.error || run.status });
-      } else if (run.status === 'cancelled') { ended = true; handlers.done(run.text || '', 'cancelled'); }
+      consume(run);
+      if (!ended && stopRequested && !stopAcknowledged) {
+        const result = await transport.stop();
+        stopAcknowledged = true;
+        // The acknowledgement may still say "running". Only a terminal
+        // snapshot ends observation; a lost response retries the same stop.
+        if (result && typeof result === 'object' && 'status' in result && typeof result.status === 'string') consume(result as T);
+      }
     } catch (error) {
       if (ended) return;
       const fault = error as { status?: number; code?: string };
@@ -52,9 +62,9 @@ export function watchTurn(
     resume() { if (ended) return; paused = false; void tick(); },
     detach() { ended = true; clear(); },
     stop() {
-      stopRequested = true; ended = true; clear();
-      if (accepted) void transport.stop().catch(() => {});
-      // An in-flight acceptance is stopped by tick after its response arrives.
+      if (ended || stopRequested) return;
+      stopRequested = true;
+      if (!paused) void tick();
     },
   };
 }
