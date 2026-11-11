@@ -46,6 +46,7 @@ export function CodexSupervisorScreen() {
   const [messageInput, setMessageInput] = useState('');
   const [messageBusy, setMessageBusy] = useState(false);
   const [messageError, setMessageError] = useState('');
+  const [conversationOpen, setConversationOpen] = useState(false);
   const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({});
   const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
   const initialized = useRef(false);
@@ -58,6 +59,14 @@ export function CodexSupervisorScreen() {
   const focused = useIsFocused();
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const connected = connection.status === 'connected';
+  // Keep older bridge test doubles and older companion builds usable while the
+  // new chat endpoints roll out.
+  const readCodexMessages = useCallback((id: string) => typeof loadCodexMessages === 'function'
+    ? loadCodexMessages(id)
+    : Promise.resolve({ messages: [] as CodexChatMessage[], status: 'unknown', turnStatus: null }), [loadCodexMessages]);
+  const writeCodexMessage = useCallback((id: string, prompt: string) => typeof sendCodexMessage === 'function'
+    ? sendCodexMessage(id, prompt)
+    : Promise.reject(new Error(t('无法发送到 Codex。'))), [sendCodexMessage]);
   const saved = status?.spec;
   const unchanged = status?.enabled && saved?.threadId === threadId && saved.goal === goal.trim() &&
     saved.profile === profile && saved.reviewEnabled === reviewEnabled &&
@@ -125,7 +134,7 @@ export function CodexSupervisorScreen() {
   useEffect(() => {
     generation.current++; initialized.current = false; edited.current = false;
     statusPending.current = null; chatsPending.current = null; setLoading(false);
-    setStatus(null); setSidebar(null); setThreadId(''); setGoal(''); setMessages([]); setMessageInput('');
+    setStatus(null); setSidebar(null); setThreadId(''); setGoal(''); setMessages([]); setMessageInput(''); setConversationOpen(false);
     setChatsError(''); setChatsLoaded(false); setPick(undefined);
   }, [connection.url]);
   useEffect(() => {
@@ -144,13 +153,13 @@ export function CodexSupervisorScreen() {
     if (!connected || !focused || !threadId) { setMessages([]); return; }
     let alive = true;
     setMessages([]); setMessageError('');
-    void loadCodexMessages(threadId).then(value => {
+    void readCodexMessages(threadId).then(value => {
       if (alive) setMessages(value.messages || []);
     }).catch(error => {
       if (alive) setMessageError(error instanceof Error ? error.message : t('无法读取会话内容。'));
     });
     return () => { alive = false; };
-  }, [connected, focused, loadCodexMessages, threadId]);
+  }, [connected, focused, readCodexMessages, threadId]);
 
   async function act(pause: boolean) {
     if (acting.current || (!pause && (unchanged || !profile))) return;
@@ -192,7 +201,7 @@ export function CodexSupervisorScreen() {
     const selected = threadId === chat.id;
     return <View key={chat.id} style={[styles.choice, selected && styles.selected]}>
       <Pressable accessibilityRole="radio" accessibilityState={{ selected }} aria-checked={selected} disabled={busy}
-        onPress={() => { edited.current = true; setThreadId(chat.id); }} style={styles.choiceHead}>
+        onPress={() => { edited.current = true; setThreadId(chat.id); setConversationOpen(false); }} style={styles.choiceHead}>
         <Text style={styles.choiceTitle} numberOfLines={2}>{chat.title || chat.id}</Text>
         <Text style={styles.caption}>{chat.status?.type === 'active' ? t('正在运行') : t('已有会话')}{selected ? ` · ${t('已选择')}` : ''}</Text>
       </Pressable>
@@ -213,9 +222,9 @@ export function CodexSupervisorScreen() {
     Keyboard.dismiss();
     setMessageBusy(true); setMessageError(''); setMessageInput('');
     try {
-      const result = await sendCodexMessage(threadId, prompt);
+      const result = await writeCodexMessage(threadId, prompt);
       if (result.status === 'ambiguous') setMessageError(t('消息可能已经送达，请刷新确认，不要重复发送。'));
-      const value = await loadCodexMessages(threadId);
+      const value = await readCodexMessages(threadId);
       setMessages(value.messages || []);
     } catch (e) {
       setMessageError(e instanceof Error ? e.message : t('无法发送到 Codex。'));
@@ -259,7 +268,10 @@ export function CodexSupervisorScreen() {
           {open ? <View style={styles.list}>{project.chats.map(renderChat)}</View> : null}
         </View>;
       }) : !chatsError ? <Text style={styles.caption}>{loading || !chatsLoaded ? t('读取中') : t('电脑上暂无可用的 Codex 会话。')}</Text> : null}
-      {selectedProject ? <View style={styles.chatCard}>
+      {selectedProject && !conversationOpen ? <Pressable accessibilityRole="button" onPress={() => setConversationOpen(true)} style={styles.openChatButton}>
+        <Text style={styles.openChatText}>{t('查看并控制这个 Codex 会话')}</Text>
+      </Pressable> : null}
+      {selectedProject && conversationOpen ? <View style={styles.chatCard}>
         <View style={styles.between}><Text style={styles.cardTitle}>{selectedProject.title || selectedProject.id}</Text>
           <Text style={styles.caption}>{selectedProject.isUnread ? t('有新内容') : selectedProject.status?.type === 'active' ? t('正在运行') : ''}</Text></View>
         {messages.length ? messages.map((message, index) => <View key={`${selectedProject.id}:${index}`} style={[styles.chatBubble, message.role === 'user' && styles.userBubble]}>
@@ -328,6 +340,8 @@ const useStyles = themedStyles(({ C }) => ({
   more: { color: C.text2, fontSize: 12, fontWeight: '600' },
   project: { gap: 6 },
   chatCard: { backgroundColor: C.cardRaised, borderColor: C.line, borderWidth: 1, borderRadius: 15, padding: 12, gap: 9 },
+  openChatButton: { backgroundColor: C.field, borderRadius: 12, minHeight: 42, alignItems: 'center', justifyContent: 'center' },
+  openChatText: { color: C.text, fontSize: 13, fontWeight: '600' },
   chatBubble: { alignSelf: 'flex-start', maxWidth: '92%', backgroundColor: C.field, borderRadius: 13, padding: 10 },
   userBubble: { alignSelf: 'flex-end', backgroundColor: C.selected },
   chatText: { color: C.text, fontSize: 14, lineHeight: 21 },
