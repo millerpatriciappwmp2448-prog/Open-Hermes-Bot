@@ -72,7 +72,6 @@ export function ChatScreen({ route, navigation }: Props) {
     loadTodos,
     connection,
     setViewingThread,
-    modelPicks,
   } = useStore();
 
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -114,8 +113,8 @@ export function ChatScreen({ route, navigation }: Props) {
           <Pressable style={styles.navIcon} onPress={() => navigation.goBack()} accessibilityLabel={t("返回")}>
             <BackIcon size={17} color={C.text} />
           </Pressable>
-          <View style={styles.navCenterGrok}>
-            <View style={styles.chatIdGrok}>
+          <View style={styles.navCenter}>
+            <View style={styles.chatId}>
               <Text style={styles.chatName} numberOfLines={1}>{t("此会话已不存在")}</Text>
             </View>
           </View>
@@ -246,33 +245,23 @@ export function ChatScreen({ route, navigation }: Props) {
             <BackIcon size={17} color={C.text} />
           </Pressable>
 
-          <View style={styles.navCenterGrok}>
+          <View style={styles.navCenter}>
             <Pressable
-              style={styles.chatIdGrok}
+              style={styles.chatId}
               onPress={() => (isGroup ? setDetailsOpen(true) : setBotOpen(true))}
               accessibilityRole="button"
               accessibilityLabel={t("打开 {0}", {"0": thread.name})}
               testID="chat-identity"
             >
               {isGroup ? (
-                <BloubGroup members={faces} size={32} active={thread.typing} />
+                <BloubGroup members={faces} size={23} active={thread.typing} />
               ) : (
-                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={32} animated active={thread.typing} />
+                <Bloub shape={bot?.shape} color={bot?.color ?? '#8b5cf6'} size={23} animated active={thread.typing} />
               )}
               <View style={styles.chatTitles}>
                 <Text style={styles.chatName} numberOfLines={1}>
                   {thread.name}
-                  {thread.tag ? <Text style={styles.chatTag}> {thread.tag}</Text> : null}
-                  </Text>
-                  <Text style={styles.chatSubtitle} numberOfLines={1}>
-                    {t('Hermes 主机')}
-                    {' · '}
-                    {(() => {
-                      const pick = modelPicks?.[thread.botId];
-                      const modelId = pick?.model || 'server-default';
-                      return modelId.length > 20 ? `${modelId.slice(0, 18)}…` : modelId;
-                    })()}
-                  </Text>
+                </Text>
               </View>
             </Pressable>
           </View>
@@ -381,12 +370,15 @@ const useStyles = themedStyles(({ C, INK }) => ({
     backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
     boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
   },
-  chatIdGrok: { flexDirection: 'column', alignItems: 'center', gap: 6, maxWidth: '100%' },
-  chatTitles: { alignItems: 'center', maxWidth: '100%' },
-  chatName: { color: C.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.22, textAlign: 'center' },
-  chatTag: { color: C.text2, fontSize: 12, fontWeight: '400', letterSpacing: -0.15 },
-  chatSubtitle: { color: C.text2, fontSize: 11.5, fontWeight: '400', letterSpacing: -0.12, marginTop: 1, textAlign: 'center' },
-  navCenterGrok: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  chatId: {
+    flexShrink: 1, minWidth: 0, maxWidth: '100%', minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 22,
+    backgroundColor: C.cardRaised, borderWidth: 1, borderColor: C.hairline,
+    boxShadow: '0px 3px 12px rgba(0,0,0,0.04)',
+  },
+  chatTitles: { flexShrink: 1, minWidth: 0 },
+  chatName: { color: C.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
+  navCenter: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
   navPlaceholder: { width: 40, flexShrink: 0 },
 
   body: { flex: 1 },
