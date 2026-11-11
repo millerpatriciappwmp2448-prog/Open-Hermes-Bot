@@ -1,7 +1,7 @@
 import { t } from './i18n';
 import type { Attachment, Message } from './data';
 import { parseTodos, type TodoItem } from './taskDock';
-import type { CodexChat, CodexSupervisorStatus, CodexWatchSpec } from './codexSupervisor';
+import type { CodexSidebar, CodexSupervisorStatus, CodexWatchSpec, CodexChatMessage } from './codexSupervisor';
 
 export type { TodoItem, TodoStatus } from './taskDock';
 
@@ -316,8 +316,11 @@ export function createBridgeClient(rawBase: string, token: string) {
     codexStatus: () => request<CodexSupervisorStatus>('/v1/codex/status'),
     ensureCodexAgent: async (): Promise<BridgeBot> =>
       (await request<{ bot: BridgeBot }>('/v1/codex/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).bot,
-    codexChats: async (): Promise<CodexChat[]> =>
-      (await request<{ threads: CodexChat[] }>('/v1/codex/threads')).threads,
+    codexChats: async (): Promise<CodexSidebar> => request<CodexSidebar>('/v1/codex/threads'),
+    codexMessages: async (threadId: string): Promise<{ messages: CodexChatMessage[]; status: string; turnStatus: string | null }> =>
+      request(`/v1/codex/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId }) }),
+    codexSend: async (threadId: string, prompt: string): Promise<{ status: string }> =>
+      request(`/v1/codex/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId, prompt }) }),
     startCodexWatch: (spec: CodexWatchSpec) => request<CodexSupervisorStatus>('/v1/codex/watch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec),
     }),

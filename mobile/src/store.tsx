@@ -2,7 +2,7 @@ import { t, useTranslation, localeTag } from './i18n';
 import { localizeDemo } from './i18n/demo';
 import { modelForTurn, readModelPick, withModelPick, type ModelRef } from './modelSelection';
 import { profileNameFor } from './botNames';
-import type { CodexChat, CodexSupervisorStatus, CodexWatchSpec } from './codexSupervisor';
+import type { CodexChat, CodexChatMessage, CodexSidebar, CodexSupervisorStatus, CodexWatchSpec } from './codexSupervisor';
 import { readChatPreferences, withChatPreferences, sessionsForBot, type ChatPreferences } from './chatPreferences';
 import { readSchedules, type Schedule } from './schedules';
 import { sameTodos, type TodoItem } from './taskDock';
@@ -125,7 +125,9 @@ type Store = {
   loadTranscript: (botId: string, sessionId: string, offset: number) => Promise<TranscriptPage>;
   loadMonitor: () => Promise<ServerMonitor>;
   loadCodexStatus: () => Promise<CodexSupervisorStatus>;
-  loadCodexChats: () => Promise<CodexChat[]>;
+  loadCodexChats: () => Promise<CodexSidebar>;
+  loadCodexMessages: (threadId: string) => Promise<{ messages: CodexChatMessage[]; status: string; turnStatus: string | null }>;
+  sendCodexMessage: (threadId: string, prompt: string) => Promise<{ status: string }>;
   startCodexWatch: (spec: CodexWatchSpec) => Promise<CodexSupervisorStatus>;
   pauseCodexWatch: () => Promise<CodexSupervisorStatus>;
   /** Read the agent's task list for a chat's session from Hermes. */
@@ -823,6 +825,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const loadCodexStatus = useCallback(() => codexCall(active => active.codexStatus()), [codexCall]);
   const loadCodexChats = useCallback(() => codexCall(active => active.codexChats()), [codexCall]);
+  const loadCodexMessages = useCallback((threadId: string) => codexCall(active => active.codexMessages(threadId)), [codexCall]);
+  const sendCodexMessage = useCallback((threadId: string, prompt: string) => codexCall(active => active.codexSend(threadId, prompt)), [codexCall]);
   const startCodexWatch = useCallback((spec: CodexWatchSpec) => codexCall(active => active.startCodexWatch(spec)), [codexCall]);
   const pauseCodexWatch = useCallback(() => codexCall(active => active.pauseCodexWatch()), [codexCall]);
 
@@ -1690,6 +1694,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadMonitor,
       loadCodexStatus,
       loadCodexChats,
+      loadCodexMessages,
+      sendCodexMessage,
       startCodexWatch,
       pauseCodexWatch,
       loadTodos,
@@ -1767,6 +1773,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadMonitor,
       loadCodexStatus,
       loadCodexChats,
+      loadCodexMessages,
+      sendCodexMessage,
       startCodexWatch,
       pauseCodexWatch,
       loadTodos,

@@ -116,6 +116,7 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("POST", re.compile(r"^/v1/codex/agent$"), "_codex_agent", False),
     ("POST", re.compile(r"^/v1/codex/agent/tool$"), "_codex_agent_tool", False),
     ("POST", re.compile(r"^/v1/codex/(?P<operation>watch|pause)$"), "_codex_write", False),
+    ("POST", re.compile(r"^/v1/codex/(?P<operation>messages|send)$"), "_codex_chat", False),
     ("POST", re.compile(r"^/v1/codex/review$"), "_codex_review", False),
     ("GET", re.compile(r"^/v1/jobs$"), "_jobs", False),
     ("POST", re.compile(r"^/v1/jobs$"), "_job_create", False),
@@ -641,6 +642,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(400, 'bad_watch', 'Choose a Hermes review agent.')
             profiles.get_bot(self.config, profile)
         return self._json(200, self.bridge.codex.call('POST', '/' + operation, body))
+
+    def _codex_chat(self, match, query) -> int:
+        operation = param(match, 'operation')
+        return self._json(200, self.bridge.codex.call('POST', '/' + operation, self._json_body()))
 
     def _codex_review(self, match, query) -> int:
         body = self._json_body()

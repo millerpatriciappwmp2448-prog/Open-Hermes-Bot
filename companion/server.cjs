@@ -7,12 +7,11 @@ const { DesktopClient } = require('./desktop.cjs');
 const { Supervisor, observation } = require('./supervisor.cjs');
 const { JsonStore } = require('./store.cjs');
 const { createReviewer } = require('./reviewer.cjs');
-const { extractMessages, projectName } = require('./messages.cjs');
-
-// Only the newest chats are read in full so the phone list stays fast.
-const ENRICHED_THREADS = 12;
+const { extractMessages } = require('./messages.cjs');
 
 const MAX_BODY = 64 * 1024;
+const MAX_PROMPT = 8000;
+const THREAD_ID = /^[a-zA-Z0-9_-]{1,160}$/;
 const authorized = (actual, expected) => {
   const left = Buffer.from(actual || ''), right = Buffer.from(`Bearer ${expected}`);
   return left.length === right.length && timingSafeEqual(left, right);
@@ -30,22 +29,8 @@ function createServer({ token, desktop, supervisor }) {
       if (request.headers.origin) { json(403, { error: { code: 'origin', message: 'Use the paired Hermes bridge.' } }); return; }
       const route = `${request.method} ${request.url}`;
       if (route === 'GET /status') { json(200, supervisor.status()); return; }
-      if (route === 'GET /threads') {
-        const threads = await desktop.list();
-        const enriched = await Promise.all(threads.map(async (thread, index) => {
-          const base = { ...thread, project: projectName(thread.cwd) };
-          if (index >= ENRICHED_THREADS) return { ...base, messages: [] };
-          try {
-            const full = await desktop.read(thread.id, thread.hostId || 'local');
-            return { ...base, messages: extractMessages(full) };
-          } catch {
-            return { ...base, messages: [] };
-          }
-        }));
-        json(200, { threads: enriched });
-        return;
-      }
-      if (!['POST /watch', 'POST /pause', 'POST /read'].includes(route)) { json(404, { error: { code: 'not_found', message: 'Unknown companion operation.' } }); return; }
+      if (route === 'GET /threads') { json(200, await desktop.sidebar()); return; }
+      if (!['POST /watch', 'POST /pause', 'POST /read', 'POST /messages', 'POST /send'].includes(route)) { json(404, { error: { code: 'not_found', message: 'Unknown companion operation.' } }); return; }
       let raw = '';
       for await (const chunk of request) {
         raw += chunk.toString('utf8');
@@ -55,9 +40,36 @@ function createServer({ token, desktop, supervisor }) {
       try { body = JSON.parse(raw || '{}'); } catch { throw Object.assign(new Error('Send a JSON object.'), { status: 400 }); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
       if (route === 'POST /read') {
-        if (typeof body.threadId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(body.threadId) ||
+        if (typeof body.threadId !== 'string' || !THREAD_ID.test(body.threadId) ||
             Object.keys(body).some(key => key !== 'threadId')) throw Object.assign(new Error('Choose one local Codex chat.'), { status: 400 });
         json(200, { observed: observation(await desktop.read(body.threadId, 'local'), body.threadId) }); return;
+      }
+      if (route === 'POST /messages') {
+        if (typeof body.threadId !== 'string' || !THREAD_ID.test(body.threadId) ||
+            Object.keys(body).some(key => key !== 'threadId')) throw Object.assign(new Error('Choose one local Codex chat.'), { status: 400 });
+        const full = await desktop.read(body.threadId, 'local', 6);
+        const status = full?.thread?.status;
+        json(200, {
+          messages: extractMessages(full, { limit: 30, includeUser: true }),
+          status: typeof status === 'string' ? status : (typeof status?.type === 'string' ? status.type : 'unknown'),
+          turnStatus: typeof full?.turns?.[0]?.status === 'string' ? full.turns[0].status : null,
+        });
+        return;
+      }
+      if (route === 'POST /send') {
+        const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+        if (typeof body.threadId !== 'string' || !THREAD_ID.test(body.threadId) || !prompt || prompt.length > MAX_PROMPT ||
+            Object.keys(body).some(key => key !== 'threadId' && key !== 'prompt')) throw Object.assign(new Error('Write a message for one local Codex chat.'), { status: 400 });
+        try {
+          await desktop.send(body.threadId, prompt, 'local');
+          json(200, { status: 'sent' });
+        } catch (error) {
+          // The desktop may have received the message before the reply was lost.
+          // Report it so the phone does not resend and duplicate the instruction.
+          if (error.ambiguous) { json(200, { status: 'ambiguous' }); return; }
+          throw error;
+        }
+        return;
       }
       json(200, route === 'POST /watch' ? await supervisor.start(body) : supervisor.pause());
     } catch (error) {

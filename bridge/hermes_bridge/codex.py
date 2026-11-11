@@ -16,7 +16,11 @@ from .config import Config
 from .hermes import HermesError
 
 MAX_RESPONSE = 1024 * 1024
-OPERATIONS = {('GET', '/status'), ('GET', '/threads'), ('POST', '/watch'), ('POST', '/pause'), ('POST', '/read')}
+OPERATIONS = {
+    ('GET', '/status'), ('GET', '/threads'),
+    ('POST', '/watch'), ('POST', '/pause'), ('POST', '/read'),
+    ('POST', '/messages'), ('POST', '/send'),
+}
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):

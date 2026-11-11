@@ -6,7 +6,18 @@
 const MAX_MESSAGES = 8;
 const MAX_CHARS = 4000;
 
-function extractMessages(thread, { limit = MAX_MESSAGES, maxChars = MAX_CHARS } = {}) {
+function userText(item) {
+  if (typeof item.text === 'string') return item.text;
+  if (!Array.isArray(item.content)) return '';
+  return item.content.filter(part => part && part.type === 'text' && typeof part.text === 'string')
+    .map(part => part.text).join('\n');
+}
+
+// Messages the companion itself injects to steer a chat carry this marker;
+// they are shown to the phone as plain prompts without the internal tag.
+const MARKER = /\s*\[hermes-supervisor:[a-f0-9-]{36}\]\s*/g;
+
+function extractMessages(thread, { limit = MAX_MESSAGES, maxChars = MAX_CHARS, includeUser = false } = {}) {
   const turns = Array.isArray(thread?.turns) ? thread.turns : [];
   const newestFirst = thread?.page?.order !== 'oldest_first';
   const ordered = newestFirst ? [...turns].reverse() : turns;
@@ -14,6 +25,11 @@ function extractMessages(thread, { limit = MAX_MESSAGES, maxChars = MAX_CHARS } 
   for (const turn of ordered) {
     if (!turn || !Array.isArray(turn.items)) continue;
     for (const item of turn.items) {
+      if (includeUser && item && item.type === 'userMessage') {
+        const text = userText(item).replace(MARKER, ' ').trim();
+        if (text) messages.push({ role: 'user', phase: 'prompt', content: text.length > maxChars ? `${text.slice(0, maxChars)}…` : text });
+        continue;
+      }
       if (!item || item.type !== 'agentMessage' || typeof item.text !== 'string') continue;
       const text = item.text.trim();
       if (!text) continue;

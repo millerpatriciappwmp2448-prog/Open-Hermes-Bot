@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { AppState, Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Page } from '../components/Page';
 import { Hint, PrimaryButton } from '../components/UI';
 import { Toggle } from '../components/Toggle';
 import { ServerModelPicker } from '../components/ServerModelPicker';
-import { chatProject, groupChatsByProject, modelOutput } from '../codexSupervisor';
-import type { CodexChat, CodexSupervisorStatus } from '../codexSupervisor';
+import { modelOutput, orderCodexSidebar } from '../codexSupervisor';
+import type { CodexChat, CodexChatMessage, CodexSidebar, CodexSupervisorStatus } from '../codexSupervisor';
 import type { ModelRef } from '../modelSelection';
 import { localeTag, t, useTranslation } from '../i18n';
 import { useAppNavigation } from '../nav';
@@ -25,9 +25,10 @@ export function CodexSupervisorScreen() {
   useTranslation();
   const { styles, C, scheme } = useStyles();
   const navigation = useAppNavigation();
-  const { connection, bots, modelPicks, loadCodexStatus, loadCodexChats, startCodexWatch, pauseCodexWatch } = useStore();
+  const { connection, bots, modelPicks, loadCodexStatus, loadCodexChats, loadCodexMessages, sendCodexMessage, startCodexWatch, pauseCodexWatch } = useStore();
   const [status, setStatus] = useState<CodexSupervisorStatus | null>(null);
-  const [chats, setChats] = useState<CodexChat[]>([]);
+  const [sidebar, setSidebar] = useState<CodexSidebar | null>(null);
+  const chats = sidebar?.threads || [];
   const [threadId, setThreadId] = useState('');
   const [goal, setGoal] = useState('');
   const supervisor = bots.find(bot => bot.capabilities?.includes('codex-supervisor'));
@@ -41,6 +42,10 @@ export function CodexSupervisorScreen() {
   const [chatsLoaded, setChatsLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [messages, setMessages] = useState<CodexChatMessage[]>([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [messageBusy, setMessageBusy] = useState(false);
+  const [messageError, setMessageError] = useState('');
   const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({});
   const [expandedChats, setExpandedChats] = useState<Record<string, boolean>>({});
   const initialized = useRef(false);
@@ -101,7 +106,8 @@ export function CodexSupervisorScreen() {
         try {
           const rows = await loadCodexChats();
           if (current()) {
-            setChats(rows); setChatsError(''); setChatsLoaded(true);
+            const value = Array.isArray(rows) ? { threads: rows, sections: [], projects: [] } : rows;
+            setSidebar(value); setChatsError(''); setChatsLoaded(true);
           }
         } catch (e) {
           if (current()) setChatsError(e instanceof Error ? e.message : t('无法读取 Codex 会话。'));
@@ -119,7 +125,7 @@ export function CodexSupervisorScreen() {
   useEffect(() => {
     generation.current++; initialized.current = false; edited.current = false;
     statusPending.current = null; chatsPending.current = null; setLoading(false);
-    setStatus(null); setChats([]); setThreadId(''); setGoal('');
+    setStatus(null); setSidebar(null); setThreadId(''); setGoal(''); setMessages([]); setMessageInput('');
     setChatsError(''); setChatsLoaded(false); setPick(undefined);
   }, [connection.url]);
   useEffect(() => {
@@ -133,6 +139,18 @@ export function CodexSupervisorScreen() {
     const timer = setInterval(() => { void refresh(); }, 10000);
     return () => clearInterval(timer);
   }, [appActive, connected, focused, refresh]);
+
+  useEffect(() => {
+    if (!connected || !focused || !threadId) { setMessages([]); return; }
+    let alive = true;
+    setMessages([]); setMessageError('');
+    void loadCodexMessages(threadId).then(value => {
+      if (alive) setMessages(value.messages || []);
+    }).catch(error => {
+      if (alive) setMessageError(error instanceof Error ? error.message : t('无法读取会话内容。'));
+    });
+    return () => { alive = false; };
+  }, [connected, focused, loadCodexMessages, threadId]);
 
   async function act(pause: boolean) {
     if (acting.current || (!pause && (unchanged || !profile))) return;
@@ -159,14 +177,13 @@ export function CodexSupervisorScreen() {
     <ServerModelPicker botId={profile} draftPick={pick} onDraftPick={value => { edited.current = true; setPick(value); }} onPicked={() => setModelOpen(false)} />
   </Page>;
 
-  const projects = groupChatsByProject(chats);
+  const projects = sidebar ? orderCodexSidebar(sidebar) : [];
   const selectedProject = chats.find(chat => chat.id === threadId);
-  const projectOpen = (name: string, index: number) => openProjects[name] ??
-    (selectedProject ? chatProject(selectedProject) === name : index === 0);
+  const projectOpen = (name: string, index: number) => openProjects[name] ?? (selectedProject ? projects[index]?.chats.some(chat => chat.id === selectedProject.id) : index === 0);
   const companionMissing = Boolean(chatsError && chatsError.toLowerCase().includes('companion'));
 
   function renderChat(chat: CodexChat) {
-    const output = modelOutput(chat);
+    const output = chat.id === threadId && messages.length ? messages : modelOutput(chat);
     const finals = output.filter(message => message.phase !== 'progress');
     const expanded = Boolean(expandedChats[chat.id]);
     const shown = expanded ? output : (finals.length ? finals : output).slice(-2);
@@ -188,6 +205,21 @@ export function CodexSupervisorScreen() {
         <Text style={styles.more}>{expanded ? t('收起') : hidden > 0 ? t('展开全部输出（{0}）', { 0: output.length }) : t('展开全文')}</Text>
       </Pressable> : null}
     </View>;
+  }
+
+  async function sendMessage() {
+    const prompt = messageInput.trim();
+    if (!threadId || !prompt || messageBusy) return;
+    Keyboard.dismiss();
+    setMessageBusy(true); setMessageError(''); setMessageInput('');
+    try {
+      const result = await sendCodexMessage(threadId, prompt);
+      if (result.status === 'ambiguous') setMessageError(t('消息可能已经送达，请刷新确认，不要重复发送。'));
+      const value = await loadCodexMessages(threadId);
+      setMessages(value.messages || []);
+    } catch (e) {
+      setMessageError(e instanceof Error ? e.message : t('无法发送到 Codex。'));
+    } finally { setMessageBusy(false); }
   }
 
   return <Page title={t('Codex 监督')} right={<Pressable accessibilityRole="button" accessibilityLabel={t('刷新监督状态')}
@@ -227,6 +259,17 @@ export function CodexSupervisorScreen() {
           {open ? <View style={styles.list}>{project.chats.map(renderChat)}</View> : null}
         </View>;
       }) : !chatsError ? <Text style={styles.caption}>{loading || !chatsLoaded ? t('读取中') : t('电脑上暂无可用的 Codex 会话。')}</Text> : null}
+      {selectedProject ? <View style={styles.chatCard}>
+        <View style={styles.between}><Text style={styles.cardTitle}>{selectedProject.title || selectedProject.id}</Text>
+          <Text style={styles.caption}>{selectedProject.isUnread ? t('有新内容') : selectedProject.status?.type === 'active' ? t('正在运行') : ''}</Text></View>
+        {messages.length ? messages.map((message, index) => <View key={`${selectedProject.id}:${index}`} style={[styles.chatBubble, message.role === 'user' && styles.userBubble]}>
+          <Text selectable style={styles.chatText}>{message.content}</Text></View>) : <Text style={styles.caption}>{t('读取会话内容中')}</Text>}
+        {messageError ? <Text accessibilityRole="alert" style={styles.error}>{messageError}</Text> : null}
+        <View style={styles.composerRow}><TextInput value={messageInput} onChangeText={setMessageInput} multiline maxLength={8000}
+          editable={!messageBusy} keyboardAppearance={scheme} placeholder={t('输入消息，直接发送到 Codex')} placeholderTextColor={C.text2} style={styles.composer} />
+          <Pressable accessibilityRole="button" disabled={messageBusy || !messageInput.trim()} onPress={() => void sendMessage()} style={styles.sendButton}>
+            <Text style={styles.sendText}>{messageBusy ? t('发送中') : t('发送')}</Text></Pressable></View>
+      </View> : null}
       <Text style={styles.label}>{t('目标与监督指令')}</Text>
       <TextInput accessibilityLabel={t('目标与监督指令')} value={goal} onChangeText={value => { edited.current = true; setGoal(value); }} multiline maxLength={8000}
         editable={!busy} keyboardAppearance={scheme} textAlignVertical="top" style={styles.input}
@@ -284,6 +327,14 @@ const useStyles = themedStyles(({ C }) => ({
   progress: { color: C.text2 },
   more: { color: C.text2, fontSize: 12, fontWeight: '600' },
   project: { gap: 6 },
+  chatCard: { backgroundColor: C.cardRaised, borderColor: C.line, borderWidth: 1, borderRadius: 15, padding: 12, gap: 9 },
+  chatBubble: { alignSelf: 'flex-start', maxWidth: '92%', backgroundColor: C.field, borderRadius: 13, padding: 10 },
+  userBubble: { alignSelf: 'flex-end', backgroundColor: C.selected },
+  chatText: { color: C.text, fontSize: 14, lineHeight: 21 },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  composer: { flex: 1, color: C.text, backgroundColor: C.field, borderRadius: 14, minHeight: 44, maxHeight: 140, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, lineHeight: 20 },
+  sendButton: { minHeight: 44, paddingHorizontal: 13, borderRadius: 14, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
+  sendText: { color: C.bg, fontSize: 13, fontWeight: '600' },
   projectHead: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
   projectName: { color: C.text, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   chevron: { color: C.text2, fontSize: 14, marginLeft: 'auto' },

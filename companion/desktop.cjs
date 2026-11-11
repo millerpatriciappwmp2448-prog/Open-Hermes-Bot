@@ -128,7 +128,7 @@ class DesktopClient {
     }
   }
 
-  async list() {
+  async rows() {
     // History omits some pinned chats. The current sidebar includes them and
     // carries fresher titles/statuses; history adds older local conversations.
     const results = await Promise.allSettled([
@@ -136,22 +136,86 @@ class DesktopClient {
       this.call('list_threads', { mode: 'history', source: 'codex', hostId: 'local', limit: 50 }),
     ]);
     if (results.every(result => result.status === 'rejected')) throw results[0].reason;
+    const recent = results[0].status === 'fulfilled' ? results[0].value : null;
     const rows = results.flatMap(result => result.status === 'fulfilled'
       ? [...(result.value.pinnedThreads || []), ...(result.value.threads || [])] : []);
-    const seen = new Set();
-    return rows.filter(row => {
+    const seen = new Map();
+    for (const row of rows) {
       if (!row || row.kind !== 'codex' || (row.hostId && row.hostId !== 'local') ||
-          typeof row.id !== 'string' || !row.id || seen.has(row.id)) return false;
-      seen.add(row.id); return true;
-    })
-      .map(({ id, kind, hostId, title, status, cwd }) => ({
-        id, kind, hostId, title, cwd,
-        status: typeof status === 'string' ? { type: status } : status,
-      }));
+          typeof row.id !== 'string' || !row.id) continue;
+      const previous = seen.get(row.id);
+      // The first copy comes from the live sidebar; later copies only fill gaps.
+      seen.set(row.id, previous ? { ...row, ...previous, pinnedIndex: previous.pinnedIndex ?? row.pinnedIndex } : row);
+    }
+    return { recent, rows: [...seen.values()] };
   }
 
-  read(threadId, hostId = 'local') {
-    return this.call('read_thread', { threadId, hostId, turnLimit: 3, includeOutputs: true, maxOutputCharsPerItem: 3000 });
+  async list() {
+    const { rows } = await this.rows();
+    return rows.map(({ id, kind, hostId, title, status, cwd }) => ({
+      id, kind, hostId, title, cwd,
+      status: typeof status === 'string' ? { type: status } : status,
+    }));
+  }
+
+  async projects() {
+    const tools = await this.tools();
+    if (!tools.some(tool => tool.name === 'list_projects' && tool.namespace === 'codex_app')) return [];
+    try {
+      const result = await this.call('list_projects', {});
+      return (Array.isArray(result?.projects) ? result.projects : [])
+        .filter(project => project && project.projectKind === 'local' && typeof project.projectId === 'string' && project.projectId)
+        .map(({ projectId, label, path }) => ({
+          id: projectId,
+          label: typeof label === 'string' ? label : '',
+          path: typeof path === 'string' ? path : '',
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  async sidebar() {
+    // Run sequentially: fewer simultaneous requests on the desktop pipe.
+    const { recent, rows } = await this.rows();
+    const projects = await this.projects();
+    const millis = value => {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number <= 0) return 0;
+      return number < 1e12 ? Math.round(number * 1000) : Math.round(number);
+    };
+    const threads = rows.map(row => ({
+      id: row.id,
+      title: typeof row.title === 'string' ? row.title : '',
+      summary: typeof row.summary === 'string' ? row.summary : '',
+      cwd: typeof row.cwd === 'string' ? row.cwd : '',
+      projectId: typeof row.projectId === 'string' && row.projectId ? row.projectId : null,
+      updatedAt: millis(row.updatedAt),
+      pinnedIndex: Number.isInteger(row.pinnedIndex) ? row.pinnedIndex : null,
+      isUnread: row.isUnread === true,
+      status: typeof row.status === 'string' ? { type: row.status } : (row.status && typeof row.status.type === 'string' ? { type: row.status.type } : { type: 'unknown' }),
+    }));
+    const sections = (Array.isArray(recent?.sections) ? recent.sections : [])
+      .filter(section => section && typeof section.sectionId === 'string' && Array.isArray(section.itemKeys))
+      .map(section => ({
+        id: section.sectionId,
+        name: typeof section.name === 'string' ? section.name : '',
+        items: section.itemKeys.filter(key => typeof key === 'string' && key.startsWith('codex:')),
+      }));
+    const sorting = recent?.sidebarPreferences?.sorting;
+    return {
+      threads,
+      sections,
+      projects,
+      sorting: sorting && typeof sorting === 'object' ? {
+        chats: typeof sorting.chats === 'string' ? sorting.chats : 'updated_at',
+        projects: typeof sorting.projects === 'string' ? sorting.projects : 'updated_at',
+      } : { chats: 'updated_at', projects: 'updated_at' },
+    };
+  }
+
+  read(threadId, hostId = 'local', turnLimit = 3) {
+    return this.call('read_thread', { threadId, hostId, turnLimit, includeOutputs: true, maxOutputCharsPerItem: 3000 });
   }
 
   send(threadId, prompt, hostId = 'local') {

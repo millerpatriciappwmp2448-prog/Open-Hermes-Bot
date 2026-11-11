@@ -146,6 +146,57 @@ test('desktop listing reports an error when neither source can be read', async t
   await assert.rejects(client.list(), /Desktop list unavailable/);
 });
 
+test('desktop sidebar keeps pinned order, Codex project sections and millisecond times', async t => {
+  const { DesktopClient } = require('../desktop.cjs');
+  const withProjects = { result: { tools: [...catalog.result.tools, { name: 'list_projects', namespace: 'codex_app' }] } };
+  const pipePath = await peer(t, request => {
+    if (request.method === 'tools/list') return withProjects;
+    if (request.params.tool === 'list_projects') return text({ projects: [
+      { projectId: 'p1', projectKind: 'local', label: 'Hermes', path: 'D:\\Hermes' },
+      { projectId: 'g1', projectKind: 'chatgpt', label: 'Cloud' },
+    ] });
+    if (request.params.arguments.mode === 'recent') return text({
+      sidebarPreferences: { sorting: { chats: 'updated_at', projects: 'manual' } },
+      pinnedThreads: [{ id: 'pin', kind: 'codex', hostId: 'local', title: 'Pinned', updatedAt: 1787326854000, pinnedIndex: 1, status: 'notLoaded' }],
+      threads: [{ id: 'task', kind: 'codex', hostId: 'local', projectId: 'p1', title: 'Task', updatedAt: 1794407028, status: 'active', isUnread: true }],
+      sections: [
+        { sectionId: 'pinned', name: 'Pinned', itemKeys: ['codex:thread:local:pin'] },
+        { sectionId: 'threads', name: 'Projects', itemKeys: ['chatgpt:project:g1', 'codex:project:p1'] },
+      ],
+    });
+    return text({ threads: [{ id: 'pin', kind: 'codex', hostId: 'local', title: 'Old pinned title' }] });
+  });
+  const client = new DesktopClient({ pipePath, callerThreadId: 'authorizing-chat' });
+  t.after(() => client.close());
+  const sidebar = await client.sidebar();
+  assert.deepEqual(sidebar.projects, [{ id: 'p1', label: 'Hermes', path: 'D:\\Hermes' }]);
+  assert.deepEqual(sidebar.sections.find(section => section.id === 'threads').items, ['codex:project:p1']);
+  assert.deepEqual(sidebar.sorting, { chats: 'updated_at', projects: 'manual' });
+  const [pinned, task] = sidebar.threads;
+  assert.equal(pinned.title, 'Pinned');
+  assert.equal(pinned.pinnedIndex, 1);
+  assert.equal(pinned.updatedAt, 1787326854000);
+  assert.equal(task.updatedAt, 1794407028000);
+  assert.equal(task.projectId, 'p1');
+  assert.equal(task.isUnread, true);
+  assert.deepEqual(task.status, { type: 'active' });
+});
+
+test('desktop sidebar returns no projects when the desktop cannot list them', async t => {
+  const { DesktopClient } = require('../desktop.cjs');
+  const pipePath = await peer(t, request => {
+    if (request.method === 'tools/list') return catalog;
+    assert.equal(request.params.tool, 'list_threads');
+    return text({ threads: [{ id: 'task', kind: 'codex', hostId: 'local', title: 'Task' }] });
+  });
+  const client = new DesktopClient({ pipePath, callerThreadId: 'authorizing-chat' });
+  t.after(() => client.close());
+  const sidebar = await client.sidebar();
+  assert.deepEqual(sidebar.projects, []);
+  assert.deepEqual(sidebar.threads.map(row => row.id), ['task']);
+  assert.equal(sidebar.threads[0].projectId, null);
+});
+
 test('missing required tools fail before sending anything', async t => {
   const { DesktopClient } = require('../desktop.cjs');
   const pipePath = await peer(t, request => {

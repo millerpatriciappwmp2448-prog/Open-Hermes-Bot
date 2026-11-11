@@ -182,7 +182,7 @@ export function ConversationsScreen() {
                 onLongPress={() => setMenu(thread)}
                 delayLongPress={260}
               >
-                {faceOf(thread, 72)}
+                {faceOf(thread, 54)}
                 <Text style={styles.pinnedName} numberOfLines={1}>
                   {thread.kind === 'group' ? thread.name : thread.name.split(' ')[0]}
                 </Text>
@@ -390,7 +390,13 @@ export function ConversationsScreen() {
 
 const useStyles = themedStyles(({ C, INK }) => ({
   root: { flex: 1, backgroundColor: C.sidebar },
-  head: { paddingHorizontal: 16, paddingBottom: 11 },
+  head: {
+    paddingHorizontal: 16,
+    paddingBottom: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -451,7 +457,7 @@ const useStyles = themedStyles(({ C, INK }) => ({
   },
   sectionCount: { color: INK.quiet, fontSize: 10 },
   pinnedGrid: { flexDirection: 'row', gap: 12, paddingHorizontal: 7 },
-  pinnedItem: { width: 76, flexShrink: 0, alignItems: 'center', gap: 5, paddingVertical: 4 },
+  pinnedItem: { width: 68, flexShrink: 0, alignItems: 'center', gap: 5, paddingVertical: 4 },
   pressed: { opacity: 0.6 },
   pinnedName: { color: INK.quiet, fontSize: 10, fontWeight: '500', textAlign: 'center' },
 
