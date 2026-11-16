@@ -76,6 +76,17 @@ On Windows, start the helper with `Start-Process -WindowStyle Hidden` and quoted
 absolute arguments. It must remain running with the companion; restart it after
 a computer reboot. It creates no public listener and does not enable a watch.
 
+For an existing installation, `companion/recover.ps1` starts either process if
+it is missing. Supply the same `-StateDirectory`, `-TunnelHost`, `-IdentityFile`,
+`-Socket`, and optional `-GroupReadable`/`-Port` used for the original setup.
+It can be run by a Windows scheduled task at login and every minute, under the
+same user as Codex with an interactive logon token. It locks each state directory
+to prevent duplicate starts and leaves existing processes and credentials alone.
+Disable that task before intentionally stopping the companion. This restores
+processes and SSH connectivity; a changed desktop app-tools pipe still requires
+`windows.ps1 -Action Register` from a Codex desktop chat. Registration must use
+the same state directory as the recovery task.
+
 For model review, set these variables in the companion's environment **before**
 starting it:
 
