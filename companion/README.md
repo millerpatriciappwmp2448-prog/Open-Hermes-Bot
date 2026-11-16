@@ -120,9 +120,16 @@ companion. A tool-enabled or unsupported profile causes a visible review error,
 while deterministic 429/network recovery continues. No existing profile is
 silently reconfigured.
 
-The phone entry is **Settings > Codex supervisor**. Select the existing local chat,
-write the goal and completion checks, choose the review profile/model, and start
-once. This authorizes automatic messages to that selected chat. Ordinary retries
+In the **Codex supervisor chat**, tap **Choose a Codex chat** to browse local
+projects in desktop sidebar order, pinned chats and standalone chats. Projects
+remain visible even if their chats are on an older history page. Search filters
+loaded project/chat titles; **Load more chats** reads older non-archived local
+Codex history. Selecting a row only edits the draft. Enter the goal and tap
+**Start supervision** (or **Save supervision settings**) to apply it. Existing
+review settings are preserved. Settings > Codex supervisor remains available for
+review settings, pause and detailed output.
+
+Starting supervision authorizes automatic messages to that selected chat. Ordinary retries
 and supported corrections need no repeated confirmation. Model choice applies to
 the supervisor only; Codex keeps its own configuration. Disabling analysis keeps
 automatic network recovery available.

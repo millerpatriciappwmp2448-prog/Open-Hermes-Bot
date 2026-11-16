@@ -291,7 +291,7 @@ export function ChatScreen({ route, navigation }: Props) {
           ) : null}
 
           {bot?.capabilities?.includes('codex-supervisor') ? (
-            <SupervisorChatStatus onDetails={() => navigation.navigate('CodexSupervisor')}
+            <SupervisorChatStatus botId={bot.id} onDetails={() => navigation.navigate('CodexSupervisor')}
               revision={`${thread.sessionId || ''}:${turns.length}:${!!thread.typing}`} />
           ) : null}
 

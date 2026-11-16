@@ -30,7 +30,7 @@ function createServer({ token, desktop, supervisor }) {
       const route = `${request.method} ${request.url}`;
       if (route === 'GET /status') { json(200, supervisor.status()); return; }
       if (route === 'GET /threads') { json(200, await desktop.sidebar()); return; }
-      if (!['POST /watch', 'POST /pause', 'POST /read', 'POST /messages', 'POST /send'].includes(route)) { json(404, { error: { code: 'not_found', message: 'Unknown companion operation.' } }); return; }
+      if (!['POST /threads', 'POST /watch', 'POST /pause', 'POST /read', 'POST /messages', 'POST /send'].includes(route)) { json(404, { error: { code: 'not_found', message: 'Unknown companion operation.' } }); return; }
       let raw = '';
       for await (const chunk of request) {
         raw += chunk.toString('utf8');
@@ -39,6 +39,11 @@ function createServer({ token, desktop, supervisor }) {
       let body;
       try { body = JSON.parse(raw || '{}'); } catch { throw Object.assign(new Error('Send a JSON object.'), { status: 400 }); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw Object.assign(new Error('Send a JSON object.'), { status: 400 });
+      if (route === 'POST /threads') {
+        if (typeof body.cursor !== 'string' || !body.cursor || body.cursor.length > 16000 ||
+            Object.keys(body).some(key => key !== 'cursor')) throw Object.assign(new Error('Use the next cursor returned by the chat list.'), { status: 400 });
+        json(200, await desktop.sidebar(body.cursor)); return;
+      }
       if (route === 'POST /read') {
         if (typeof body.threadId !== 'string' || !THREAD_ID.test(body.threadId) ||
             Object.keys(body).some(key => key !== 'threadId')) throw Object.assign(new Error('Choose one local Codex chat.'), { status: 400 });

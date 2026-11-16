@@ -116,7 +116,7 @@ ROUTES: list[tuple[str, re.Pattern[str], str, bool]] = [
     ("POST", re.compile(r"^/v1/codex/agent$"), "_codex_agent", False),
     ("POST", re.compile(r"^/v1/codex/agent/tool$"), "_codex_agent_tool", False),
     ("POST", re.compile(r"^/v1/codex/(?P<operation>watch|pause)$"), "_codex_write", False),
-    ("POST", re.compile(r"^/v1/codex/(?P<operation>messages|send)$"), "_codex_chat", False),
+    ("POST", re.compile(r"^/v1/codex/(?P<operation>threads|messages|send)$"), "_codex_chat", False),
     ("POST", re.compile(r"^/v1/codex/review$"), "_codex_review", False),
     ("GET", re.compile(r"^/v1/jobs$"), "_jobs", False),
     ("POST", re.compile(r"^/v1/jobs$"), "_job_create", False),

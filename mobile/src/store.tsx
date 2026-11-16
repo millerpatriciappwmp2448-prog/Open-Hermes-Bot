@@ -125,7 +125,7 @@ type Store = {
   loadTranscript: (botId: string, sessionId: string, offset: number) => Promise<TranscriptPage>;
   loadMonitor: () => Promise<ServerMonitor>;
   loadCodexStatus: () => Promise<CodexSupervisorStatus>;
-  loadCodexChats: () => Promise<CodexSidebar>;
+  loadCodexChats: (cursor?: string) => Promise<CodexSidebar>;
   loadCodexMessages: (threadId: string) => Promise<{ messages: CodexChatMessage[]; status: string; turnStatus: string | null }>;
   sendCodexMessage: (threadId: string, prompt: string) => Promise<{ status: string }>;
   startCodexWatch: (spec: CodexWatchSpec) => Promise<CodexSupervisorStatus>;
@@ -824,7 +824,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return result;
   }, []);
   const loadCodexStatus = useCallback(() => codexCall(active => active.codexStatus()), [codexCall]);
-  const loadCodexChats = useCallback(() => codexCall(active => active.codexChats()), [codexCall]);
+  const loadCodexChats = useCallback((cursor?: string) => codexCall(active => active.codexChats(cursor)), [codexCall]);
   const loadCodexMessages = useCallback((threadId: string) => codexCall(active => active.codexMessages(threadId)), [codexCall]);
   const sendCodexMessage = useCallback((threadId: string, prompt: string) => codexCall(active => active.codexSend(threadId, prompt)), [codexCall]);
   const startCodexWatch = useCallback((spec: CodexWatchSpec) => codexCall(active => active.startCodexWatch(spec)), [codexCall]);

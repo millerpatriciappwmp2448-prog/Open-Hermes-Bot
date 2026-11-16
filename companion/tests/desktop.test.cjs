@@ -197,6 +197,32 @@ test('desktop sidebar returns no projects when the desktop cannot list them', as
   assert.equal(sidebar.threads[0].projectId, null);
 });
 
+test('desktop sidebar exposes the history cursor and reads older local chats without repeating the first page', async t => {
+  const { DesktopClient } = require('../desktop.cjs');
+  const requests = [];
+  const pipePath = await peer(t, request => {
+    if (request.method === 'tools/list') return catalog;
+    const args = request.params.arguments;
+    requests.push(args);
+    if (args.mode === 'recent') return text({ threads: [{ id: 'live', kind: 'codex' }] });
+    if (!args.cursor) return text({ threads: Array.from({ length: 50 }, (_, i) => ({ id: `chat${i}`, kind: 'codex' })), nextCursor: 'opaque-history-cursor' });
+    assert.deepEqual(args, { mode: 'history', source: 'codex', hostId: 'local', archived: false, limit: 50, cursor: 'opaque-history-cursor' });
+    return text({ threads: [
+      { id: 'older', kind: 'codex', projectId: 'p1', status: 'idle' },
+      { id: 'remote', kind: 'codex', hostId: 'remote' }, { id: 'cloud', kind: 'chatgpt' },
+    ], nextCursor: null });
+  });
+  const client = new DesktopClient({ pipePath, callerThreadId: 'authorizing-chat' });
+  t.after(() => client.close());
+  const first = await client.sidebar();
+  assert.equal(first.threads.length, 51);
+  const next = await client.sidebar(first.nextCursor);
+  assert.deepEqual(next.threads.map(row => row.id), ['older']);
+  assert.equal(next.threads[0].projectId, 'p1');
+  assert.equal(next.nextCursor, null);
+  assert.equal(requests.length, 3);
+});
+
 test('missing required tools fail before sending anything', async t => {
   const { DesktopClient } = require('../desktop.cjs');
   const pipePath = await peer(t, request => {

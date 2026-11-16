@@ -671,7 +671,8 @@ class BridgeTest(unittest.TestCase):
     def test_codex_routes_require_pairing_and_only_forward_fixed_operations(self):
         with patch.object(self.server.bridge.codex, 'call', return_value={'enabled': False}) as companion:
             for method, path in [('GET', '/v1/codex/status'), ('GET', '/v1/codex/threads'),
-                                 ('POST', '/v1/codex/watch'), ('POST', '/v1/codex/pause')]:
+                                 ('POST', '/v1/codex/watch'), ('POST', '/v1/codex/pause'),
+                                 ('POST', '/v1/codex/threads'), ('POST', '/v1/codex/messages'), ('POST', '/v1/codex/send')]:
                 status, _ = self.call(method, path, {} if method == 'POST' else None, token=False)
                 self.assertEqual(status, 401)
             companion.assert_not_called()
@@ -683,7 +684,16 @@ class BridgeTest(unittest.TestCase):
             })
             self.assertEqual(status, 200, body)
             self.assertEqual(companion.call_args.args[1], '/watch')
-            status, _ = self.call('POST', '/v1/codex/send', {'prompt': 'arbitrary'})
+            status, body = self.call('POST', '/v1/codex/threads', {'cursor': 'next-page'})
+            self.assertEqual(status, 200, body)
+            companion.assert_called_with('POST', '/threads', {'cursor': 'next-page'})
+            status, body = self.call('POST', '/v1/codex/messages', {'threadId': 'chat'})
+            self.assertEqual(status, 200, body)
+            companion.assert_called_with('POST', '/messages', {'threadId': 'chat'})
+            status, body = self.call('POST', '/v1/codex/send', {'threadId': 'chat', 'prompt': 'Continue'})
+            self.assertEqual(status, 200, body)
+            companion.assert_called_with('POST', '/send', {'threadId': 'chat', 'prompt': 'Continue'})
+            status, _ = self.call('POST', '/v1/codex/delete', {'threadId': 'chat'})
             self.assertEqual(status, 404)
 
     def test_codex_review_uses_selected_profile_and_model_and_rejects_bad_output(self):

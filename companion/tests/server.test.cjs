@@ -63,3 +63,23 @@ test('bounded chat reads observe an active target without sending or starting wo
   assert.deepEqual(reads, [['work', 'local']]);
   assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ threadId: '../invalid' }) })).status, 400);
 });
+
+test('chat pagination only accepts an authenticated cursor and cannot inject another desktop operation', async t => {
+  const cursors = [];
+  const server = createServer({ token: 'private', desktop: { sidebar: async cursor => {
+    cursors.push(cursor); return { threads: [{ id: 'old-chat' }], nextCursor: null };
+  } }, supervisor: {} });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}/threads`;
+  const headers = { Authorization: 'Bearer private', 'Content-Type': 'application/json' };
+  assert.equal((await fetch(url, { method: 'POST', body: '{}' })).status, 401);
+  for (const body of [{}, { cursor: 1 }, { cursor: '' }, { cursor: 'x'.repeat(16001) }, { cursor: 'next', tool: 'delete_thread' }]) {
+    assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })).status, 400);
+  }
+  assert.deepEqual(cursors, []);
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ cursor: 'opaque-next' }) });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).threads[0].id, 'old-chat');
+  assert.deepEqual(cursors, ['opaque-next']);
+});

@@ -252,16 +252,16 @@ export function CodexSupervisorScreen() {
 
       <Text style={styles.label}>{t('监督哪个 Codex 会话')}</Text>
       {chatsError ? <Text accessibilityRole="alert" style={styles.error}>{chatsError}</Text> : null}
-      {companionMissing ? <View style={styles.card}>
+      {companionMissing && !sidebar ? <View style={styles.card}>
         <Text style={styles.cardTitle}>{t('需要 Codex companion')}</Text>
         <Text style={styles.copy}>{t('在运行 Codex 的 Windows 电脑上启动 companion，并保持 SSH 反向隧道连接到服务器。')}</Text>
         <Text selectable style={styles.code}>{'companion\\windows.ps1 -Action Start'}</Text>
       </View> : projects.length ? projects.map((project, index) => {
-        const open = projectOpen(project.name, index);
-        return <View key={project.name || '-'} style={styles.project}>
+        const open = projectOpen(project.id, index);
+        return <View key={project.id} style={styles.project}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }}
-            onPress={() => setOpenProjects(value => ({ ...value, [project.name]: !open }))} style={styles.projectHead}>
-            <Text style={styles.projectName} numberOfLines={1}>{project.name || t('未归类项目')}</Text>
+            onPress={() => setOpenProjects(value => ({ ...value, [project.id]: !open }))} style={styles.projectHead}>
+            <Text style={styles.projectName} numberOfLines={1}>{project.kind === 'project' ? project.name : t(project.name)}</Text>
             <Text style={styles.caption}>{project.chats.length}</Text>
             <Text style={styles.chevron}>{open ? '⌄' : '›'}</Text>
           </Pressable>

@@ -5,6 +5,8 @@ import type { CodexSupervisorStatus } from '../codexSupervisor';
 import { t, useTranslation } from '../i18n';
 import { useStore } from '../store';
 import { themedStyles } from '../theme';
+import { Sheet } from './Sheet';
+import { SupervisorWatchPicker } from './SupervisorWatchPicker';
 
 const STATES: Record<string, string> = {
   stopped: '尚未开始', paused: '已暂停', watching: '正在监督', backoff: '等待自动重试',
@@ -12,7 +14,7 @@ const STATES: Record<string, string> = {
   disconnected: '电脑连接中断', completed: '目标已完成',
 };
 
-export function SupervisorChatStatus({ onDetails, revision }: { onDetails: () => void; revision: string }) {
+export function SupervisorChatStatus({ botId, onDetails, revision }: { botId: string; onDetails: () => void; revision: string }) {
   useTranslation();
   const { styles } = useStyles();
   const { loadCodexStatus, connection } = useStore();
@@ -20,15 +22,17 @@ export function SupervisorChatStatus({ onDetails, revision }: { onDetails: () =>
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [status, setStatus] = useState<CodexSupervisorStatus | null>(null);
   const [error, setError] = useState('');
+  const [choosing, setChoosing] = useState(false);
+  const [savedRevision, setSavedRevision] = useState(0);
   useEffect(() => {
     const listener = AppState.addEventListener('change', state => setAppActive(state === 'active'));
     return () => listener.remove();
   }, []);
   useEffect(() => {
-    setStatus(null); setError('');
+    setStatus(null); setError(''); setChoosing(false);
   }, [connection.url]);
   useEffect(() => {
-    if (!focused || !appActive || connection.status !== 'connected') return;
+    if (!focused || !appActive || choosing || connection.status !== 'connected') return;
     let current = true, pending = false;
     async function refresh() {
       if (pending) return;
@@ -43,7 +47,7 @@ export function SupervisorChatStatus({ onDetails, revision }: { onDetails: () =>
     void refresh();
     const timer = setInterval(() => void refresh(), 10000);
     return () => { current = false; clearInterval(timer); };
-  }, [appActive, connection.status, connection.url, focused, loadCodexStatus, revision]);
+  }, [appActive, connection.status, connection.url, focused, loadCodexStatus, revision, choosing, savedRevision]);
 
   return <View style={styles.card} testID="supervisor-chat-status">
     <View style={styles.heading}>
@@ -60,7 +64,17 @@ export function SupervisorChatStatus({ onDetails, revision }: { onDetails: () =>
     {status?.review?.analysis ? <Text style={styles.analysis} numberOfLines={5}>{status.review.analysis}</Text> : null}
     {status?.review?.error ? <Text style={styles.error}>{status.review.error}</Text> : null}
     {error ? <Text style={styles.error}>{error}</Text> : null}
+    <Pressable accessibilityRole="button" accessibilityLabel={t('选择 Codex 会话')} disabled={connection.status !== 'connected'}
+      onPress={() => setChoosing(true)} style={styles.choose}>
+      <Text style={styles.target}>{t(status?.spec ? '切换监督会话' : '选择 Codex 会话')}</Text>
+      <Text style={styles.link}>›</Text>
+    </Pressable>
     <Text style={styles.meta}>{t('监督在电脑上持续运行，关闭手机也会继续。')}</Text>
+    <Sheet visible={choosing} onClose={() => setChoosing(false)} avoidKeyboard>
+      {choosing ? <SupervisorWatchPicker key={connection.url} botId={botId} onClose={() => setChoosing(false)} onSaved={value => {
+        setStatus(value); setError(''); setChoosing(false); setSavedRevision(previous => previous + 1);
+      }} /> : null}
+    </Sheet>
   </View>;
 }
 
@@ -69,6 +83,7 @@ const useStyles = themedStyles(({ C }) => ({
   heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   state: { color: C.text, fontSize: 13, fontWeight: '600', flexShrink: 1 },
   link: { color: C.text2, fontSize: 11 },
+  choose: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44, gap: 12 },
   target: { color: C.text, fontSize: 13, fontWeight: '500' },
   goal: { color: C.text2, fontSize: 12, lineHeight: 18 },
   meta: { color: C.text3, fontSize: 10, lineHeight: 16 },

@@ -316,7 +316,8 @@ export function createBridgeClient(rawBase: string, token: string) {
     codexStatus: () => request<CodexSupervisorStatus>('/v1/codex/status'),
     ensureCodexAgent: async (): Promise<BridgeBot> =>
       (await request<{ bot: BridgeBot }>('/v1/codex/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).bot,
-    codexChats: async (): Promise<CodexSidebar> => request<CodexSidebar>('/v1/codex/threads'),
+    codexChats: async (cursor?: string): Promise<CodexSidebar> => request<CodexSidebar>('/v1/codex/threads', cursor
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cursor }) } : {}),
     codexMessages: async (threadId: string): Promise<{ messages: CodexChatMessage[]; status: string; turnStatus: string | null }> =>
       request(`/v1/codex/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId }) }),
     codexSend: async (threadId: string, prompt: string): Promise<{ status: string }> =>

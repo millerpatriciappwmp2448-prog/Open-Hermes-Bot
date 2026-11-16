@@ -1,5 +1,14 @@
 // Interface copy only. Server messages and user input are never translation keys.
 export const english: Readonly<Record<string, string>> = {
+  "选择 Codex 会话": "Choose a Codex chat",
+  "切换监督会话": "Switch supervised chat",
+  "重新选择会话": "Choose another chat",
+  "搜索项目或会话": "Search projects or chats",
+  "历史会话暂未读取，请刷新重试。": "History is unavailable. Refresh to retry.",
+  "加载更多以查看较早会话": "Load more to see older chats",
+  "未找到匹配的会话": "No matching chats",
+  "搜索当前已加载的会话，可继续加载更多。": "Searching loaded chats. Load more to search older chats.",
+  "独立会话": "Standalone chats",
   "添加成员": "Add members",
   "{0} 未发言": "{0} stayed silent",
   "正在联系其他智能体": "Contacting another agent",

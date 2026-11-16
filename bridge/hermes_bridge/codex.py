@@ -17,7 +17,7 @@ from .hermes import HermesError
 
 MAX_RESPONSE = 1024 * 1024
 OPERATIONS = {
-    ('GET', '/status'), ('GET', '/threads'),
+    ('GET', '/status'), ('GET', '/threads'), ('POST', '/threads'),
     ('POST', '/watch'), ('POST', '/pause'), ('POST', '/read'),
     ('POST', '/messages'), ('POST', '/send'),
 }

@@ -147,7 +147,9 @@ class DesktopClient {
       // The first copy comes from the live sidebar; later copies only fill gaps.
       seen.set(row.id, previous ? { ...row, ...previous, pinnedIndex: previous.pinnedIndex ?? row.pinnedIndex } : row);
     }
-    return { recent, rows: [...seen.values()] };
+    const history = results[1].status === 'fulfilled' ? results[1].value : null;
+    return { recent, rows: [...seen.values()], nextCursor: history?.nextCursor || null,
+      historyUnavailable: results[1].status === 'rejected' };
   }
 
   async list() {
@@ -175,10 +177,17 @@ class DesktopClient {
     }
   }
 
-  async sidebar() {
+  async sidebar(cursor) {
     // Run sequentially: fewer simultaneous requests on the desktop pipe.
-    const { recent, rows } = await this.rows();
-    const projects = await this.projects();
+    const page = cursor ? await this.call('list_threads', {
+      mode: 'history', source: 'codex', hostId: 'local', archived: false, limit: 50, cursor,
+    }) : null;
+    const { recent, rows, nextCursor, historyUnavailable } = page ? {
+      recent: null,
+      rows: (page.threads || []).filter(row => row?.kind === 'codex' && (!row.hostId || row.hostId === 'local') && typeof row.id === 'string'),
+      nextCursor: page.nextCursor || null, historyUnavailable: false,
+    } : await this.rows();
+    const projects = cursor ? [] : await this.projects();
     const millis = value => {
       const number = Number(value);
       if (!Number.isFinite(number) || number <= 0) return 0;
@@ -207,6 +216,8 @@ class DesktopClient {
       threads,
       sections,
       projects,
+      nextCursor,
+      historyUnavailable,
       sorting: sorting && typeof sorting === 'object' ? {
         chats: typeof sorting.chats === 'string' ? sorting.chats : 'updated_at',
         projects: typeof sorting.projects === 'string' ? sorting.projects : 'updated_at',

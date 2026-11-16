@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -37,9 +38,10 @@ type SheetProps = {
   children: ReactNode;
   /** The most of the window a sheet may take: it fits its content below that. */
   height?: DimensionValue;
+  avoidKeyboard?: boolean;
 };
 
-export function Sheet({ visible, onClose, onDismiss, children, height = '90%' }: SheetProps) {
+export function Sheet({ visible, onClose, onDismiss, children, height = '90%', avoidKeyboard = false }: SheetProps) {
   const { styles } = useStyles();
   useTranslation();
   const insets = useSafeAreaInsets();
@@ -51,6 +53,7 @@ export function Sheet({ visible, onClose, onDismiss, children, height = '90%' }:
   const [content, setContent] = useState<ReactNode>(children);
   const wasShown = useRef(visible);
   const latest = useRef({ visible, onDismiss });
+  const Root = avoidKeyboard ? KeyboardAvoidingView : View;
   latest.current = { visible, onDismiss };
 
   function dismissed() {
@@ -120,7 +123,7 @@ export function Sheet({ visible, onClose, onDismiss, children, height = '90%' }:
       onDismiss={dismissed}
       statusBarTranslucent
     >
-      <View style={styles.root}>
+      <Root style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable style={styles.scrimPress} onPress={onClose} accessibilityLabel={t("关闭")}>
           <Animated.View style={[styles.scrim, { opacity: dim }]} />
         </Pressable>
@@ -133,7 +136,7 @@ export function Sheet({ visible, onClose, onDismiss, children, height = '90%' }:
           <Animated.View style={styles.grabber} />
           {content}
         </Animated.View>
-      </View>
+      </Root>
     </Modal>
   );
 }
